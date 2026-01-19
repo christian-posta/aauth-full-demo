@@ -1,0 +1,79 @@
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: supply-chain-agent
+  labels:
+    app: supply-chain-agent
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: supply-chain-agent
+  labels:
+    app: supply-chain-agent
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: supply-chain-agent
+  template:
+    metadata:
+      labels:
+        app: supply-chain-agent
+    spec:
+      serviceAccountName: supply-chain-agent
+      containers:
+      - name: supply-chain-agent
+        image: supply-chain-agent:latest
+        imagePullPolicy: Never
+        ports:
+        - containerPort: 9999
+        env:
+        - name: JAEGER_HOST
+          value: "jaeger-collector.istio-system"
+        - name: JAEGER_PORT
+          value: "4317"
+        - name: MARKET_ANALYSIS_AGENT_URL
+          value: "http://market-analysis-agent.default/"
+        - name: AGENT_STS_URL
+          value: "http://agent-sts.default:8081"
+        - name: SUPPLY_CHAIN_SPIFFE_ID
+          value: "spiffe://cluster.local/ns/default/sa/supply-chain-agent"
+        - name: MARKET_ANALYSIS_CONNECT_TIMEOUT
+          value: "30.0"
+        - name: MARKET_ANALYSIS_READ_TIMEOUT
+          value: "120.0"
+        - name: MARKET_ANALYSIS_WRITE_TIMEOUT
+          value: "30.0"
+        - name: MARKET_ANALYSIS_POOL_TIMEOUT
+          value: "30.0"
+        - name: OTEL_TRACES_SAMPLER
+          value: "parentbased_traceidratio"
+        - name: OTEL_TRACES_SAMPLER_ARG
+          value: "1.0"
+        - name: OTEL_TRACES_SAMPLER_PARENT_BASED
+          value: "true"
+        - name: SUPPLY_CHAIN_AGENT_PORT
+          value: "9999"
+        - name: SUPPLY_CHAIN_AGENT_URL
+          value: "http://localhost:9999/"
+        - name: ENVIRONMENT
+          value: "development"
+        - name: ENABLE_CONSOLE_EXPORTER
+          value: "false"
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: supply-chain-agent
+  labels:
+        app: supply-chain-agent
+spec:
+  selector:
+        app: supply-chain-agent
+  ports:
+  - protocol: TCP
+    port: 80
+    targetPort: 9999
+    appProtocol: kgateway.dev/a2a
+  type: ClusterIP

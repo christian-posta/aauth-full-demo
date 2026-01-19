@@ -1,0 +1,70 @@
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: supply-chain-backend
+  labels:
+    app: supply-chain-backend
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: supply-chain-backend
+  labels:
+    app: supply-chain-backend
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: supply-chain-backend
+  template:
+    metadata:
+      labels:
+        app: supply-chain-backend
+    spec:
+      serviceAccountName: supply-chain-backend
+      containers:
+      - name: supply-chain-backend
+        image: supply-chain-backend:latest
+        imagePullPolicy: Never
+        ports:
+        - containerPort: 8000
+        env:
+        - name: JAEGER_HOST
+          value: "jaeger-collector.istio-system"
+        - name: JAEGER_PORT
+          value: "4317"
+        - name: ENABLE_CONSOLE_EXPORTER
+          value: "false"
+        - name: DEBUG
+          value: "true"
+        - name: LOG_LEVEL
+          value: "info"
+        - name: SUPPLY_CHAIN_AGENT_URL
+          value: "http://supply-chain-agent.default/"
+        - name: AGENT_STS_URL
+          value: "http://agent-sts.default:8081"
+        - name: BACKEND_SPIFFE_ID
+          value: "spiffe://cluster.local/ns/default/sa/supply-chain-backend"
+        - name: KEYCLOAK_URL
+          value: "http://host.docker.internal:8080"
+        - name: KEYCLOAK_REALM
+          value: "mcp-realm"
+        - name: KEYCLOAK_CLIENT_ID
+          value: "supply-chain-ui"
+        - name: CORS_ALLOW_ALL
+          value: "true"
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: supply-chain-backend
+  labels:
+        app: supply-chain-backend
+spec:
+  selector:
+        app: supply-chain-backend
+  ports:
+  - protocol: TCP
+    port: 80
+    targetPort: 8000
+  type: ClusterIP

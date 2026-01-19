@@ -1,0 +1,71 @@
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: market-analysis-agent
+  labels:
+    app: market-analysis-agent
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: market-analysis-agent
+  labels:
+    app: market-analysis-agent
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: market-analysis-agent
+  template:
+    metadata:
+      labels:
+        app: market-analysis-agent
+    spec:
+      serviceAccountName: market-analysis-agent
+      containers:
+      - name: market-analysis-agent
+        image: market-analysis-agent:latest
+        imagePullPolicy: Never
+        ports:
+        - containerPort: 9998
+        env:
+        - name: MCP_SERVER_BASE_URL
+          value: "http://company-mcp.default:3000"
+        - name: MCP_SERVER_PATH
+          value: "/general/mcp"
+        - name: MCP_CONNECTION_TIMEOUT
+          value: "30"
+        - name: MCP_READ_TIMEOUT
+          value: "60"
+        - name: AGENT_STS_URL
+          value: "http://agent-sts.default:8081"
+        - name: MARKET_ANALYSIS_SPIFFE_ID
+          value: "spiffe://cluster.local/ns/default/sa/market-analysis-agent"
+        - name: JAEGER_HOST
+          value: "jaeger-collector.istio-system"
+        - name: JAEGER_PORT
+          value: "4317"
+        - name: OTEL_TRACES_SAMPLER
+          value: "parentbased_traceidratio"
+        - name: OTEL_TRACES_SAMPLER_ARG
+          value: "1.0"
+        - name: OTEL_TRACES_SAMPLER_PARENT_BASED
+          value: "true"
+        - name: ENABLE_CONSOLE_EXPORTER
+          value: "false"
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: market-analysis-agent
+  labels:
+        app: market-analysis-agent
+spec:
+  selector:
+        app: market-analysis-agent
+  ports:
+  - protocol: TCP
+    port: 80
+    targetPort: 9998
+    appProtocol: kgateway.dev/a2a
+  type: ClusterIP

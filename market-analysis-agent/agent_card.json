@@ -1,0 +1,46 @@
+{
+    "name": "Market Analysis Agent",
+    "description": "Domain expert for understanding laptop demand, inventory trends, and market conditions. Specializes in analyzing inventory levels, forecasting market trends, and modeling employee demand patterns to optimize laptop procurement decisions.",
+    "version": "1.0.0",
+    "author": "A2A Team",
+    "skills": [
+        {
+            "name": "inventory-demand-analysis",
+            "description": "Analyzes current laptop inventory levels against projected demand based on hiring plans, refresh cycles, and historical usage patterns. Identifies inventory gaps and surplus situations.",
+            "examples": [
+                "Analyze MacBook Pro inventory for Q2 onboarding of 50 new engineers",
+                "Compare current laptop stock levels against 3-month demand forecast"
+            ]
+        },
+        {
+            "name": "market-trend-forecasting",
+            "description": "Evaluates laptop market trends, pricing fluctuations, and availability forecasts. Considers factors like new model releases, supply chain disruptions, and seasonal demand patterns.",
+            "examples": [
+                "Forecast laptop pricing trends for next quarter considering Apple's release cycle",
+                "Assess market availability risks for bulk laptop orders"
+            ]
+        },
+        {
+            "name": "demand-pattern-modeling",
+            "description": "Models laptop demand patterns based on department growth, role requirements, and refresh schedules. Factors in different laptop specifications needed by various teams.",
+            "examples": [
+                "Model laptop demand for engineering vs sales teams over next 6 months",
+                "Calculate optimal mix of MacBook Pro vs MacBook Air based on role requirements"
+            ]
+        }
+    ],
+    "capabilities": [
+        "Analyze current inventory levels against projected demand",
+        "Forecast market trends and pricing fluctuations",
+        "Model employee demand patterns by department and role",
+        "Identify inventory gaps and surplus situations",
+        "Provide procurement recommendations based on analysis",
+        "Integrate with inventory and HR planning systems"
+    ],
+    "delegation_examples": [
+        "Analyze laptop demand and inventory",
+        "Forecast laptop market trends for next quarter",
+        "Model demand patterns for engineering team expansion",
+        "Assess inventory gaps for upcoming hiring wave"
+    ]
+}
