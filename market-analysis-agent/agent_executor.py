@@ -28,16 +28,37 @@ from tracing_config import (
     span, add_event, set_attribute, extract_context_from_headers, 
     inject_context_to_headers, initialize_tracing
 )
-from http_headers_middleware import get_current_request_headers
+from http_headers_middleware import get_current_request_headers, get_current_request_info
+from aauth import verify_signature
+from aauth.errors import SignatureError
 
-# Check DEBUG mode from environment
-DEBUG = os.getenv("DEBUG", "false").lower() == "true"
-
-# Load environment variables
+# Load environment variables FIRST (before reading DEBUG/LOG_LEVEL)
 load_dotenv()
 
-# Configure logging
-logging.basicConfig(level=logging.INFO)
+# Check DEBUG mode from environment (for conditional debug statements)
+DEBUG = os.getenv("DEBUG", "false").lower() == "true"
+
+# Configure logging - respect LOG_LEVEL and DEBUG environment variables
+def get_log_level():
+    """Get logging level from LOG_LEVEL env var, or fall back to DEBUG flag."""
+    log_level_str = os.getenv("LOG_LEVEL", "").upper()
+    if log_level_str:
+        # Map string levels to logging constants
+        level_map = {
+            "DEBUG": logging.DEBUG,
+            "INFO": logging.INFO,
+            "WARNING": logging.WARNING,
+            "WARN": logging.WARNING,
+            "ERROR": logging.ERROR,
+            "CRITICAL": logging.CRITICAL,
+        }
+        return level_map.get(log_level_str, logging.INFO)
+    else:
+        # Fall back to DEBUG flag
+        return logging.DEBUG if DEBUG else logging.INFO
+
+log_level = get_log_level()
+logging.basicConfig(level=log_level)
 logger = logging.getLogger(__name__)
 
 
@@ -248,7 +269,7 @@ class MarketAnalysisAgentExecutor(AgentExecutor):
         else:
             logger.warning(f"⚠️ No headers available from middleware context")
         
-        # Log AAuth signature headers if present (for future verification)
+        # Verify AAuth signature headers if present
         if headers:
             aauth_headers = {}
             for key, value in headers.items():
@@ -268,34 +289,152 @@ class MarketAnalysisAgentExecutor(AgentExecutor):
                         logger.debug(f"🔐 AAuth {header_name}: {display_value}")
                         set_attribute(f"auth.aauth.{header_name.lower().replace('-', '_')}", header_value[:200])
                 
-                # Log if this appears to be HWK scheme
+                # Detect signature scheme
+                scheme = None
                 if 'signature-key' in {k.lower() for k in aauth_headers.keys()}:
                     sig_key_value = next((v for k, v in aauth_headers.items() if k.lower() == 'signature-key'), '')
                     if 'scheme=hwk' in sig_key_value.lower():
+                        scheme = "hwk"
                         logger.info(f"🔐 AAuth scheme: HWK (Header Web Key) - pseudonymous authentication")
                         set_attribute("auth.aauth.scheme", "hwk")
                     elif 'scheme=jwks' in sig_key_value.lower():
+                        scheme = "jwks"
                         logger.info(f"🔐 AAuth scheme: JWKS - identified agent")
                         set_attribute("auth.aauth.scheme", "jwks")
                     elif 'scheme=jwt' in sig_key_value.lower():
+                        scheme = "jwt"
                         logger.info(f"🔐 AAuth scheme: JWT - authorized agent")
                         set_attribute("auth.aauth.scheme", "jwt")
+                
+                # Verify the signature
+                if all(k.lower() in {h.lower() for h in aauth_headers.keys()} for k in ['signature-input', 'signature', 'signature-key']):
+                    try:
+                        # Get request info (method, URI, body) from middleware
+                        request_info = get_current_request_info()
+                        if request_info:
+                            method, uri, body_bytes = request_info
+                            
+                            # Extract signature header values (preserve original case)
+                            sig_input_header = next((v for k, v in aauth_headers.items() if k.lower() == 'signature-input'), '')
+                            sig_header = next((v for k, v in aauth_headers.items() if k.lower() == 'signature'), '')
+                            sig_key_header = next((v for k, v in aauth_headers.items() if k.lower() == 'signature-key'), '')
+                            
+                            if sig_input_header and sig_header and sig_key_header:
+                                logger.info(f"🔐 Verifying AAuth signature (scheme: {scheme or 'unknown'})")
+                                if DEBUG:
+                                    logger.debug(f"🔐 Verification params: method={method}, uri={uri}, body_len={len(body_bytes) if body_bytes else 0}")
+                                    logger.debug(f"🔐 Signature-Input: {sig_input_header[:150] if len(sig_input_header) > 150 else sig_input_header}")
+                                    logger.debug(f"🔐 Signature-Key: {sig_key_header[:150] if len(sig_key_header) > 150 else sig_key_header}")
+                                    logger.debug(f"🔐 Signature: {sig_header[:100] if len(sig_header) > 100 else sig_header}")
+                                    logger.debug(f"🔐 Headers keys: {list(headers.keys())}")
+                                    if body_bytes:
+                                        logger.debug(f"🔐 Body (first 200 bytes): {body_bytes[:200]}")
+                                
+                                # Normalize header names to lowercase for signature verification
+                                # The signature-input specifies lowercase header names (content-type, etc.)
+                                # but HTTP headers might have mixed case. Normalize to ensure matching.
+                                normalized_headers = {k.lower(): v for k, v in headers.items()}
+                                
+                                # Ensure signature-key header value matches the extracted value exactly
+                                # The signature base uses the value from headers dict, so it must match
+                                if 'signature-key' in normalized_headers:
+                                    if normalized_headers['signature-key'] != sig_key_header:
+                                        if DEBUG:
+                                            logger.warning(f"⚠️ Signature-Key header value mismatch in headers dict!")
+                                            logger.warning(f"⚠️   Headers dict has: {normalized_headers['signature-key'][:150]}")
+                                            logger.warning(f"⚠️   Extracted value: {sig_key_header[:150]}")
+                                        # Update to use the extracted value (should be the canonical one)
+                                        normalized_headers['signature-key'] = sig_key_header
+                                else:
+                                    # Add signature-key if missing
+                                    normalized_headers['signature-key'] = sig_key_header
+                                
+                                if DEBUG:
+                                    logger.debug(f"🔐 Normalized headers keys: {list(normalized_headers.keys())}")
+                                    # Log the exact signature-key value that will be used in signature base
+                                    sig_key_in_headers = normalized_headers.get('signature-key', '')
+                                    logger.debug(f"🔐 signature-key value from headers: {sig_key_in_headers[:150]}")
+                                    logger.debug(f"🔐 signature-key value from extracted header: {sig_key_header[:150]}")
+                                
+                                # Verify signature (for HWK scheme, public_key is extracted from signature_key_header)
+                                try:
+                                    is_valid = verify_signature(
+                                        method=method,
+                                        target_uri=uri,
+                                        headers=normalized_headers,
+                                        body=body_bytes,
+                                        signature_input_header=sig_input_header,
+                                        signature_header=sig_header,
+                                        signature_key_header=sig_key_header,
+                                        public_key=None,  # For HWK, extracted from signature_key_header
+                                        jwks_fetcher=None  # Not needed for HWK scheme
+                                    )
+                                    
+                                    if is_valid:
+                                        logger.info(f"✅ AAuth signature verification successful")
+                                        add_event("aauth_signature_verified", {"scheme": scheme, "valid": True})
+                                        set_attribute("auth.aauth.verified", True)
+                                        set_attribute("auth.aauth.verification_result", "valid")
+                                    else:
+                                        logger.error(f"❌ AAuth signature verification failed")
+                                        if DEBUG:
+                                            logger.debug(f"🔐 Verification returned False - signature mismatch or expired")
+                                        add_event("aauth_signature_verification_failed", {"scheme": scheme, "valid": False})
+                                        set_attribute("auth.aauth.verified", False)
+                                        set_attribute("auth.aauth.verification_result", "invalid")
+                                except Exception as verify_ex:
+                                    logger.error(f"❌ AAuth signature verification exception: {verify_ex}")
+                                    if DEBUG:
+                                        import traceback
+                                        logger.debug(traceback.format_exc())
+                                    add_event("aauth_signature_verification_exception", {"error": str(verify_ex)})
+                                    set_attribute("auth.aauth.verified", False)
+                                    set_attribute("auth.aauth.verification_result", f"exception: {str(verify_ex)}")
+                            else:
+                                logger.warning(f"⚠️ Missing required signature headers for verification")
+                                set_attribute("auth.aauth.verified", False)
+                                set_attribute("auth.aauth.verification_result", "missing_headers")
+                        else:
+                            logger.warning(f"⚠️ No request info available for signature verification")
+                            set_attribute("auth.aauth.verified", False)
+                            set_attribute("auth.aauth.verification_result", "no_request_info")
+                    except SignatureError as e:
+                        logger.error(f"❌ AAuth signature verification error: {e}")
+                        add_event("aauth_signature_verification_error", {"error": str(e)})
+                        set_attribute("auth.aauth.verified", False)
+                        set_attribute("auth.aauth.verification_result", f"error: {str(e)}")
+                        if DEBUG:
+                            import traceback
+                            logger.debug(traceback.format_exc())
+                    except Exception as e:
+                        logger.error(f"❌ Unexpected error during AAuth signature verification: {e}")
+                        add_event("aauth_signature_verification_exception", {"error": str(e)})
+                        set_attribute("auth.aauth.verified", False)
+                        set_attribute("auth.aauth.verification_result", f"exception: {str(e)}")
+                        if DEBUG:
+                            import traceback
+                            logger.debug(traceback.format_exc())
+                else:
+                    logger.warning(f"⚠️ Incomplete AAuth signature headers (missing required headers)")
+                    set_attribute("auth.aauth.verified", False)
+                    set_attribute("auth.aauth.verification_result", "incomplete_headers")
             else:
                 if DEBUG:
                     logger.debug(f"🔍 No AAuth signature headers found in request")
                 set_attribute("auth.aauth_present", False)
+                set_attribute("auth.aauth.verified", False)
         
         # Extract trace context from headers if available
         trace_context = None
         if headers:
             if DEBUG:
                 logger.debug(f"🔍 Extracting trace context from headers")
-                set_attribute("debug.headers_received", str(headers))
+            set_attribute("debug.headers_received", str(headers))
             
             trace_context = extract_context_from_headers(headers)
             if DEBUG:
                 logger.debug(f"🔍 Extracted trace context: {trace_context}")
-                set_attribute("debug.trace_context_extracted", str(trace_context))
+            set_attribute("debug.trace_context_extracted", str(trace_context))
             
             if trace_context:
                 add_event("trace_context_extracted_from_headers")

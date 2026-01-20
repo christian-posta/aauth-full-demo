@@ -117,13 +117,27 @@ class AAuthSigningInterceptor(ClientCallInterceptor):
                 body = body.encode('utf-8')
         elif 'json' in http_kwargs:
             import json
-            body = json.dumps(http_kwargs['json']).encode('utf-8')
+            # Serialize JSON ourselves to ensure exact bytes match what we sign
+            # Then pass as 'content' instead of 'json' so httpx doesn't re-serialize
+            body = json.dumps(http_kwargs['json'], separators=(',', ':'), ensure_ascii=True).encode('utf-8')
+            # Replace 'json' with 'content' to prevent httpx from re-serializing
+            http_kwargs['content'] = body
+            del http_kwargs['json']
             if 'Content-Type' not in headers:
                 headers['Content-Type'] = 'application/json'
         elif request_payload:
             # A2A SDK passes the JSON-RPC payload in request_payload
+            # Serialize JSON ourselves to ensure exact bytes match what we sign
             import json
-            body = json.dumps(request_payload).encode('utf-8')
+            body = json.dumps(request_payload, separators=(',', ':'), ensure_ascii=True).encode('utf-8')
+            # Ensure httpx uses our serialized bytes, not re-serialize
+            # If 'json' is in http_kwargs, replace it with 'content'
+            if 'json' in http_kwargs:
+                http_kwargs['content'] = body
+                del http_kwargs['json']
+            else:
+                # If no 'json' key, add 'content' so httpx uses our bytes
+                http_kwargs['content'] = body
             if 'Content-Type' not in headers:
                 headers['Content-Type'] = 'application/json'
             if settings.debug:
@@ -137,6 +151,12 @@ class AAuthSigningInterceptor(ClientCallInterceptor):
                     logger.debug(f"🔐 AAuth: Method: {method}, Body length: {len(body) if body else 0}")
                 
                 # Sign the request using AAuth HWK scheme
+                if settings.debug:
+                    logger.debug(f"🔐 AAuth: Signing with headers: {list(headers.keys())}")
+                    for k, v in headers.items():
+                        if k.lower() in ['content-type', 'content-digest', 'signature-key']:
+                            logger.debug(f"🔐 AAuth:   {k}: {v[:100] if len(v) > 100 else v}")
+                
                 sig_headers = sign_request(
                     method=method,
                     target_uri=str(url),
@@ -148,6 +168,11 @@ class AAuthSigningInterceptor(ClientCallInterceptor):
                 
                 # Add signature headers to the request
                 headers.update(sig_headers)
+                
+                if settings.debug:
+                    logger.debug(f"🔐 AAuth: Generated Signature-Input: {sig_headers.get('Signature-Input', '')[:150]}")
+                    logger.debug(f"🔐 AAuth: Generated Signature-Key: {sig_headers.get('Signature-Key', '')[:100]}")
+                    logger.debug(f"🔐 AAuth: Generated Signature: {sig_headers.get('Signature', '')[:100]}")
                 
                 logger.info(f"🔐 AAuth: Added signature headers to request")
                 if settings.debug:

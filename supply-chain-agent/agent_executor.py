@@ -15,8 +15,10 @@ from tracing_config import (
     span, add_event, set_attribute, extract_context_from_headers, 
     inject_context_to_headers, initialize_tracing
 )
-from http_headers_middleware import get_current_request_headers
+from http_headers_middleware import get_current_request_headers, get_current_request_info
 from aauth_interceptor import AAuthSigningInterceptor
+from aauth import verify_signature
+from aauth.errors import SignatureError
 
 # Configure logging
 logger = logging.getLogger(__name__)
@@ -43,7 +45,8 @@ class TracingInterceptor(ClientCallInterceptor):
         headers = http_kwargs.get('headers', {})
         headers.update(self.trace_headers)
         http_kwargs['headers'] = headers
-        print(f"🔗 TracingInterceptor: Injected headers: {self.trace_headers}")
+        if DEBUG:
+            logger.debug(f"🔗 TracingInterceptor: Injected headers: {self.trace_headers}")
         return request_payload, http_kwargs
 
 
@@ -69,7 +72,8 @@ class SupplyChainOptimizerAgent:
             "MARKET_ANALYSIS_AGENT_URL", 
             "http://localhost:9998/"
         )
-        print(f"🔗 Market Analysis Agent URL: {self.market_analysis_url}")
+        if DEBUG:
+            logger.debug(f"🔗 Market Analysis Agent URL: {self.market_analysis_url}")
         self.market_analysis_client = None
         # Note: JWT/OBO token exchange removed - now using AAuth HWK signing
 
@@ -150,17 +154,20 @@ class SupplyChainOptimizerAgent:
             try:
                 add_event("market_analysis_requested", {"request_text": request_text})
                 
-                print(f"🔄 Getting market analysis client...")
+                if DEBUG:
+                    logger.debug(f"🔄 Getting market analysis client...")
                 client = await self._get_market_analysis_client()
                 if client is None:
                     add_event("market_analysis_client_unavailable")
                     set_attribute("market_analysis.client_available", False)
-                    print(f"❌ No market analysis client available")
+                    if DEBUG:
+                        logger.debug(f"❌ No market analysis client available")
                     return "No market analysis provided"
                 
                 add_event("market_analysis_client_ready")
                 set_attribute("market_analysis.client_available", True)
-                print(f"✅ Market analysis client ready")
+                if DEBUG:
+                    logger.debug(f"✅ Market analysis client ready")
                 
                 # Create message for market analysis
                 message = create_text_message_object(
@@ -169,44 +176,52 @@ class SupplyChainOptimizerAgent:
                 )
                 
                 add_event("market_analysis_message_created", {"message_content": str(message)[:100]})
-                print(f"📤 Sending message to market analysis agent: {message}")
+                if DEBUG:
+                    logger.debug(f"📤 Sending message to market analysis agent: {message}")
                 
                 # Get response from market analysis agent
                 market_response = ""
                 async for event in client.send_message(message):
                     add_event("market_analysis_response_received", {"event_type": str(type(event))})
-                    print(f"📥 Received event: {type(event)}")
+                    if DEBUG:
+                        logger.debug(f"📥 Received event: {type(event)}")
                     if hasattr(event, 'content') and event.content:
                         if isinstance(event.content, str):
                             market_response += event.content
-                            print(f"📝 String content: {event.content[:50]}...")
+                            if DEBUG:
+                                logger.debug(f"📝 String content: {event.content[:50]}...")
                         elif isinstance(event.content, dict) and 'content' in event.content:
                             market_response += event.content['content']
-                            print(f"📝 Dict content: {event.content['content'][:50]}...")
+                            if DEBUG:
+                                logger.debug(f"📝 Dict content: {event.content['content'][:50]}...")
                     elif hasattr(event, 'text'):
                         market_response += event.text
-                        print(f"📝 Text attribute: {event.text[:50]}...")
+                        if DEBUG:
+                            logger.debug(f"📝 Text attribute: {event.text[:50]}...")
                     elif hasattr(event, 'parts') and event.parts:
                         # Handle parts structure
                         for part in event.parts:
                             if hasattr(part, 'root') and hasattr(part.root, 'text'):
                                 market_response += part.root.text
-                                print(f"📝 Part text: {part.root.text[:50]}...")
+                                if DEBUG:
+                                    logger.debug(f"📝 Part text: {part.root.text[:50]}...")
                     
                     # Just get the first response for now
                     break
                 
                 add_event("market_analysis_completed", {"response_length": len(market_response)})
                 set_attribute("market_analysis.response_length", len(market_response))
-                print(f"📊 Final market response: {market_response[:100]}...")
+                if DEBUG:
+                    logger.debug(f"📊 Final market response: {market_response[:100]}...")
                 return market_response if market_response else "No market analysis provided"
                 
             except Exception as e:
                 add_event("market_analysis_error", {"error": str(e)})
                 set_attribute("market_analysis.error", str(e))
-                print(f"❌ Error getting market analysis: {e}")
-                import traceback
-                traceback.print_exc()
+                logger.error(f"❌ Error getting market analysis: {e}")
+                if DEBUG:
+                    import traceback
+                    logger.debug(traceback.format_exc())
                 return "No market analysis provided"
 
     async def invoke(self, request_text: str = "", trace_context: Any = None) -> str:
@@ -234,13 +249,16 @@ class SupplyChainOptimizerAgent:
             if "perform market analysis" in request_text.lower():
                 add_event("market_analysis_requested")
                 set_attribute("market_analysis.requested", True)
-                print(f"🔍 Market analysis requested for: {request_text}")
+                if DEBUG:
+                    logger.debug(f"🔍 Market analysis requested for: {request_text}")
                 market_analysis = await self._get_market_analysis(request_text, trace_context)
-                print(f"📊 Market analysis result: {market_analysis[:100]}...")
+                if DEBUG:
+                    logger.debug(f"📊 Market analysis result: {market_analysis[:100]}...")
             else:
                 add_event("market_analysis_not_requested")
                 set_attribute("market_analysis.requested", False)
-                print(f"📋 No market analysis requested for: {request_text}")
+                if DEBUG:
+                    logger.debug(f"📋 No market analysis requested for: {request_text}")
             
             response = self._format_response(analysis, recommendations, market_analysis)
             add_event("response_formatted", {"response_length": len(response)})
@@ -439,7 +457,7 @@ class SupplyChainOptimizerExecutor(AgentExecutor):
                 logger.debug(f"🔍 No headers available for JWT extraction")
             set_attribute("auth.jwt_extracted", False)
         
-        # Log AAuth signature headers if present (for future verification)
+        # Verify AAuth signature headers if present
         if headers:
             aauth_headers = {}
             for key, value in headers.items():
@@ -459,22 +477,181 @@ class SupplyChainOptimizerExecutor(AgentExecutor):
                         logger.debug(f"🔐 AAuth {header_name}: {display_value}")
                         set_attribute(f"auth.aauth.{header_name.lower().replace('-', '_')}", header_value[:200])
                 
-                # Log if this appears to be HWK scheme
+                # Detect signature scheme
+                scheme = None
                 if 'signature-key' in {k.lower() for k in aauth_headers.keys()}:
                     sig_key_value = next((v for k, v in aauth_headers.items() if k.lower() == 'signature-key'), '')
                     if 'scheme=hwk' in sig_key_value.lower():
+                        scheme = "hwk"
                         logger.info(f"🔐 AAuth scheme: HWK (Header Web Key) - pseudonymous authentication")
                         set_attribute("auth.aauth.scheme", "hwk")
                     elif 'scheme=jwks' in sig_key_value.lower():
+                        scheme = "jwks"
                         logger.info(f"🔐 AAuth scheme: JWKS - identified agent")
                         set_attribute("auth.aauth.scheme", "jwks")
                     elif 'scheme=jwt' in sig_key_value.lower():
+                        scheme = "jwt"
                         logger.info(f"🔐 AAuth scheme: JWT - authorized agent")
                         set_attribute("auth.aauth.scheme", "jwt")
+                
+                # Verify the signature
+                if all(k.lower() in {h.lower() for h in aauth_headers.keys()} for k in ['signature-input', 'signature', 'signature-key']):
+                    try:
+                        # Get request info (method, URI, body) from middleware
+                        request_info = get_current_request_info()
+                        if request_info:
+                            method, uri, body_bytes = request_info
+                            
+                            # Extract signature header values (preserve original case)
+                            sig_input_header = next((v for k, v in aauth_headers.items() if k.lower() == 'signature-input'), '')
+                            sig_header = next((v for k, v in aauth_headers.items() if k.lower() == 'signature'), '')
+                            sig_key_header = next((v for k, v in aauth_headers.items() if k.lower() == 'signature-key'), '')
+                            
+                            # Log exact header values that will be used in signature base
+                            if DEBUG:
+                                logger.debug(f"🔐 Headers dict being passed to verify_signature:")
+                                for k, v in headers.items():
+                                    if k.lower() in ['content-type', 'content-digest', 'signature-key']:
+                                        logger.debug(f"🔐   '{k}': '{v[:100] if len(v) > 100 else v}'")
+                            
+                            if sig_input_header and sig_header and sig_key_header:
+                                logger.info(f"🔐 Verifying AAuth signature (scheme: {scheme or 'unknown'})")
+                                if DEBUG:
+                                    logger.debug(f"🔐 Verification params: method={method}, uri={uri}, body_len={len(body_bytes) if body_bytes else 0}")
+                                    logger.debug(f"🔐 Signature-Input: {sig_input_header[:150] if len(sig_input_header) > 150 else sig_input_header}")
+                                    logger.debug(f"🔐 Signature-Key: {sig_key_header[:150] if len(sig_key_header) > 150 else sig_key_header}")
+                                    logger.debug(f"🔐 Signature: {sig_header[:100] if len(sig_header) > 100 else sig_header}")
+                                    logger.debug(f"🔐 Headers keys: {list(headers.keys())}")
+                                    # Log specific headers used in signature base
+                                    content_type = next((v for k, v in headers.items() if k.lower() == 'content-type'), None)
+                                    content_digest = next((v for k, v in headers.items() if k.lower() == 'content-digest'), None)
+                                    if content_type:
+                                        logger.debug(f"🔐 Content-Type header: {content_type}")
+                                    if content_digest:
+                                        logger.debug(f"🔐 Content-Digest header: {content_digest[:100] if len(content_digest) > 100 else content_digest}")
+                                    if body_bytes:
+                                        logger.debug(f"🔐 Body (first 200 bytes): {body_bytes[:200]}")
+                                        # Calculate what Content-Digest should be
+                                        import hashlib
+                                        import base64
+                                        digest = hashlib.sha256(body_bytes).digest()
+                                        digest_b64 = base64.b64encode(digest).decode('ascii')
+                                        expected_digest = f"sha-256=:{digest_b64}:"
+                                        logger.debug(f"🔐 Expected Content-Digest: {expected_digest}")
+                                        if content_digest and content_digest != expected_digest:
+                                            logger.warning(f"⚠️ Content-Digest mismatch! Received: {content_digest}, Expected: {expected_digest}")
+                                
+                                # Verify signature (for HWK scheme, public_key is extracted from signature_key_header)
+                                try:
+                                    # Log signature base components for debugging
+                                    if DEBUG:
+                                        from urllib.parse import urlparse
+                                        parsed_uri = urlparse(uri)
+                                        logger.debug(f"🔐 Signature base components:")
+                                        logger.debug(f"🔐   @method: {method}")
+                                        logger.debug(f"🔐   @authority: {parsed_uri.netloc}")
+                                        logger.debug(f"🔐   @path: {parsed_uri.path or '/'}")
+                                        if parsed_uri.query:
+                                            logger.debug(f"🔐   @query: {parsed_uri.query}")
+                                        content_type_val = next((v for k, v in headers.items() if k.lower() == 'content-type'), None)
+                                        content_digest_val = next((v for k, v in headers.items() if k.lower() == 'content-digest'), None)
+                                        if content_type_val:
+                                            logger.debug(f"🔐   content-type: {content_type_val}")
+                                        if content_digest_val:
+                                            logger.debug(f"🔐   content-digest: {content_digest_val[:80]}...")
+                                        logger.debug(f"🔐   signature-key: {sig_key_header[:80]}...")
+                                    
+                                    # Normalize header names to lowercase for signature verification
+                                    # The signature-input specifies lowercase header names (content-type, etc.)
+                                    # but HTTP headers might have mixed case. Normalize to ensure matching.
+                                    normalized_headers = {k.lower(): v for k, v in headers.items()}
+                                    
+                                    # Ensure signature-key header value matches the extracted value exactly
+                                    # The signature base uses the value from headers dict, so it must match
+                                    if 'signature-key' in normalized_headers:
+                                        if normalized_headers['signature-key'] != sig_key_header:
+                                            if DEBUG:
+                                                logger.warning(f"⚠️ Signature-Key header value mismatch in headers dict!")
+                                                logger.warning(f"⚠️   Headers dict has: {normalized_headers['signature-key'][:150]}")
+                                                logger.warning(f"⚠️   Extracted value: {sig_key_header[:150]}")
+                                            # Update to use the extracted value (should be the canonical one)
+                                            normalized_headers['signature-key'] = sig_key_header
+                                    else:
+                                        # Add signature-key if missing
+                                        normalized_headers['signature-key'] = sig_key_header
+                                    
+                                    if DEBUG:
+                                        logger.debug(f"🔐 Normalized headers keys: {list(normalized_headers.keys())}")
+                                        # Log the exact signature-key value that will be used in signature base
+                                        sig_key_in_headers = normalized_headers.get('signature-key', '')
+                                        logger.debug(f"🔐 signature-key value from headers: {sig_key_in_headers[:150]}")
+                                        logger.debug(f"🔐 signature-key value from extracted header: {sig_key_header[:150]}")
+                                    
+                                    is_valid = verify_signature(
+                                        method=method,
+                                        target_uri=uri,
+                                        headers=normalized_headers,
+                                        body=body_bytes,
+                                        signature_input_header=sig_input_header,
+                                        signature_header=sig_header,
+                                        signature_key_header=sig_key_header,
+                                        public_key=None,  # For HWK, extracted from signature_key_header
+                                        jwks_fetcher=None  # Not needed for HWK scheme
+                                    )
+                                    
+                                    if is_valid:
+                                        logger.info(f"✅ AAuth signature verification successful")
+                                        add_event("aauth_signature_verified", {"scheme": scheme, "valid": True})
+                                        set_attribute("auth.aauth.verified", True)
+                                        set_attribute("auth.aauth.verification_result", "valid")
+                                    else:
+                                        logger.error(f"❌ AAuth signature verification failed")
+                                        if DEBUG:
+                                            logger.debug(f"🔐 Verification returned False - signature mismatch or expired")
+                                        add_event("aauth_signature_verification_failed", {"scheme": scheme, "valid": False})
+                                        set_attribute("auth.aauth.verified", False)
+                                        set_attribute("auth.aauth.verification_result", "invalid")
+                                except Exception as verify_ex:
+                                    logger.error(f"❌ AAuth signature verification exception: {verify_ex}")
+                                    if DEBUG:
+                                        import traceback
+                                        logger.debug(traceback.format_exc())
+                                    add_event("aauth_signature_verification_exception", {"error": str(verify_ex)})
+                                    set_attribute("auth.aauth.verified", False)
+                                    set_attribute("auth.aauth.verification_result", f"exception: {str(verify_ex)}")
+                            else:
+                                logger.warning(f"⚠️ Missing required signature headers for verification")
+                                set_attribute("auth.aauth.verified", False)
+                                set_attribute("auth.aauth.verification_result", "missing_headers")
+                        else:
+                            logger.warning(f"⚠️ No request info available for signature verification")
+                            set_attribute("auth.aauth.verified", False)
+                            set_attribute("auth.aauth.verification_result", "no_request_info")
+                    except SignatureError as e:
+                        logger.error(f"❌ AAuth signature verification error: {e}")
+                        add_event("aauth_signature_verification_error", {"error": str(e)})
+                        set_attribute("auth.aauth.verified", False)
+                        set_attribute("auth.aauth.verification_result", f"error: {str(e)}")
+                        if DEBUG:
+                            import traceback
+                            logger.debug(traceback.format_exc())
+                    except Exception as e:
+                        logger.error(f"❌ Unexpected error during AAuth signature verification: {e}")
+                        add_event("aauth_signature_verification_exception", {"error": str(e)})
+                        set_attribute("auth.aauth.verified", False)
+                        set_attribute("auth.aauth.verification_result", f"exception: {str(e)}")
+                        if DEBUG:
+                            import traceback
+                            logger.debug(traceback.format_exc())
+                else:
+                    logger.warning(f"⚠️ Incomplete AAuth signature headers (missing required headers)")
+                    set_attribute("auth.aauth.verified", False)
+                    set_attribute("auth.aauth.verification_result", "incomplete_headers")
             else:
                 if DEBUG:
                     logger.debug(f"🔍 No AAuth signature headers found in request")
                 set_attribute("auth.aauth_present", False)
+                set_attribute("auth.aauth.verified", False)
         
         # Extract trace context from headers if available
         trace_context = None
@@ -527,25 +704,30 @@ class SupplyChainOptimizerExecutor(AgentExecutor):
         """Execute with tracing support."""
         # Extract request text from context if available
         request_text = ""
-        print(f"🔍 Executor: Context type: {type(context)}")
-        print(f"🔍 Executor: Context attributes: {dir(context)}")
+        if DEBUG:
+            logger.debug(f"🔍 Executor: Context type: {type(context)}")
+            logger.debug(f"🔍 Executor: Context attributes: {dir(context)}")
         
         # Method 1: Try to get from message attribute
         if hasattr(context, 'message') and context.message:
-            print(f"🔍 Executor: Found message: {context.message}")
+            if DEBUG:
+                logger.debug(f"🔍 Executor: Found message: {context.message}")
             if hasattr(context.message, 'parts') and context.message.parts:
                 for part in context.message.parts:
                     if hasattr(part, 'root') and hasattr(part.root, 'text'):
                         request_text = part.root.text
-                        print(f"🔍 Executor: Found text in message parts: {request_text}")
+                        if DEBUG:
+                            logger.debug(f"🔍 Executor: Found text in message parts: {request_text}")
                         break
         
         # Method 2: Try to get from current_task.user_input
         if not request_text and hasattr(context, 'current_task') and context.current_task:
-            print(f"🔍 Executor: Found current_task: {context.current_task}")
+            if DEBUG:
+                logger.debug(f"🔍 Executor: Found current_task: {context.current_task}")
             if hasattr(context.current_task, 'user_input') and context.current_task.user_input:
                 user_input = context.current_task.user_input
-                print(f"🔍 Executor: User input from current_task: {user_input}")
+                if DEBUG:
+                    logger.debug(f"🔍 Executor: User input from current_task: {user_input}")
                 if isinstance(user_input, str):
                     request_text = user_input
                 elif isinstance(user_input, list) and len(user_input) > 0:
@@ -555,47 +737,56 @@ class SupplyChainOptimizerExecutor(AgentExecutor):
         if not request_text and hasattr(context, 'get_user_input'):
             try:
                 user_input = context.get_user_input()
-                print(f"🔍 Executor: get_user_input result: {user_input}")
+                if DEBUG:
+                    logger.debug(f"🔍 Executor: get_user_input result: {user_input}")
                 if user_input:
                     if isinstance(user_input, str):
                         request_text = user_input
                     elif isinstance(user_input, list) and len(user_input) > 0:
                         request_text = user_input[0]
             except Exception as e:
-                print(f"🔍 Executor: Error calling get_user_input: {e}")
+                if DEBUG:
+                    logger.debug(f"🔍 Executor: Error calling get_user_input: {e}")
                 add_event("get_user_input_error", {"error": str(e)})
         
         # Method 4: Try to get from configuration or params
         if not request_text and hasattr(context, 'configuration'):
             config = context.configuration
-            print(f"🔍 Executor: Configuration: {config}")
+            if DEBUG:
+                logger.debug(f"🔍 Executor: Configuration: {config}")
             if hasattr(config, 'user_input'):
                 request_text = config.user_input
-                print(f"🔍 Executor: User input from config: {request_text}")
+                if DEBUG:
+                    logger.debug(f"🔍 Executor: User input from config: {request_text}")
         
         # Method 5: Try to get from request.text and request.content (new approach)
         if not request_text and hasattr(context, 'request') and context.request:
             if hasattr(context.request, 'text'):
                 request_text = context.request.text
-                print(f"🔍 Executor: Found text in context.request.text: {request_text}")
+                if DEBUG:
+                    logger.debug(f"🔍 Executor: Found text in context.request.text: {request_text}")
             elif hasattr(context.request, 'content'):
                 # Handle different content formats
                 content = context.request.content
                 if isinstance(content, str):
                     request_text = content
-                    print(f"🔍 Executor: Found string content in context.request.content: {request_text}")
+                    if DEBUG:
+                        logger.debug(f"🔍 Executor: Found string content in context.request.content: {request_text}")
                 elif isinstance(content, dict) and 'content' in content:
                     request_text = content['content']
-                    print(f"🔍 Executor: Found dict content in context.request.content: {request_text}")
+                    if DEBUG:
+                        logger.debug(f"🔍 Executor: Found dict content in context.request.content: {request_text}")
         
         if not request_text:
-            print(f"🔍 Executor: No request found in context, using default")
+            if DEBUG:
+                logger.debug(f"🔍 Executor: No request found in context, using default")
             request_text = "optimize laptop supply chain"  # Default fallback
             add_event("using_default_request")
         
         set_attribute("executor.request_text", request_text)
         add_event("executor_request_extracted", {"request_text": request_text})
-        print(f"🔍 Executor: Final request_text: '{request_text}'")
+        if DEBUG:
+            logger.debug(f"🔍 Executor: Final request_text: '{request_text}'")
         
         try:
             # Note: JWT/STS token exchange removed - market-analysis-agent calls now use AAuth HWK signing

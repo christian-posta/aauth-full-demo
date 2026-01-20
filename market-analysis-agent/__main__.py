@@ -7,8 +7,12 @@ The agent provides market analysis capabilities for laptop demand forecasting an
 """
 
 import os
-import uvicorn
+# Load environment variables FIRST, before any imports that read env vars
+# This is critical because http_headers_middleware reads CANONICAL_AUTHORITY at module load time
 from dotenv import load_dotenv
+load_dotenv()
+
+import uvicorn
 
 from a2a.server.apps import A2AStarletteApplication
 from a2a.server.request_handlers import DefaultRequestHandler
@@ -24,9 +28,6 @@ from a2a.types import (
 )
 from agent_executor import MarketAnalysisAgentExecutor
 from tracing_config import initialize_tracing
-
-# Load environment variables
-load_dotenv()
 
 
 if __name__ == '__main__':

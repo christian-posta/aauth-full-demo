@@ -17,8 +17,33 @@ from opentelemetry.trace import Status, StatusCode
 from opentelemetry.sdk.trace import ReadableSpan
 from opentelemetry.sdk.trace.export import SpanExporter, SpanExportResult
 
-# Configure logging
-logging.basicConfig(level=logging.INFO)
+# Configure logging - respect LOG_LEVEL and DEBUG environment variables
+# Note: load_dotenv() is called in __main__.py before this module is imported
+def get_log_level():
+    """Get logging level from LOG_LEVEL env var, or fall back to DEBUG flag."""
+    log_level_str = os.getenv("LOG_LEVEL", "").upper()
+    if log_level_str:
+        # Map string levels to logging constants
+        level_map = {
+            "DEBUG": logging.DEBUG,
+            "INFO": logging.INFO,
+            "WARNING": logging.WARNING,
+            "WARN": logging.WARNING,
+            "ERROR": logging.ERROR,
+            "CRITICAL": logging.CRITICAL,
+        }
+        return level_map.get(log_level_str, logging.INFO)
+    else:
+        # Fall back to DEBUG flag
+        return logging.DEBUG if os.getenv("DEBUG", "false").lower() == "true" else logging.INFO
+
+log_level = get_log_level()
+# Only configure if not already configured (basicConfig can only be called once)
+if not logging.root.handlers:
+    logging.basicConfig(level=log_level)
+else:
+    # If already configured, set level on root logger
+    logging.root.setLevel(log_level)
 logger = logging.getLogger(__name__)
 
 class NoisySpanFilter(SpanExporter):
