@@ -1,0 +1,87 @@
+# yaml-language-server: $schema=../../schema/local.json
+config:
+  tracing:
+    otlpEndpoint: http://localhost:4317
+    randomSampling: true
+    fields:
+      add:
+        # Add JWT actor claim
+        authenticated: 'jwt.sub != null'
+        jwt_act: 'jwt.act'
+        user_id: 'jwt.name'
+        token_issuer: 'jwt.iss'
+        token_audience: 'jwt.aud'
+        # Useful in environments where identity is included in the transport, ie SPIFFE
+        # source_identity: 'source.identity.trustDomain + "/" + source.identity.namespace + "/" + source.identity.serviceAccount'
+        # source_trust_domain: 'source.identity.trustDomain'
+        # source_namespace: 'source.identity.namespace'
+        # source_service_account: 'source.identity.serviceAccount'
+  logging:
+    fields:
+      add:
+        # Add JWT actor claim
+        authenticated: 'jwt.sub != null'
+        jwt_act: "jwt.act"
+        user_id: 'jwt.name'
+        token_issuer: 'jwt.iss'
+        token_audience: 'jwt.aud'
+binds:
+- port: 3000
+  listeners:
+  - hostname: "supply-chain-agent.localhost"
+    routes:
+    - policies:
+        # Mark this route as a2a traffic
+        a2a: {}
+        backendAuth:
+          passthrough: {}
+        cors:
+          allowOrigins:
+            - "*"
+          allowHeaders:
+            - "*"
+      backends:
+      - host: localhost:9999
+
+  - hostname: "market-analysis-agent.localhost"
+    routes:
+    - policies:
+        # Mark this route as a2a traffic
+        a2a: {}
+        backendAuth:
+          passthrough: {}             
+        cors:
+          allowOrigins:
+            - "*"
+          allowHeaders:
+            - "*"
+      backends:
+      - host: localhost:9998      
+
+  - routes:
+    - name: general-mcp
+      matches:
+      - path:
+          pathPrefix: /general/mcp
+      policies:
+        cors:
+          allowOrigins:
+            - "*"
+          allowHeaders:
+            - "*"
+      backends:
+      - mcp:
+          targets:
+          - name: time
+            stdio:
+              cmd: uvx
+              args: ["mcp-server-time"]
+          - name: everything
+            stdio:
+              cmd: npx
+              args: ["@modelcontextprotocol/server-everything"]
+          - name: mcp-sequential-thinking
+            stdio:
+              cmd: npx
+              args: ["@modelcontextprotocol/server-sequential-thinking"]              
+    
