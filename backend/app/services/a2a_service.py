@@ -13,8 +13,7 @@ from a2a.client import minimal_agent_card
 from app.config import settings
 from app.models import OptimizationRequest, OptimizationProgress, OptimizationResults
 from app.tracing_config import span, add_event, set_attribute, extract_context_from_headers
-from app.services.tracing_interceptor import TracingInterceptor
-from app.services.agent_sts_service import agent_sts_service
+from app.services.aauth_interceptor import AAuthSigningInterceptor
 
 
 class A2AService:
@@ -30,36 +29,24 @@ class A2AService:
         )
     
     async def _create_client(self, trace_context: Any = None, auth_token: str = None) -> tuple[Any, httpx.AsyncClient]:
-        """Create A2A client and HTTP client with tracing support and token exchange"""
+        """Create A2A client and HTTP client with AAuth HWK signing.
+        
+        Note: auth_token parameter is kept for API compatibility but is no longer
+        used for STS token exchange. Authentication is now handled via AAuth HWK
+        request signing.
+        """
         with span("a2a_service.create_client", {
             "agent_url": self.agent_url,
             "has_trace_context": trace_context is not None,
-            "has_auth_token": auth_token is not None
+            "auth_method": "aauth_hwk"
         }) as span_obj:
             
             print(f"🔧 Creating A2A client for URL: {self.agent_url}")
-            add_event("creating_a2a_client", {"agent_url": self.agent_url})
-            
-            # Exchange access token for OBO token if provided
-            obo_token = None
-            if auth_token:
-                print(f"🔄 Exchanging access token for OBO token...")
-                obo_token = await agent_sts_service.exchange_token(
-                    access_token=auth_token,
-                    resource="supply-chain-agent",
-                    actor_token=settings.backend_spiffe_id
-                )
-                
-                if obo_token:
-                    print(f"✅ Token exchange successful, using OBO token for agent authentication")
-                    add_event("token_exchange_successful_for_client")
-                else:
-                    print(f"⚠️ Token exchange failed, falling back to original access token")
-                    add_event("token_exchange_failed_fallback")
-                    obo_token = auth_token  # Fallback to original token
-            else:
-                print(f"⚠️ No auth token provided, proceeding without authentication")
-                add_event("no_auth_token_provided")
+            print(f"🔐 Using AAuth HWK signing for request authentication")
+            add_event("creating_a2a_client", {
+                "agent_url": self.agent_url,
+                "auth_method": "aauth_hwk"
+            })
             
             httpx_client = httpx.AsyncClient(timeout=self.timeout)
             print("✅ HTTPX client created")
@@ -87,21 +74,16 @@ class A2AService:
             print(f"✅ Agent card created: {agent_card}")
             add_event("agent_card_created", {"agent_url": self.agent_url})
             
-            # Create auth token headers for agent authentication
-            auth_token_headers = {}
-            if obo_token:
-                auth_token_headers["Authorization"] = f"Bearer {obo_token}"
-                print("🔐 OBO token added to headers for agent authentication")
-                add_event("obo_token_added_to_headers")
+            # Create AAuth signing interceptor
+            # This signs all outgoing requests with HTTP Message Signatures (scheme=hwk)
+            aauth_interceptor = AAuthSigningInterceptor()
+            print("🔐 AAuth signing interceptor created")
+            add_event("aauth_interceptor_created")
             
-            # Create tracing interceptor with auth token headers
-            tracing_interceptor = TracingInterceptor(trace_headers=auth_token_headers)
-            add_event("tracing_interceptor_created")
-            
-            # Create client with tracing interceptor
-            client = factory.create(agent_card, interceptors=[tracing_interceptor])
-            print("✅ A2A client created with tracing and OBO token authentication")
-            add_event("a2a_client_created_with_tracing_and_obo_token")
+            # Create client with AAuth signing interceptor
+            client = factory.create(agent_card, interceptors=[aauth_interceptor])
+            print("✅ A2A client created with AAuth HWK signing")
+            add_event("a2a_client_created_with_aauth_signing")
             
             return client, httpx_client
     
@@ -367,35 +349,26 @@ class A2AService:
         return False
     
     async def test_connection(self, auth_token: str = None) -> Dict[str, Any]:
-        """Test connection to the A2A agent with tracing support and OBO token authentication"""
+        """Test connection to the A2A agent with AAuth HWK signing.
+        
+        Note: auth_token parameter is kept for API compatibility but is no longer
+        used. Authentication is handled via AAuth HWK request signing.
+        """
         with span("a2a_service.test_connection", {
             "agent_url": self.agent_url,
-            "has_auth_token": auth_token is not None
+            "auth_method": "aauth_hwk"
         }) as span_obj:
             
             try:
-                add_event("connection_test_started", {"agent_url": self.agent_url})
+                add_event("connection_test_started", {
+                    "agent_url": self.agent_url,
+                    "auth_method": "aauth_hwk"
+                })
                 
-                # Exchange access token for OBO token if provided
-                obo_token = None
-                if auth_token:
-                    print(f"🔄 Exchanging access token for OBO token for connection test...")
-                    obo_token = await agent_sts_service.exchange_token(
-                        access_token=auth_token,
-                        resource="supply-chain-agent",
-                        actor_token=settings.backend_spiffe_id
-                    )
-                    
-                    if obo_token:
-                        print(f"✅ Token exchange successful for connection test")
-                        add_event("token_exchange_successful_for_test")
-                    else:
-                        print(f"⚠️ Token exchange failed for connection test, using original token")
-                        add_event("token_exchange_failed_for_test")
-                        obo_token = auth_token  # Fallback to original token
+                print(f"🔐 Testing connection with AAuth HWK signing...")
                 
-                # Create a simple test client
-                client, httpx_client = await self._create_client(auth_token=obo_token)
+                # Create a simple test client with AAuth signing
+                client, httpx_client = await self._create_client()
                 
                 # Test with a simple message
                 test_message = create_text_message_object(
@@ -420,7 +393,8 @@ class A2AService:
                     return {
                         "status": "connected",
                         "url": self.agent_url,
-                        "message": "Successfully connected to A2A agent"
+                        "message": "Successfully connected to A2A agent with AAuth HWK signing",
+                        "auth_method": "aauth_hwk"
                     }
                 else:
                     add_event("connection_test_no_response")

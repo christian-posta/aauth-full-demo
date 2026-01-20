@@ -28,7 +28,10 @@ from tracing_config import (
     span, add_event, set_attribute, extract_context_from_headers, 
     inject_context_to_headers, initialize_tracing
 )
-from agent_sts_service import agent_sts_service
+from http_headers_middleware import get_current_request_headers
+
+# Check DEBUG mode from environment
+DEBUG = os.getenv("DEBUG", "false").lower() == "true"
 
 # Load environment variables
 load_dotenv()
@@ -52,8 +55,7 @@ class MarketAnalysisAgent:
         
         self.policies = market_analysis_policies
         self.analysis_history = []
-        self.jwt_token: str | None = None  # Initialize jwt_token attribute
-        self.exchanged_obo_token: str | None = None  # Store exchanged OBO token for MCP server
+        # Note: JWT/OBO token attributes removed - authentication now handled via AAuth HWK signing
 
     async def invoke(self, request_text: str = "") -> str:
         """Main entry point for market analysis requests."""
@@ -116,20 +118,12 @@ class MarketAnalysisAgent:
         return delegation_request
 
     async def _discover_mcp_tools(self) -> List[Dict[str, Any]]:
-        """Discover available tools from MCP servers."""
+        """Discover available tools from MCP servers.
+        
+        Note: JWT token passing removed - MCP authentication should be handled via AAuth or other mechanisms.
+        """
         try:
-            # Pass exchanged OBO token to MCP client if available
-            mcp_client_kwargs = {}
-            if self.exchanged_obo_token:
-                mcp_client_kwargs['jwt_token'] = self.exchanged_obo_token
-                print(f"🔐 Passing exchanged OBO token to MCP client for authenticated calls")
-                print(f"🔐 Exchanged token length: {len(self.exchanged_obo_token)} characters")
-                print(f"🔐 Exchanged token first 50 chars: {self.exchanged_obo_token[:50]}...")
-            elif self.jwt_token:
-                mcp_client_kwargs['jwt_token'] = self.jwt_token
-                print(f"⚠️ Using original JWT token for MCP client (no exchange available)")
-            
-            async with MCPClient(**mcp_client_kwargs) as mcp_client:
+            async with MCPClient() as mcp_client:
                 tools = await mcp_client.discover_tools()
                 return tools
         except Exception as e:
@@ -228,34 +222,7 @@ Consider integrating with procurement systems for automated order processing.
         return response
 
 
-class JWTInterceptor(ClientCallInterceptor):
-    """Interceptor that injects JWT authentication into HTTP requests."""
-    
-    def __init__(self, jwt_token: str):
-        self.jwt_token = jwt_token
-    
-    async def intercept(
-        self,
-        method_name: str,
-        request_payload: dict[str, Any],
-        http_kwargs: dict[str, Any],
-        agent_card: Any | None,
-        context: ClientCallContext | None,
-    ) -> tuple[dict[str, Any], dict[str, Any]]:
-        """Inject JWT authorization header into the HTTP request."""
-        headers = http_kwargs.get('headers', {})
-        
-        # Add Authorization header with Bearer token
-        headers['Authorization'] = f'Bearer {self.jwt_token}'
-        
-        # Update the headers in http_kwargs
-        http_kwargs['headers'] = headers
-        
-        print(f"🔐 JWTInterceptor: Injected Authorization header with Bearer token")
-        print(f"🔐 Token length: {len(self.jwt_token)} characters")
-        print(f"🔐 Token first 50 chars: {self.jwt_token[:50]}...")
-        
-        return request_payload, http_kwargs
+## JWTInterceptor removed - authentication now handled via AAuth HWK signing from supply-chain-agent
 
 
 class MarketAnalysisAgentExecutor(AgentExecutor):
@@ -269,135 +236,105 @@ class MarketAnalysisAgentExecutor(AgentExecutor):
         context: RequestContext,
         event_queue: EventQueue,
     ) -> None:
-        # Debug: Inspect the RequestContext object
-        print(f"🔍 DEBUG: RequestContext type: {type(context)}")
-        print(f"🔍 DEBUG: RequestContext dir: {dir(context)}")
-        print(f"🔍 DEBUG: RequestContext attributes: {[attr for attr in dir(context) if not attr.startswith('_')]}")
+        # Get HTTP headers from our middleware's context variable
+        # The A2A SDK doesn't expose HTTP headers through RequestContext, so we use
+        # our HTTPHeadersCaptureMiddleware to capture them at the HTTP layer
+        headers = get_current_request_headers()
         
-        # Check for headers in different possible locations
-        headers = None
-        if hasattr(context, 'headers'):
-            headers = context.headers
-            print(f"✅ Found headers in context.headers: {headers}")
-        elif hasattr(context, 'call_context') and hasattr(context.call_context, 'state'):
-            # Check if headers are in call_context.state (this is where A2A stores them)
-            state = context.call_context.state
-            if 'headers' in state:
-                headers = state['headers']
-                print(f"✅ Found headers in context.call_context.state['headers']: {headers}")
-            else:
-                print(f"❌ No 'headers' key in call_context.state")
-                print(f"🔍 Available state keys: {list(state.keys())}")
-        elif hasattr(context, 'metadata'):
-            metadata = context.metadata
-            print(f"✅ Found metadata: {metadata}")
-            # Check if trace headers are in metadata
-            if metadata and isinstance(metadata, dict):
-                trace_headers = {}
-                for key, value in metadata.items():
-                    if key.lower() in ['traceparent', 'tracestate', 'trace-context']:
-                        trace_headers[key] = value
-                if trace_headers:
-                    print(f"✅ Found trace headers in metadata: {trace_headers}")
-                    headers = trace_headers
-                else:
-                    print(f"❌ No trace headers found in metadata")
-                    # Let's see what's actually in metadata
-                    print(f"🔍 Metadata keys: {list(metadata.keys())}")
-            else:
-                print(f"❌ Metadata is not a dict: {type(metadata)}")
-        elif hasattr(context, 'request') and hasattr(context.request, 'headers'):
-            headers = context.request.headers
-            print(f"✅ Found headers in context.request.headers: {headers}")
-        else:
-            print(f"❌ No headers found in any expected location")
-            # Let's see what we do have
-            if hasattr(context, 'request'):
-                print(f"🔍 context.request type: {type(context.request)}")
-                print(f"🔍 context.request dir: {dir(context.request)}")
-                if hasattr(context.request, 'metadata'):
-                    print(f"🔍 context.request.metadata: {context.request.metadata}")
-            if hasattr(context, 'call_context'):
-                print(f"🔍 context.call_context type: {type(context.call_context)}")
-                print(f"🔍 context.call_context dir: {dir(context.call_context)}")
-                if hasattr(context.call_context, 'state'):
-                    print(f"🔍 context.call_context.state: {context.call_context.state}")
-            if hasattr(context, 'metadata'):
-                print(f"🔍 context.metadata type: {type(context.metadata)}")
-                print(f"🔍 context.metadata dir: {dir(context.metadata)}")
-                print(f"🔍 context.metadata content: {context.metadata}")
-        
-        # Extract JWT token from Authorization header if available
-        jwt_token = None
         if headers:
-            # Look for Authorization header with Bearer token
-            auth_header = None
-            for key, value in headers.items():
-                if key.lower() == 'authorization':
-                    auth_header = value
-                    break
-            
-            if auth_header and auth_header.startswith('Bearer '):
-                jwt_token = auth_header[7:]  # Remove 'Bearer ' prefix
-                print(f"🔐 JWT token extracted from Authorization header")
-                print(f"🔐 Full JWT token: {jwt_token}")
-                print(f"🔐 JWT token length: {len(jwt_token)} characters")
-                print(f"🔐 JWT token first 50 chars: {jwt_token[:50]}...")
-                print(f"🔐 JWT token last 50 chars: ...{jwt_token[-50:]}")
-                set_attribute("auth.jwt_extracted", True)
-                add_event("jwt_token_extracted")
-            else:
-                print(f"❌ No valid Authorization header found in headers")
-                print(f"🔍 Available headers: {list(headers.keys())}")
-                if auth_header:
-                    print(f"🔍 Authorization header found but doesn't start with 'Bearer ': {auth_header}")
-                set_attribute("auth.jwt_extracted", False)
-                add_event("jwt_token_not_found")
+            if DEBUG:
+                logger.debug(f"✅ Retrieved {len(headers)} HTTP headers from middleware context")
+                logger.debug(f"🔍 Available headers: {list(headers.keys())}")
         else:
-            print(f"❌ No headers available for JWT extraction")
-            set_attribute("auth.jwt_extracted", False)
+            logger.warning(f"⚠️ No headers available from middleware context")
+        
+        # Log AAuth signature headers if present (for future verification)
+        if headers:
+            aauth_headers = {}
+            for key, value in headers.items():
+                key_lower = key.lower()
+                if key_lower in ['signature-input', 'signature', 'signature-key']:
+                    aauth_headers[key] = value
+            
+            if aauth_headers:
+                logger.info(f"🔐 AAuth signature headers detected: {list(aauth_headers.keys())}")
+                add_event("aauth_headers_received", {"headers": list(aauth_headers.keys())})
+                set_attribute("auth.aauth_present", True)
+                
+                if DEBUG:
+                    for header_name, header_value in aauth_headers.items():
+                        # Truncate long values for readability
+                        display_value = header_value if len(header_value) <= 100 else f"{header_value[:100]}..."
+                        logger.debug(f"🔐 AAuth {header_name}: {display_value}")
+                        set_attribute(f"auth.aauth.{header_name.lower().replace('-', '_')}", header_value[:200])
+                
+                # Log if this appears to be HWK scheme
+                if 'signature-key' in {k.lower() for k in aauth_headers.keys()}:
+                    sig_key_value = next((v for k, v in aauth_headers.items() if k.lower() == 'signature-key'), '')
+                    if 'scheme=hwk' in sig_key_value.lower():
+                        logger.info(f"🔐 AAuth scheme: HWK (Header Web Key) - pseudonymous authentication")
+                        set_attribute("auth.aauth.scheme", "hwk")
+                    elif 'scheme=jwks' in sig_key_value.lower():
+                        logger.info(f"🔐 AAuth scheme: JWKS - identified agent")
+                        set_attribute("auth.aauth.scheme", "jwks")
+                    elif 'scheme=jwt' in sig_key_value.lower():
+                        logger.info(f"🔐 AAuth scheme: JWT - authorized agent")
+                        set_attribute("auth.aauth.scheme", "jwt")
+            else:
+                if DEBUG:
+                    logger.debug(f"🔍 No AAuth signature headers found in request")
+                set_attribute("auth.aauth_present", False)
         
         # Extract trace context from headers if available
         trace_context = None
         if headers:
-            print(f"🔍 DEBUG: Attempting to extract trace context from headers: {headers}")
-            set_attribute("debug.headers_received", str(headers))
+            if DEBUG:
+                logger.debug(f"🔍 Extracting trace context from headers")
+                set_attribute("debug.headers_received", str(headers))
             
             trace_context = extract_context_from_headers(headers)
-            print(f"🔍 DEBUG: Extracted trace context: {trace_context}")
-            set_attribute("debug.trace_context_extracted", str(trace_context))
+            if DEBUG:
+                logger.debug(f"🔍 Extracted trace context: {trace_context}")
+                set_attribute("debug.trace_context_extracted", str(trace_context))
             
             if trace_context:
                 add_event("trace_context_extracted_from_headers")
                 set_attribute("tracing.context_extracted", True)
-                print(f"✅ Trace context successfully extracted from headers")
+                if DEBUG:
+                    logger.debug(f"✅ Trace context successfully extracted from headers")
             else:
                 add_event("trace_context_extraction_failed")
                 set_attribute("tracing.context_extracted", False)
-                print(f"❌ Failed to extract trace context from headers")
+                if DEBUG:
+                    logger.debug(f"🔍 No trace context found in headers")
         else:
-            print(f"❌ No headers available for trace context extraction")
+            if DEBUG:
+                logger.debug(f"🔍 No headers available for trace context extraction")
             set_attribute("tracing.context_extracted", False)
         
         if trace_context:
             with span("market_analysis_agent.executor.execute", parent_context=trace_context) as span_obj:
-                print(f"🔗 Creating child span with parent context")
-                await self._execute_with_tracing(context, event_queue, span_obj, jwt_token)
+                if DEBUG:
+                    logger.debug(f"🔗 Creating child span with parent context")
+                await self._execute_with_tracing(context, event_queue, span_obj)
         else:
             with span("market_analysis_agent.executor.execute") as span_obj:
-                print(f"🔗 Creating root span (no parent context)")
+                if DEBUG:
+                    logger.debug(f"🔗 Creating root span (no parent context)")
                 add_event("no_trace_context_provided")
                 set_attribute("tracing.context_extracted", False)
-                await self._execute_with_tracing(context, event_queue, span_obj, jwt_token)
+                await self._execute_with_tracing(context, event_queue, span_obj)
     
     async def _execute_with_tracing(
         self,
         context: RequestContext,
         event_queue: EventQueue,
-        span_obj,
-        jwt_token: str | None
+        span_obj
     ):
-        """Execute with tracing support."""
+        """Execute with tracing support.
+        
+        Note: JWT token parameter removed - authentication is now handled via AAuth HWK signing.
+        """
         # Extract request text from context if available
         request_text = ""
         if hasattr(context, 'request') and context.request:
@@ -415,40 +352,10 @@ class MarketAnalysisAgentExecutor(AgentExecutor):
         set_attribute("request.has_content", bool(request_text))
         
         try:
-            # Store JWT token in agent instance for later use in a2a calls
-            if jwt_token:
-                self.agent.jwt_token = jwt_token
-                print(f"🔐 JWT token stored in agent instance for a2a calls")
-                print(f"🔐 Stored token length: {len(jwt_token)} characters")
-                print(f"🔐 Stored token first 50 chars: {jwt_token[:50]}...")
-                print(f"🔐 Stored token last 50 chars: ...{jwt_token[-50:]}")
-                add_event("jwt_token_stored_in_agent")
-                set_attribute("auth.jwt_stored", True)
-                
-                # Exchange the OBO token for a MCP server targeted OBO token
-                print(f"🔄 Exchanging OBO token for MCP server targeted token...")
-                exchanged_token = await agent_sts_service.exchange_token(
-                    obo_token=jwt_token,
-                    resource="company-mcp.default",
-                    actor_token=os.getenv("MARKET_ANALYSIS_SPIFFE_ID", "spiffe://cluster.local/ns/default/sa/market-analysis-agent")
-                )
-                
-                if exchanged_token:
-                    self.agent.exchanged_obo_token = exchanged_token
-                    print(f"✅ OBO token exchange successful for MCP server")
-                    print(f"🔐 Exchanged token length: {len(exchanged_token)} characters")
-                    print(f"🔐 Exchanged token first 50 chars: {exchanged_token[:50]}...")
-                    add_event("obo_token_exchange_successful_for_mcp_server")
-                    set_attribute("auth.obo_exchange_success", True)
-                else:
-                    print(f"⚠️ OBO token exchange failed, will use original token")
-                    self.agent.exchanged_obo_token = jwt_token  # Fallback to original token
-                    add_event("obo_token_exchange_failed_fallback")
-                    set_attribute("auth.obo_exchange_success", False)
-            else:
-                print(f"⚠️  No JWT token available for a2a calls")
-                add_event("no_jwt_token_for_a2a")
-                set_attribute("auth.jwt_stored", False)
+            # Note: JWT/STS token exchange removed - authentication is now handled via AAuth HWK signing
+            logger.info(f"🔐 Using AAuth HWK authentication (no JWT/STS exchange)")
+            add_event("aauth_hwk_auth_method")
+            set_attribute("auth.method", "aauth_hwk")
             
             result = await self.agent.invoke(request_text)
             add_event("agent_invoke_successful")

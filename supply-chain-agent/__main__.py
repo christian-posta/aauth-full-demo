@@ -8,6 +8,7 @@ load_dotenv()
 from a2a.server.apps import A2AStarletteApplication
 from a2a.server.request_handlers import DefaultRequestHandler
 from a2a.server.tasks import InMemoryTaskStore
+from http_headers_middleware import HTTPHeadersCaptureMiddleware
 from a2a.types import (
     AgentCapabilities,
     AgentCard,
@@ -149,4 +150,10 @@ if __name__ == '__main__':
     print(f"🚀 Starting Supply Chain Agent on port {port}")
     print(f"🔗 Agent URL: {agent_url}")
     
-    uvicorn.run(server.build(), host='0.0.0.0', port=port)
+    # Build the Starlette app and add middleware to capture HTTP headers
+    # This is necessary because the A2A SDK doesn't expose HTTP headers to the AgentExecutor
+    app = server.build()
+    app.add_middleware(HTTPHeadersCaptureMiddleware)
+    print(f"🔐 Added HTTPHeadersCaptureMiddleware for AAuth header capture")
+    
+    uvicorn.run(app, host='0.0.0.0', port=port)

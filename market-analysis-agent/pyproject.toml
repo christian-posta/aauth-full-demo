@@ -24,6 +24,7 @@ dependencies = [
     "opentelemetry-sdk>=1.20.0",
     "opentelemetry-instrumentation-httpx>=0.40b0",
     "opentelemetry-exporter-otlp-proto-grpc>=1.20.0",
+    "aauth @ file:///Users/christian.posta/dev/code/aauth",
 ]
 
 [project.optional-dependencies]
@@ -38,6 +39,9 @@ dev = [
 [build-system]
 requires = ["hatchling"]
 build-backend = "hatchling.build"
+
+[tool.hatch.metadata]
+allow-direct-references = true
 
 [tool.hatch.build.targets.wheel]
 packages = ["."]
