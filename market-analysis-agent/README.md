@@ -1,66 +1,63 @@
 # Market Analysis Agent
 
-A specialized A2A agent for analyzing laptop demand, inventory trends, and market conditions to optimize procurement decisions.
+A specialized A2A agent for analyzing laptop demand, inventory trends, and market conditions to optimize procurement decisions. This agent receives requests from the supply-chain-agent and provides comprehensive market analysis.
 
 ## Overview
 
 The Market Analysis Agent is a domain expert that provides comprehensive analysis of laptop inventory needs, market trends, and employee demand patterns. It helps organizations make data-driven decisions about laptop procurement by analyzing current inventory levels against projected demand.
 
-## Core Capabilities
+## Quick Start
 
-### 1. Inventory Demand Analysis
-- Analyzes current laptop inventory levels against projected demand
-- Considers hiring plans, refresh cycles, and historical usage patterns
-- Identifies inventory gaps and surplus situations
-- Provides risk assessments and priority recommendations
-
-### 2. Market Trend Forecasting
-- Evaluates laptop market trends and pricing fluctuations
-- Considers factors like new model releases, supply chain disruptions, and seasonal patterns
-- Assesses market availability risks for bulk orders
-- Provides impact assessments for different market scenarios
-
-### 3. Demand Pattern Modeling
-- Models laptop demand patterns based on department growth and role requirements
-- Factors in different laptop specifications needed by various teams
-- Calculates optimal mix of laptop models based on department preferences
-- Projects demand over configurable timeframes
-
-## What It Does
-
-The agent receives delegation requests like "Analyze laptop demand and inventory" and:
-
-1. **Calls Inventory MCP Server** to get current stock levels
-2. **Calls HR/Planning MCP Server** to get hiring forecasts
-3. **Analyzes patterns** and generates demand forecasts
-4. **Returns structured analysis** with specific recommendations
-
-Example output: "Need 25 more MacBook Pros, current inventory sufficient for MacBook Air"
-
-## Usage
-
-### Running the Agent
+### 1. Run the Agent
 
 ```bash
 cd market-analysis-agent
-python -m market_analysis_agent
+uv run .
 ```
 
-### Programmatic Usage
+The agent will start on `http://localhost:9998` and serve its agent card at `/.well-known/agent-card.json`.
 
-```python
-from agent_executor import market_analysis_executor
+### 2. Test the Agent
 
-# Execute a market analysis
-request = {
-    "type": "analyze_laptop_demand",
-    "timeframe_months": 6,
-    "departments": ["engineering", "sales", "marketing"]
-}
-
-result = market_analysis_executor.execute_delegation(request)
-print(result)
+```bash
+uv run test_client.py
 ```
+
+## Configuration
+
+The agent can be configured using environment variables. Copy `.env.example` to `.env` and modify as needed:
+
+```bash
+cp env.example .env
+```
+
+### Environment Variables
+
+- **`MARKET_ANALYSIS_AGENT_URL`**: External URL for this agent (default: `http://localhost:9998/`)
+- **`CANONICAL_AUTHORITY`**: Canonical authority for AAuth signature verification (format: `host:port`). Per AAuth SPEC Section 10.3.1, receivers MUST use configured canonical authority for `@authority` in signature base
+- **`AAUTH_SIGNATURE_SCHEME`**: AAuth signature scheme expected from callers - `"hwk"` (pseudonymous) or `"jwks"` (identified agent). Default: `hwk`
+- **`MARKET_ANALYSIS_AGENT_ID_URL`**: Agent identifier for JWKS scheme (HTTPS URL). Used if this agent needs to sign requests (currently not used as this is a leaf agent)
+- **`JAEGER_HOST`**: Jaeger collector host for distributed tracing (default: `localhost`)
+- **`JAEGER_PORT`**: Jaeger collector port (default: `4317`)
+- **`ENABLE_CONSOLE_EXPORTER`**: Control console trace span logging (default: `true`)
+
+### Example .env file
+
+```env
+# Market Analysis Agent Configuration
+MARKET_ANALYSIS_AGENT_URL=http://market-analysis-agent.localhost:3000/
+
+# AAuth Configuration
+CANONICAL_AUTHORITY=market-analysis-agent.localhost:3000
+AAUTH_SIGNATURE_SCHEME=jwks
+
+# Tracing Configuration
+JAEGER_HOST=localhost
+JAEGER_PORT=4317
+ENABLE_CONSOLE_EXPORTER=true
+```
+
+## Usage
 
 ### Delegation Examples
 
@@ -70,43 +67,9 @@ The agent can handle various types of delegation requests:
 - `"Forecast laptop market trends for next quarter"`
 - `"Model demand patterns for engineering team expansion"`
 - `"Assess inventory gaps for upcoming hiring wave"`
+- `"perform market analysis"` (triggers this agent from supply-chain-agent)
 
-## Configuration
-
-### Department Preferences
-
-The agent uses configurable department preferences for laptop models:
-
-```python
-department_preferences = {
-    "engineering": {
-        "MacBook Pro": 0.8,    # 80% prefer MacBook Pro
-        "MacBook Air": 0.2     # 20% prefer MacBook Air
-    },
-    "sales": {
-        "MacBook Pro": 0.3,    # 30% prefer MacBook Pro
-        "MacBook Air": 0.7     # 70% prefer MacBook Air
-    }
-}
-```
-
-### Analysis Parameters
-
-- **Default forecast months**: 6 months
-- **Inventory buffer**: 3 months
-- **Confidence threshold**: 70%
-- **Surplus threshold**: 50% above required stock
-
-## MCP Server Integration
-
-The agent is designed to integrate with:
-
-- **Inventory MCP Server**: For current stock levels and specifications
-- **HR/Planning MCP Server**: For hiring forecasts and growth projections
-
-Currently uses simulated data, but can be easily extended to call actual MCP servers.
-
-## Output Format
+### Output Format
 
 The agent returns structured analysis results including:
 
@@ -116,64 +79,156 @@ The agent returns structured analysis results including:
 - **Recommendations**: Prioritized procurement actions with timelines
 - **Cost Estimates**: Estimated costs for recommended actions
 
-## Development
+## AAuth (Agent-to-Agent Authentication) Implementation
 
-### Setup
+This agent implements AAuth signature verification for incoming requests from other agents (like supply-chain-agent). It verifies signatures using either HWK (pseudonymous) or JWKS (identified agent) schemes per the [AAuth specification](../SPEC.md).
 
-```bash
-# Create virtual environment
-python -m venv .venv
-source .venv/bin/activate  # On Windows: .venv\Scripts\activate
+### How AAuth Works in This Agent
 
-# Install dependencies
-pip install -e .
-pip install -e ".[dev]"
-```
+This agent acts as a **verifier only** (it receives requests from supply-chain-agent):
 
-### Testing
+1. **Verification (Incoming Requests)**: When supply-chain-agent calls this agent, it verifies signatures by:
+   - For HWK: Extracting public key from `Signature-Key` header
+   - For JWKS: Fetching metadata and JWKS from the calling agent's endpoints
 
-```bash
-pytest tests/
-```
+### Configuration
 
-### Code Quality
+Set these environment variables in your `.env` file:
 
 ```bash
-black .
-isort .
-mypy .
+# AAuth signature scheme expected from callers: "hwk" (pseudonymous) or "jwks" (identified agent)
+AAUTH_SIGNATURE_SCHEME=jwks
+
+# Canonical authority for signature verification (format: "host:port")
+# Per AAuth SPEC Section 10.3.1, receivers MUST use configured canonical authority
+CANONICAL_AUTHORITY=market-analysis-agent.localhost:3000
 ```
+
+### Code Locations
+
+#### Verification Implementation (Incoming Requests)
+
+**File**: `agent_executor.py`
+
+This is where incoming requests from supply-chain-agent are verified. The `MarketAnalysisAgentExecutor.execute()` method:
+
+- Captures HTTP headers using `HTTPHeadersCaptureMiddleware`
+- Detects AAuth signature scheme (HWK or JWKS)
+- Verifies signatures using the appropriate method
+- For JWKS: fetches metadata and JWKS, matches key by `kid`, verifies signature
+
+**Key Code Sections**:
+- **Lines 292-307**: Scheme detection from `Signature-Key` header
+- **Lines 309-447**: Signature verification logic
+- **Lines 363-423**: JWKS verification with metadata/JWKS fetching
+
+**AAuth Library Functions Used**:
+- `verify_signature()` - Verifies HTTP Message Signatures
+  - For HWK: passes `public_key=None` (extracted from header), `jwks_fetcher=None`
+  - For JWKS: passes `jwks_fetcher=function` that fetches metadata and JWKS
+
+**How JWKS verification works**:
+1. Extract `id` (agent identifier) and `kid` (key ID) from `Signature-Key` header using regex
+2. Create JWKS fetcher function that:
+   - Fetches `{agent_id}/.well-known/aauth-agent` to get metadata
+   - Extracts `jwks_uri` from metadata
+   - Fetches JWKS from `jwks_uri`
+   - Verifies key exists by matching `kid`
+3. Pass fetcher to `verify_signature()` which uses it to get the public key and verify the signature
+
+#### HTTP Headers Middleware
+
+**File**: `http_headers_middleware.py`
+
+This middleware captures incoming HTTP headers and request information (method, URI, body) and stores them in `ContextVar`s. This is necessary because the A2A SDK's `RequestContext` doesn't expose raw HTTP headers or request body, which are required for AAuth signature verification.
+
+**Key Code Sections**:
+- **Lines 1-170**: Middleware implementation that captures headers, method, URI, and body
+- Uses `ContextVar` to store request data accessible to `AgentExecutor`
+
+### Signature Schemes
+
+The agent supports verification of two signature schemes:
+
+1. **HWK (Header Web Key)** - Pseudonymous authentication
+   - Public key embedded directly in `Signature-Key` header
+   - No identity verification, just proof-of-possession
+   - Default scheme for backward compatibility
+
+2. **JWKS (JSON Web Key Set)** - Identified agent authentication
+   - Agent identifier (`id`) and key ID (`kid`) in `Signature-Key` header
+   - Agent fetches JWKS from caller's metadata endpoint
+   - Provides agent identity verification
+
+### Learning AAuth
+
+To understand how AAuth verification works in this agent:
+
+1. **Start here**: `agent_executor.py` - See how incoming requests are verified
+   - Lines 292-307: Scheme detection
+   - Lines 309-447: Signature verification logic
+   - Lines 363-423: JWKS verification with metadata/JWKS fetching
+
+2. **Header capture**: `http_headers_middleware.py` shows how HTTP headers are captured for verification
+
+3. **Upstream signing**: See `supply-chain-agent/aauth_interceptor.py` for how supply-chain-agent signs requests to this agent
+
+### AAuth Library Reference
+
+The project uses the `aauth` Python library. Key functions:
+
+- `verify_signature(method, target_uri, headers, body, signature_input_header, signature_header, signature_key_header, public_key=None, jwks_fetcher=None)` - Verify HTTP Message Signature
+  - For HWK: `public_key=None` (extracted from header), `jwks_fetcher=None`
+  - For JWKS: `public_key=None`, `jwks_fetcher=function` that fetches metadata and JWKS
 
 ## Architecture
 
 The agent follows a modular architecture:
 
-- **`agent_executor.py`**: Main execution logic and workflow orchestration
+- **`agent_executor.py`**: Main execution logic, workflow orchestration, and AAuth verification
 - **`business_policies.py`**: Business rules and analysis algorithms
+- **`http_headers_middleware.py`**: HTTP header capture for AAuth verification
 - **`agent_card.json`**: Agent capabilities and skill definitions
-- **`__main__.py`**: Command-line interface and example usage
+- **`__main__.py`**: A2A server setup
 
-## Business Logic
+### Skills
 
-The agent implements sophisticated business logic including:
+1. **Laptop Inventory Demand Analysis**: Analyzes current inventory levels against projected demand
+2. **Technology Market Trend Forecasting**: Evaluates market trends, pricing, and availability
+3. **Employee Demand Pattern Modeling**: Models demand patterns based on department growth (extended card only)
 
-- **Demand Calculation**: Combines hiring forecasts with department preferences
-- **Buffer Management**: Maintains appropriate safety stock levels
-- **Risk Assessment**: Evaluates inventory gaps and market risks
-- **Recommendation Generation**: Provides actionable procurement guidance
+## Development
 
-## Future Enhancements
+### Setup
 
-- Real-time MCP server integration
-- Machine learning-based demand forecasting
-- Advanced market data analysis
-- Integration with procurement systems
-- Historical trend analysis and learning
+```bash
+# Install dependencies with uv
+uv sync
 
-## License
+# Run the agent
+uv run .
+```
 
-This project is licensed under the same terms as the A2A framework.
+### Testing
 
-## Contributing
+```bash
+uv run test_client.py
+```
 
-Contributions are welcome! Please see the main A2A project for contribution guidelines.
+## Project Structure
+
+```
+market-analysis-agent/
+├── agent_executor.py      # Core agent implementation + AAuth verification (INCOMING)
+├── http_headers_middleware.py  # HTTP header capture for AAuth verification
+├── business_policies.py   # Business rules and analysis algorithms
+├── __main__.py           # A2A server setup
+├── agent_card.json       # A2A protocol agent card
+├── test_client.py        # Test suite
+└── README.md             # This file
+```
+
+### Key Files for AAuth
+
+- **`agent_executor.py`** - Verifies incoming requests from supply-chain-agent (lines 280-501)
+- **`http_headers_middleware.py`** - Captures HTTP headers for signature verification
