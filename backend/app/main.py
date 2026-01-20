@@ -8,6 +8,8 @@ from fastapi.responses import JSONResponse
 from app.api import auth, agents, optimization
 from app.tracing_config import initialize_tracing
 from app.config import settings
+from app.services.aauth_interceptor import get_signing_keypair
+from aauth import generate_jwks
 import os
 
 # Initialize tracing before creating the FastAPI app
@@ -83,6 +85,29 @@ async def root():
 @app.get("/health")
 async def health_check():
     return {"status": "healthy", "service": "supply-chain-api"}
+
+@app.get("/.well-known/aauth-agent")
+async def aauth_agent_metadata():
+    """AAuth agent metadata endpoint per SPEC Section 8.1.
+    
+    Returns agent identifier and JWKS URI for JWKS signature scheme discovery.
+    """
+    agent_url = os.getenv("BACKEND_AGENT_URL", f"http://{settings.host}:{settings.port}")
+    jwks_uri = f"{agent_url}/jwks.json"
+    return {
+        "agent": agent_url,
+        "jwks_uri": jwks_uri
+    }
+
+@app.get("/jwks.json")
+async def jwks_endpoint():
+    """JWKS endpoint for AAuth signature verification.
+    
+    Returns JSON Web Key Set containing the backend's public signing key.
+    """
+    _, _, public_jwk = get_signing_keypair()
+    jwks = generate_jwks([public_jwk])
+    return jwks
 
 def main():
     """Main function to run the FastAPI server with uvicorn"""

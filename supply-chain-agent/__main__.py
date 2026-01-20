@@ -20,6 +20,9 @@ from a2a.types import (
 from agent_executor import (
     SupplyChainOptimizerExecutor,  # type: ignore[import-untyped]
 )
+from aauth_interceptor import get_signing_keypair
+from aauth import generate_jwks
+from starlette.responses import JSONResponse
 
 # Initialize OpenTelemetry tracing
 from tracing_config import initialize_tracing
@@ -155,5 +158,31 @@ if __name__ == '__main__':
     app = server.build()
     app.add_middleware(HTTPHeadersCaptureMiddleware)
     print(f"🔐 Added HTTPHeadersCaptureMiddleware for AAuth header capture")
+    
+    # Add JWKS endpoints for AAuth signature verification
+    @app.route("/.well-known/aauth-agent", methods=["GET"])
+    async def aauth_agent_metadata(request):
+        """AAuth agent metadata endpoint per SPEC Section 8.1.
+        
+        Returns agent identifier and JWKS URI for JWKS signature scheme discovery.
+        """
+        agent_id_url = os.getenv("SUPPLY_CHAIN_AGENT_ID_URL", agent_url.rstrip('/'))
+        jwks_uri = f"{agent_id_url}/jwks.json"
+        return JSONResponse({
+            "agent": agent_id_url,
+            "jwks_uri": jwks_uri
+        })
+    
+    @app.route("/jwks.json", methods=["GET"])
+    async def jwks_endpoint(request):
+        """JWKS endpoint for AAuth signature verification.
+        
+        Returns JSON Web Key Set containing the agent's public signing key.
+        """
+        _, _, public_jwk = get_signing_keypair()
+        jwks = generate_jwks([public_jwk])
+        return JSONResponse(jwks)
+    
+    print(f"🔐 Added JWKS endpoints: /.well-known/aauth-agent and /jwks.json")
     
     uvicorn.run(app, host='0.0.0.0', port=port)

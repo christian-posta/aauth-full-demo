@@ -356,7 +356,83 @@ class MarketAnalysisAgentExecutor(AgentExecutor):
                                     logger.debug(f"🔐 signature-key value from headers: {sig_key_in_headers[:150]}")
                                     logger.debug(f"🔐 signature-key value from extracted header: {sig_key_header[:150]}")
                                 
-                                # Verify signature (for HWK scheme, public_key is extracted from signature_key_header)
+                                # Prepare verification parameters based on scheme
+                                public_key = None
+                                jwks_fetcher = None
+                                
+                                if scheme == "jwks":
+                                    # Extract agent_id and kid from Signature-Key header
+                                    # Format: sig1=(scheme=jwks id="https://agent.example" kid="key-1")
+                                    agent_id = None
+                                    kid = None
+                                    
+                                    # Parse Signature-Key header to extract id and kid
+                                    import re
+                                    id_match = re.search(r'id="([^"]+)"', sig_key_header)
+                                    kid_match = re.search(r'kid="([^"]+)"', sig_key_header)
+                                    
+                                    if id_match:
+                                        agent_id = id_match.group(1)
+                                    if kid_match:
+                                        kid = kid_match.group(1)
+                                    
+                                    if agent_id and kid:
+                                        if DEBUG:
+                                            logger.debug(f"🔐 JWKS scheme detected: agent_id={agent_id}, kid={kid}")
+                                        
+                                        # Create JWKS fetcher function (sync version)
+                                        import httpx
+                                        def sync_jwks_fetcher(agent_id_param: str, kid_param: str = None) -> dict:
+                                            """Fetch JWKS for agent using metadata discovery."""
+                                            try:
+                                                metadata_url = f"{agent_id_param}/.well-known/aauth-agent"
+                                                if DEBUG:
+                                                    logger.debug(f"🔐 Fetching metadata from {metadata_url}")
+                                                metadata_response = httpx.get(metadata_url, timeout=10.0)
+                                                metadata_response.raise_for_status()
+                                                metadata = metadata_response.json()
+                                                if DEBUG:
+                                                    logger.debug(f"🔐 Metadata response: {metadata}")
+                                                jwks_uri = metadata.get("jwks_uri")
+                                                if not jwks_uri:
+                                                    if DEBUG:
+                                                        logger.debug(f"🔐 No jwks_uri in metadata")
+                                                    return None
+                                                if DEBUG:
+                                                    logger.debug(f"🔐 Fetching JWKS from {jwks_uri}")
+                                                jwks_response = httpx.get(jwks_uri, timeout=10.0)
+                                                jwks_response.raise_for_status()
+                                                jwks_doc = jwks_response.json()
+                                                if DEBUG:
+                                                    logger.debug(f"🔐 JWKS response: {jwks_doc}")
+                                                if kid_param:
+                                                    keys = jwks_doc.get("keys", [])
+                                                    key_found = any(key.get("kid") == kid_param for key in keys)
+                                                    if not key_found:
+                                                        if DEBUG:
+                                                            logger.debug(f"🔐 Key with kid={kid_param} not found in JWKS")
+                                                        return None
+                                                return jwks_doc
+                                            except Exception as e:
+                                                logger.error(f"❌ Failed to fetch JWKS for agent {agent_id_param}: {e}")
+                                                if DEBUG:
+                                                    import traceback
+                                                    logger.debug(traceback.format_exc())
+                                                return None
+                                        
+                                        jwks_fetcher = sync_jwks_fetcher
+                                        if DEBUG:
+                                            logger.debug(f"🔐 Created JWKS fetcher for agent_id={agent_id}, kid={kid}")
+                                    else:
+                                        logger.error(f"❌ Failed to extract agent_id or kid from Signature-Key header for JWKS scheme")
+                                        if DEBUG:
+                                            logger.debug(f"🔐 Signature-Key header: {sig_key_header}")
+                                else:
+                                    # HWK scheme: public_key extracted from signature_key_header
+                                    public_key = None
+                                    jwks_fetcher = None
+                                
+                                # Verify signature
                                 try:
                                     is_valid = verify_signature(
                                         method=method,
@@ -366,8 +442,8 @@ class MarketAnalysisAgentExecutor(AgentExecutor):
                                         signature_input_header=sig_input_header,
                                         signature_header=sig_header,
                                         signature_key_header=sig_key_header,
-                                        public_key=None,  # For HWK, extracted from signature_key_header
-                                        jwks_fetcher=None  # Not needed for HWK scheme
+                                        public_key=public_key,  # None for HWK (extracted from header), None for JWKS (fetched)
+                                        jwks_fetcher=jwks_fetcher  # None for HWK, fetcher for JWKS
                                     )
                                     
                                     if is_valid:

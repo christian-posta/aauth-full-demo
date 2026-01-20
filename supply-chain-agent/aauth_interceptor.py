@@ -147,18 +147,50 @@ class AAuthSigningInterceptor(ClientCallInterceptor):
         # Sign the request if we have a URL
         if url:
             try:
-                logger.info(f"🔐 AAuth: Signing request to {url} with HWK scheme")
+                # Determine signature scheme from environment variable (default: hwk)
+                sig_scheme = os.getenv("AAUTH_SIGNATURE_SCHEME", "hwk").lower()
+                
+                # Prepare signing parameters
+                sign_kwargs = {}
+                agent_id = None
+                kid = None
+                
+                if sig_scheme == "jwks":
+                    # For JWKS scheme, need agent identifier and key ID
+                    # Try SUPPLY_CHAIN_AGENT_ID_URL first, then SUPPLY_CHAIN_AGENT_URL, then agent_card.url
+                    agent_id = os.getenv("SUPPLY_CHAIN_AGENT_ID_URL")
+                    if not agent_id:
+                        agent_id = os.getenv("SUPPLY_CHAIN_AGENT_URL", "").rstrip('/')
+                    if not agent_id and agent_card and hasattr(agent_card, 'url'):
+                        agent_id = agent_card.url.rstrip('/')
+                    if not agent_id:
+                        agent_id = "http://localhost:9999"  # Fallback
+                    
+                    # Extract kid from the public JWK
+                    kid = _PUBLIC_JWK.get("kid", "supply-chain-agent-key-1")
+                    sign_kwargs = {
+                        "id": agent_id,
+                        "kid": kid
+                    }
+                    logger.info(f"🔐 AAuth: Signing request to {url} with JWKS scheme (agent: {agent_id}, kid: {kid})")
+                    if DEBUG:
+                        logger.debug(f"🔐 AAuth: Agent ID: {agent_id}, Kid: {kid}")
+                else:
+                    # Default to HWK scheme
+                    sig_scheme = "hwk"
+                    logger.info(f"🔐 AAuth: Signing request to {url} with HWK scheme")
+                
                 if DEBUG:
                     logger.debug(f"🔐 AAuth: Method: {method}, Body length: {len(body) if body else 0}")
                 
-                # Sign the request using AAuth HWK scheme
                 sig_headers = sign_request(
                     method=method,
                     target_uri=str(url),
                     headers=headers,
                     body=body,
                     private_key=self.private_key,
-                    sig_scheme="hwk"
+                    sig_scheme=sig_scheme,
+                    **sign_kwargs
                 )
                 
                 # Add signature headers to the request
@@ -172,11 +204,13 @@ class AAuthSigningInterceptor(ClientCallInterceptor):
                 add_event("aauth.request_signed", {
                     "method": method,
                     "url": str(url),
-                    "scheme": "hwk",
-                    "has_body": body is not None
+                    "scheme": sig_scheme,
+                    "has_body": body is not None,
+                    "agent_id": agent_id if agent_id else None,
+                    "kid": kid if kid else None
                 })
                 set_attribute("aauth.signed", True)
-                set_attribute("aauth.scheme", "hwk")
+                set_attribute("aauth.scheme", sig_scheme)
                 
             except Exception as e:
                 logger.error(f"❌ AAuth: Failed to sign request: {e}")
