@@ -1,277 +1,305 @@
-# Supply Chain Agent with AAuth for Agent Identity and Authorization
+# AAuth Full Demo - End-to-End Agent-to-Agent Authentication
 
+A complete demonstration of **Agent-to-Agent (A2A) protocol** communication with **AAuth (Agent-to-Agent Authentication)** signature-based authentication. This project showcases a full end-to-end implementation of AAuth using both **HWK (Header Web Key)** and **JWKS (JSON Web Key Set)** signature schemes per the [AAuth specification](SPEC.md).
+
+## 🎯 What This Project Demonstrates
+
+This repository provides a **complete, working example** of:
+
+- **A2A Protocol 0.3.0**: Agent-to-agent communication using the A2A protocol
+- **AAuth Signing**: Cryptographic signing of all agent-to-agent requests using HTTP Message Signatures (RFC 9421)
+- **AAuth Verification**: Signature verification on incoming requests
+- **Multiple Signature Schemes**: 
+  - **HWK (Header Web Key)**: Pseudonymous authentication with public key in header
+  - **JWKS (JSON Web Key Set)**: Identified agent authentication with key discovery
+- **Multi-Agent Architecture**: Three agents communicating with signed requests
+- **Key Discovery**: JWKS endpoints and metadata discovery per AAuth specification
+- **User Authentication**: Keycloak OIDC integration for user-facing frontend
 
 ## 🏗️ Architecture
 
-- **Frontend**: React with Tailwind CSS
-- **Backend**: Python FastAPI with Keycloak OIDC and AAuth integration
-- **Agents**: Simulated supply chain optimization workflows
-- **Authentication**: Keycloak OIDC and AAuth
+```
+┌─────────────────┐
+│  User Browser   │
+│  (React UI)     │
+└────────┬────────┘
+         │ Keycloak OIDC
+         ▼
+┌─────────────────┐      AAuth Signed      ┌──────────────────────┐
+│   Backend API   │ ────────────────────► │ Supply Chain Agent   │
+│  (FastAPI)      │   (JWKS/HWK Scheme)    │   (A2A Agent)        │
+└─────────────────┘                        └──────────┬─────────────┘
+                                                      │ AAuth Signed
+                                                      │ (JWKS/HWK Scheme)
+                                                      ▼
+                                            ┌──────────────────────┐
+                                            │ Market Analysis      │
+                                            │ Agent (A2A Agent)    │
+                                            └──────────────────────┘
+```
 
+### Components
+
+1. **Backend** (`backend/`): FastAPI service that:
+   - Authenticates users via Keycloak OIDC
+   - Signs requests to supply-chain-agent using AAuth (HWK or JWKS)
+   - Exposes JWKS endpoints (`/.well-known/aauth-agent`, `/jwks.json`)
+
+2. **Supply Chain Agent** (`supply-chain-agent/`): A2A agent that:
+   - Verifies incoming AAuth signatures from backend
+   - Signs outgoing requests to market-analysis-agent using AAuth
+   - Exposes JWKS endpoints for key discovery
+   - Orchestrates supply chain optimization workflows
+
+3. **Market Analysis Agent** (`market-analysis-agent/`): A2A agent that:
+   - Verifies incoming AAuth signatures from supply-chain-agent
+   - Provides market analysis and demand forecasting
+   - Acts as a leaf agent (receives requests, doesn't make downstream calls)
+
+4. **Frontend** (`supply-chain-ui/`): React application that:
+   - Provides user interface for supply chain optimization
+   - Authenticates users via Keycloak
+   - Calls backend API with user credentials
+
+5. **Agent Gateway** (`agentgateway/`): Gateway configuration for routing agent traffic
 
 ## 🚀 Quick Start
 
 ### Prerequisites
+
 - Python 3.12+
 - Node.js 16+
-- npm or yarn
-- Keycloak 26.2.5 running locally
+- Keycloak 26.2.5+ (for user authentication)
+- `uv` package manager (recommended) or `pip`
 
-### 1. Setup Virtual Environment
-Each project has its own virtual env. Can set up like this:
+### 1. Setup Python Agents
+
+Each agent has its own virtual environment. Setup with `uv`:
 
 ```bash
 # Backend
-cd backend && \
-python3.12 -m venv .venv && \
-source .venv/bin/activate && \
-pip install uv && \
-uv pip install -e . && \
-cd ..
-
-# Market Analysis Agent
-cd market-analysis-agent && \
-python3.12 -m venv .venv && \
-source .venv/bin/activate && \
-pip install uv && \
-uv pip install -e . && \
+cd backend
+uv sync
 cd ..
 
 # Supply Chain Agent
-cd supply-chain-agent && \
-python3.12 -m venv .venv && \
-source .venv/bin/activate && \
-pip install uv && \
-uv pip install -e . && \
+cd supply-chain-agent
+uv sync
 cd ..
 
-# Frontend
-cd supply-chain-ui && \
-npm install && \
+# Market Analysis Agent
+cd market-analysis-agent
+uv sync
 cd ..
 ```
 
-### 2. Keycloak Setup
+### 2. Setup Frontend
 
-We will need to use Keycloak with AAuth support. 
-
-**Configure Keycloak:**
-1. Access Admin Console: http://localhost:8080
-2. Create realm: `aauth-test`
-3. Create client: `supply-chain-ui`
-4. Create user: `mcp-user` with password `user123`
-
-
-### 3. Backend Setup
 ```bash
-# Install Python dependencies
-cd backend
-pip install -r requirements.txt
-
-# Start the backend server
-python run.py
-```
-
-The backend will be available at:
-- **API**: http://localhost:8000
-- **Interactive Docs**: http://localhost:8000/docs
-- **ReDoc**: http://localhost:8000/redoc
-
-### 4. Frontend Setup
-```bash
-# In a new terminal, install frontend dependencies
 cd supply-chain-ui
 npm install
-
-# Copy environment template
-cp env.template .env
-
-# Start the React development server
-npm start
+cp env.example .env
+# Edit .env with your Keycloak configuration
+cd ..
 ```
 
-The frontend will be available at:
-- **App**: http://localhost:3000
+### 3. Configure Keycloak
 
-## 🔐 Authentication
+1. Start Keycloak: `docker run -p 8080:8080 -e KEYCLOAK_ADMIN=admin -e KEYCLOAK_ADMIN_PASSWORD=admin quay.io/keycloak/keycloak:26.2.5 start-dev`
+2. Access Admin Console: http://localhost:8080
+3. Create realm: `aauth-test`
+4. Create client: `supply-chain-ui` (public client, standard flow enabled)
+5. Create user: `mcp-user` with password `user123`
 
-**Keycloak Integration:**
-- **Realm**: `mcp-realm`
-- **Client**: `supply-chain-ui`
-- **Test User**: `christian` / `password123`
+### 4. Configure Environment Variables
 
-## 🧪 Testing
+Each component needs environment configuration:
 
-### Test Backend API
 ```bash
-# From project root with activated virtual environment
-python test_api.py
+# Backend
+cd backend
+cp env.example .env
+# Edit .env - set BACKEND_AGENT_URL, AAUTH_SIGNATURE_SCHEME, etc.
+
+# Supply Chain Agent
+cd ../supply-chain-agent
+cp env.example .env
+# Edit .env - set SUPPLY_CHAIN_AGENT_ID_URL, AAUTH_SIGNATURE_SCHEME, etc.
+
+# Market Analysis Agent
+cd ../market-analysis-agent
+cp env.example .env
+# Edit .env - set MARKET_ANALYSIS_AGENT_ID_URL, AAUTH_SIGNATURE_SCHEME, etc.
 ```
 
-### Test Frontend Build
-```bash
-cd supply-chain-ui
-npm run build
-```
+### 5. Start Services
 
-## 📁 Project Structure
-
-```
-agent-auth-istio-keycloak/
-├── .venv/                    # Python virtual environment
-├── backend/                  # Python FastAPI backend
-│   ├── app/
-│   │   ├── __init__.py
-│   │   ├── main.py          # FastAPI application
-│   │   ├── config.py        # Configuration settings
-│   │   ├── models.py        # Pydantic data models
-│   │   ├── api/             # API routes
-│   │   │   ├── auth.py      # Authentication endpoints
-│   │   │   ├── agents.py    # Agent management
-│   │   │   └── optimization.py # Optimization endpoints
-│   │   └── services/        # Business logic
-│   │       ├── auth_service.py
-│   │       ├── agent_service.py
-│   │       └── optimization_service.py
-│   ├── requirements.txt
-│   ├── run.py               # Startup script
-│   └── README.md
-├── supply-chain-ui/          # React frontend
-│   ├── src/
-│   │   ├── components/      # React components
-│   │   │   └── Login.js     # Login component
-│   │   ├── hooks/           # Custom React hooks
-│   │   │   ├── useAuth.js   # Authentication hook
-│   │   │   └── useOptimization.js # Optimization hook
-│   │   ├── api.js           # API service
-│   │   ├── App.js           # Main application
-│   │   └── index.js         # Entry point
-│   ├── package.json
-│   ├── tailwind.config.js   # Tailwind CSS config
-│   └── postcss.config.js    # PostCSS config
-├── test_api.py              # API testing script
-├── .gitignore               # Git ignore rules
-└── README.md                # This file
-```
-
-## 🔌 API Endpoints
-
-### Authentication
-- `POST /auth/login` - Login with username/password
-- `POST /auth/refresh` - Refresh JWT token
-- `GET /auth/me` - Get current user info
-- `POST /auth/logout` - Logout
-
-### Agents
-- `GET /agents/status` - Get all agent statuses
-- `GET /agents/status/{agent_id}` - Get specific agent status
-- `GET /agents/activities` - Get agent activities
-- `DELETE /agents/activities` - Clear activities
-
-### Optimization
-- `POST /optimization/start` - Start optimization
-- `GET /optimization/progress/{request_id}` - Get progress
-- `GET /optimization/results/{request_id}` - Get results
-- `GET /optimization/all` - Get all optimizations
-
-## 🎯 Features
-
-### Frontend
-- **Modern UI**: Built with React and Tailwind CSS
-- **Real-time Updates**: Live progress tracking
-- **Responsive Design**: Works on all device sizes
-- **Error Handling**: Comprehensive error states
-- **Loading States**: Smooth user experience
-
-### Backend
-- **FastAPI**: High-performance Python web framework
-- **JWT Authentication**: Secure token-based auth
-- **Async Processing**: Non-blocking agent workflows
-- **Data Validation**: Pydantic models
-- **Auto-documentation**: Interactive API docs
-
-### Agent Workflow
-- **Supply Chain Optimizer**: Main orchestrator
-- **Inventory Service**: Stock level analysis
-- **Financial Service**: Budget and cost analysis
-- **Market Analysis**: Demand trend analysis
-- **Vendor Service**: Supplier performance evaluation
-- **Procurement Agent**: Purchase recommendations
-
-## 🚀 Development
-
-### Backend Development
+**Terminal 1 - Backend:**
 ```bash
 cd backend
-source ../.venv/bin/activate
-
-# Run with auto-reload
-python run.py
-
-# Or with uvicorn directly
-uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
+uv run .
+# Runs on http://localhost:8000
 ```
 
-### Frontend Development
+**Terminal 2 - Supply Chain Agent:**
+```bash
+cd supply-chain-agent
+uv run .
+# Runs on http://localhost:9999
+```
+
+**Terminal 3 - Market Analysis Agent:**
+```bash
+cd market-analysis-agent
+uv run .
+# Runs on http://localhost:9998
+```
+
+**Terminal 4 - Frontend:**
 ```bash
 cd supply-chain-ui
 npm start
+# Runs on http://localhost:3000
 ```
 
-### Adding New Features
-1. **Backend**: Add new models, services, and API endpoints
-2. **Frontend**: Create new components and hooks
-3. **Integration**: Update API service and state management
+## 🔐 AAuth Implementation
 
-## 🐛 Troubleshooting
+This project demonstrates **complete AAuth implementation** with:
 
-### Common Issues
+### Signature Schemes
 
-**Backend won't start:**
-- Ensure virtual environment is activated
-- Check if port 8000 is available
-- Verify all dependencies are installed
+Both **HWK** and **JWKS** schemes are supported and configurable via `AAUTH_SIGNATURE_SCHEME`:
 
-**Frontend can't connect to backend:**
-- Ensure backend is running on port 8000
-- Check CORS configuration
-- Verify API_BASE_URL in api.js
+- **HWK (Header Web Key)**: Pseudonymous authentication
+  - Public key embedded directly in `Signature-Key` header
+  - No identity verification, just proof-of-possession
+  - Example: `scheme=hwk kty="OKP" crv="Ed25519" x="..."`
 
-**Authentication fails:**
-- Check backend logs for errors
-- Verify JWT secret key
-- Ensure user credentials are correct
+- **JWKS (JSON Web Key Set)**: Identified agent authentication
+  - Agent identifier (`id`) and key ID (`kid`) in `Signature-Key` header
+  - Receivers fetch JWKS from agent's metadata endpoint
+  - Provides agent identity verification
+  - Example: `scheme=jwks id="http://agent.example" kid="key-1"`
 
-### Logs
-- **Backend**: Check terminal where `python run.py` is running
-- **Frontend**: Check browser console and terminal
+### Key Discovery
 
-## 🔮 Future Enhancements
+Agents expose JWKS endpoints for key discovery:
 
-- **Real Agent Integration**: Connect to actual supply chain systems
-- **Database**: Persistent storage for optimization history
-- **WebSocket**: Real-time bidirectional communication
-- **Kubernetes**: Container orchestration
-- **Istio**: Service mesh integration
-- **Keycloak**: Enterprise SSO integration
-- **Monitoring**: Metrics and observability
-- **Testing**: Comprehensive test suite
+- `/.well-known/aauth-agent`: Agent metadata with `agent` identifier and `jwks_uri`
+- `/jwks.json`: JSON Web Key Set containing public signing keys
 
-## 📚 Resources
+### Code Locations
 
-- [FastAPI Documentation](https://fastapi.tiangolo.com/)
-- [React Documentation](https://reactjs.org/docs/)
-- [Tailwind CSS](https://tailwindcss.com/)
-- [JWT Authentication](https://jwt.io/)
+**Signing (Outgoing Requests):**
+- Backend → Supply Chain Agent: `backend/app/services/aauth_interceptor.py`
+- Supply Chain Agent → Market Analysis Agent: `supply-chain-agent/aauth_interceptor.py`
+
+**Verification (Incoming Requests):**
+- Supply Chain Agent: `supply-chain-agent/agent_executor.py` (lines 480-760)
+- Market Analysis Agent: `market-analysis-agent/agent_executor.py` (lines 280-501)
+
+**JWKS Endpoints:**
+- Backend: `backend/app/main.py` (lines 89-110)
+- Supply Chain Agent: `supply-chain-agent/__main__.py` (lines 163-184)
+
+**HTTP Header Capture:**
+- Both agents use `http_headers_middleware.py` to capture headers for signature verification
+
+### Learning AAuth
+
+This project serves as a **complete reference implementation** for AAuth. To learn how AAuth works:
+
+1. **Start with signing**: See how requests are signed in `aauth_interceptor.py` files
+2. **Understand verification**: See how signatures are verified in `agent_executor.py` files
+3. **Explore JWKS discovery**: See how keys are discovered via metadata endpoints
+4. **Review the specification**: See [SPEC.md](SPEC.md) for the complete AAuth specification
+
+Each component's README includes detailed AAuth documentation:
+- [`backend/README.md`](backend/README.md) - Backend AAuth signing
+- [`supply-chain-agent/README.md`](supply-chain-agent/README.md) - Both signing and verification
+- [`market-analysis-agent/README.md`](market-analysis-agent/README.md) - Verification only
+
+
+## 🔍 Key Features
+
+### AAuth Implementation
+
+- ✅ **HTTP Message Signatures** (RFC 9421) for request signing
+- ✅ **HWK Scheme** - Pseudonymous authentication
+- ✅ **JWKS Scheme** - Identified agent authentication with key discovery
+- ✅ **Canonical Authority** - Proper authority handling per SPEC 10.3.1
+- ✅ **Content-Digest** - RFC 9530 compliant body digest
+- ✅ **Ephemeral Keys** - Per-process keypair generation
+- ✅ **Metadata Discovery** - `/.well-known/aauth-agent` endpoints
+- ✅ **JWKS Endpoints** - `/jwks.json` for public key distribution
+
+### A2A Protocol
+
+- ✅ **A2A Protocol 0.3.0** compliance
+- ✅ **Agent Cards** - Public and extended agent cards
+- ✅ **Skills** - Agent capability definitions
+- ✅ **Delegation** - Agent-to-agent delegation
+- ✅ **JSON-RPC Transport** - Standard A2A transport
+
+### Observability
+
+- ✅ **OpenTelemetry Tracing** - Distributed tracing with Jaeger
+- ✅ **Structured Logging** - Comprehensive logging with DEBUG/LOG_LEVEL support
+- ✅ **Trace Context Propagation** - End-to-end trace correlation
+
+## 📚 Documentation
+
+- **[AAuth Specification](SPEC.md)** - Complete AAuth specification
+- **[Backend README](backend/README.md)** - Backend API and AAuth signing documentation
+- **[Supply Chain Agent README](supply-chain-agent/README.md)** - Agent documentation with AAuth details
+- **[Market Analysis Agent README](market-analysis-agent/README.md)** - Agent documentation with AAuth details
+
+## 🎓 Learning Resources
+
+This project is designed as a **learning resource** for:
+
+- **AAuth Protocol**: Complete implementation of agent-to-agent authentication
+- **A2A Protocol**: Agent-to-agent communication patterns
+- **HTTP Message Signatures**: RFC 9421 implementation
+- **JWKS Discovery**: Key discovery patterns
+- **Multi-Agent Systems**: Orchestration and delegation patterns
+
+## 🔧 Configuration
+
+### AAuth Signature Scheme
+
+Set `AAUTH_SIGNATURE_SCHEME` in each component's `.env`:
+
+- `hwk` - Header Web Key (pseudonymous)
+- `jwks` - JSON Web Key Set (identified agent)
+
+### Agent URLs
+
+Configure agent identifiers for JWKS scheme:
+
+- `BACKEND_AGENT_URL` - Backend agent identifier
+- `SUPPLY_CHAIN_AGENT_ID_URL` - Supply chain agent identifier
+- `MARKET_ANALYSIS_AGENT_ID_URL` - Market analysis agent identifier
+
+Canonical authority is automatically derived from agent ID URLs per SPEC 10.3.1.
 
 ## 🤝 Contributing
+
+This is a demonstration project. Contributions welcome!
 
 1. Fork the repository
 2. Create a feature branch
 3. Make your changes
-4. Add tests if applicable
+4. Ensure AAuth compliance per SPEC.md
 5. Submit a pull request
 
 ## 📄 License
 
 This project is for educational and demonstration purposes.
+
+## 🙏 Acknowledgments
+
+- **AAuth Specification**: By Dick Hardt
+- **A2A Protocol**: Agent-to-Agent communication protocol
+- **HTTP Message Signatures**: RFC 9421
+- **Keycloak**: Identity and access management
