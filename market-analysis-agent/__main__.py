@@ -8,7 +8,7 @@ The agent provides market analysis capabilities for laptop demand forecasting an
 
 import os
 # Load environment variables FIRST, before any imports that read env vars
-# This is critical because http_headers_middleware reads CANONICAL_AUTHORITY at module load time
+# This is critical because http_headers_middleware reads MARKET_ANALYSIS_AGENT_ID_URL at module load time
 from dotenv import load_dotenv
 load_dotenv()
 

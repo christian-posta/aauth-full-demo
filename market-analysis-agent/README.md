@@ -34,9 +34,8 @@ cp env.example .env
 ### Environment Variables
 
 - **`MARKET_ANALYSIS_AGENT_URL`**: External URL for this agent (default: `http://localhost:9998/`)
-- **`CANONICAL_AUTHORITY`**: Canonical authority for AAuth signature verification (format: `host:port`). Per AAuth SPEC Section 10.3.1, receivers MUST use configured canonical authority for `@authority` in signature base
 - **`AAUTH_SIGNATURE_SCHEME`**: AAuth signature scheme expected from callers - `"hwk"` (pseudonymous) or `"jwks"` (identified agent). Default: `hwk`
-- **`MARKET_ANALYSIS_AGENT_ID_URL`**: Agent identifier for JWKS scheme (HTTPS URL). Used if this agent needs to sign requests (currently not used as this is a leaf agent)
+- **`MARKET_ANALYSIS_AGENT_ID_URL`**: Agent identifier for JWKS scheme (HTTPS URL). Also used to derive canonical authority for signature verification (per SPEC 10.3.1). Canonical authority format: `host:port` (if port is non-default) or just `host` (if default port). Used if this agent needs to sign requests (currently not used as this is a leaf agent)
 - **`JAEGER_HOST`**: Jaeger collector host for distributed tracing (default: `localhost`)
 - **`JAEGER_PORT`**: Jaeger collector port (default: `4317`)
 - **`ENABLE_CONSOLE_EXPORTER`**: Control console trace span logging (default: `true`)
@@ -48,8 +47,11 @@ cp env.example .env
 MARKET_ANALYSIS_AGENT_URL=http://market-analysis-agent.localhost:3000/
 
 # AAuth Configuration
-CANONICAL_AUTHORITY=market-analysis-agent.localhost:3000
 AAUTH_SIGNATURE_SCHEME=jwks
+# Agent identifier for JWKS scheme (HTTPS URL)
+# Also used to derive canonical authority for signature verification (per SPEC 10.3.1)
+# Canonical authority format: host:port (if port is non-default) or just host (if default port)
+MARKET_ANALYSIS_AGENT_ID_URL=http://market-analysis-agent.localhost:3000
 
 # Tracing Configuration
 JAEGER_HOST=localhost
@@ -99,9 +101,10 @@ Set these environment variables in your `.env` file:
 # AAuth signature scheme expected from callers: "hwk" (pseudonymous) or "jwks" (identified agent)
 AAUTH_SIGNATURE_SCHEME=jwks
 
-# Canonical authority for signature verification (format: "host:port")
-# Per AAuth SPEC Section 10.3.1, receivers MUST use configured canonical authority
-CANONICAL_AUTHORITY=market-analysis-agent.localhost:3000
+# Agent identifier for JWKS scheme (HTTPS URL)
+# Also used to derive canonical authority for signature verification (per SPEC 10.3.1)
+# Canonical authority format: host:port (if port is non-default) or just host (if default port)
+MARKET_ANALYSIS_AGENT_ID_URL=http://market-analysis-agent.localhost:3000
 ```
 
 ### Code Locations

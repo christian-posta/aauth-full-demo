@@ -24,23 +24,33 @@ logger = logging.getLogger(__name__)
 # Check DEBUG mode from environment
 DEBUG = os.getenv("DEBUG", "false").lower() == "true"
 
-# Get canonical authority from configuration
+# Derive canonical authority from SUPPLY_CHAIN_AGENT_ID_URL
 # Per AAuth SPEC Section 10.3.1, receivers MUST use configured canonical authority
-# not derived from request headers
-# CANONICAL_AUTHORITY should be set to match what signers will use (e.g., "supply-chain-agent.localhost:3000" or "localhost:9999")
-CANONICAL_AUTHORITY = os.getenv("CANONICAL_AUTHORITY", None)
-if not CANONICAL_AUTHORITY:
-    # Fallback: derive from SUPPLY_CHAIN_AGENT_URL if CANONICAL_AUTHORITY not set
-    CANONICAL_AUTHORITY_URL = os.getenv("SUPPLY_CHAIN_AGENT_URL", "http://localhost:9999/")
-    _canonical_parsed = urlparse(CANONICAL_AUTHORITY_URL)
-    CANONICAL_AUTHORITY = _canonical_parsed.netloc  # e.g., "localhost:9999" or "localhost" (if default port)
-    CANONICAL_SCHEME = _canonical_parsed.scheme or "http"
+# not derived from request headers. The canonical authority consists of:
+# - The host (DNS name or IP address)
+# - The port, if non-default for the scheme (80 for HTTP, 443 for HTTPS)
+# We derive this from SUPPLY_CHAIN_AGENT_ID_URL which is exposed in JWKS metadata
+_canonical_authority_url = os.getenv("SUPPLY_CHAIN_AGENT_ID_URL")
+if not _canonical_authority_url:
+    # Fallback to SUPPLY_CHAIN_AGENT_URL if ID_URL not set
+    _canonical_authority_url = os.getenv("SUPPLY_CHAIN_AGENT_URL", "http://localhost:9999/")
+
+_canonical_parsed = urlparse(_canonical_authority_url)
+CANONICAL_SCHEME = _canonical_parsed.scheme or "http"
+_canonical_host = _canonical_parsed.hostname or _canonical_parsed.netloc.split(':')[0]
+_canonical_port = _canonical_parsed.port
+
+# Format canonical authority: host:port if port is non-default, otherwise just host
+# Per SPEC 10.3.1: port only included if non-default for the scheme
+if _canonical_port:
+    if (CANONICAL_SCHEME == "http" and _canonical_port != 80) or \
+       (CANONICAL_SCHEME == "https" and _canonical_port != 443):
+        CANONICAL_AUTHORITY = f"{_canonical_host}:{_canonical_port}"
+    else:
+        CANONICAL_AUTHORITY = _canonical_host
 else:
-    # CANONICAL_AUTHORITY is set directly (format: "host:port" or just "host")
-    # Extract scheme from SUPPLY_CHAIN_AGENT_URL if available, otherwise default to http
-    CANONICAL_AUTHORITY_URL = os.getenv("SUPPLY_CHAIN_AGENT_URL", "http://localhost:9999/")
-    _canonical_parsed = urlparse(CANONICAL_AUTHORITY_URL)
-    CANONICAL_SCHEME = _canonical_parsed.scheme or "http"
+    # No port specified, use default for scheme
+    CANONICAL_AUTHORITY = _canonical_host
 
 # Context variable to store HTTP headers for the current request
 # This allows the AgentExecutor to access headers even though they're not
@@ -132,7 +142,7 @@ class HTTPHeadersCaptureMiddleware(BaseHTTPMiddleware):
         if DEBUG:
             logger.debug(f"🔍 HTTPHeadersCaptureMiddleware: Captured {len(headers)} headers")
             logger.debug(f"🔍 Request: {method} {uri}")
-            logger.debug(f"🔍 Canonical authority: {CANONICAL_AUTHORITY} (from SUPPLY_CHAIN_AGENT_URL)")
+            logger.debug(f"🔍 Canonical authority: {CANONICAL_AUTHORITY} (derived from SUPPLY_CHAIN_AGENT_ID_URL)")
             logger.debug(f"🔍 Request path: {request_path}, query: {request_query}")
             if body_bytes:
                 logger.debug(f"🔍 Body length: {len(body_bytes)} bytes")

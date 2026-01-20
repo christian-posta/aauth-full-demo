@@ -26,8 +26,7 @@ cp .env.example .env
 - **`SUPPLY_CHAIN_AGENT_PORT`**: Port for this agent to run on (default: `9999`)
 - **`SUPPLY_CHAIN_AGENT_URL`**: External URL for this agent (default: `http://localhost:{port}/`)
 - **`AAUTH_SIGNATURE_SCHEME`**: AAuth signature scheme - `"hwk"` (pseudonymous) or `"jwks"` (identified agent). Default: `hwk`
-- **`SUPPLY_CHAIN_AGENT_ID_URL`**: Agent identifier for JWKS scheme (HTTPS URL). Used in Signature-Key header when signing outgoing requests. If not set, derived from `SUPPLY_CHAIN_AGENT_URL`
-- **`CANONICAL_AUTHORITY`**: Canonical authority for AAuth signature verification (format: `host:port`). Per AAuth SPEC Section 10.3.1, receivers MUST use configured canonical authority for `@authority` in signature base
+- **`SUPPLY_CHAIN_AGENT_ID_URL`**: Agent identifier for JWKS scheme (HTTPS URL). Used in Signature-Key header when signing outgoing requests. Also used to derive canonical authority for signature verification (per SPEC 10.3.1). Canonical authority format: `host:port` (if port is non-default) or just `host` (if default port). If not set, derived from `SUPPLY_CHAIN_AGENT_URL` or `agent_card.url`
 
 ### Tracing Configuration
 
@@ -55,8 +54,11 @@ SUPPLY_CHAIN_AGENT_URL=http://supply-chain-agent.localhost:3000/
 
 # AAuth Configuration
 AAUTH_SIGNATURE_SCHEME=jwks
+# Agent identifier for JWKS scheme (HTTPS URL)
+# Used in Signature-Key header when signing requests to market-analysis-agent
+# Also used to derive canonical authority for signature verification (per SPEC 10.3.1)
+# Canonical authority format: host:port (if port is non-default) or just host (if default port)
 SUPPLY_CHAIN_AGENT_ID_URL=http://supply-chain-agent.localhost:3000
-CANONICAL_AUTHORITY=supply-chain-agent.localhost:3000
 ```
 
 ## Quick Start
@@ -120,11 +122,9 @@ AAUTH_SIGNATURE_SCHEME=jwks
 
 # Agent identifier for JWKS scheme (HTTPS URL)
 # Used in Signature-Key header when signing requests to market-analysis-agent
+# Also used to derive canonical authority for signature verification (per SPEC 10.3.1)
+# Canonical authority format: host:port (if port is non-default) or just host (if default port)
 SUPPLY_CHAIN_AGENT_ID_URL=http://supply-chain-agent.localhost:3000
-
-# Canonical authority for signature verification (format: "host:port")
-# Per AAuth SPEC Section 10.3.1, receivers MUST use configured canonical authority
-CANONICAL_AUTHORITY=supply-chain-agent.localhost:3000
 ```
 
 ### Code Locations
