@@ -38,3 +38,6 @@ packages = ["app"]
 
 [tool.uv]
 dev-dependencies = []
+
+[tool.hatch.metadata]
+allow-direct-references = true

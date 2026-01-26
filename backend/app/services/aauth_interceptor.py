@@ -52,15 +52,17 @@ class AAuthSigningInterceptor(ClientCallInterceptor):
     - Signature-Key: Contains the public key (scheme=hwk)
     """
     
-    def __init__(self, trace_headers: Optional[Dict[str, str]] = None):
+    def __init__(self, trace_headers: Optional[Dict[str, str]] = None, auth_token: Optional[str] = None):
         """Initialize the AAuth signing interceptor.
         
         Args:
             trace_headers: Optional additional headers to inject (e.g., for tracing)
+            auth_token: Optional auth token to use for scheme=jwt (if not provided, will check cache)
         """
         self.trace_headers = trace_headers or {}
         self.private_key = _PRIVATE_KEY
         self.public_key = _PUBLIC_KEY
+        self.auth_token = auth_token  # Store auth_token for this interceptor instance
     
     async def intercept(
         self,
@@ -146,13 +148,49 @@ class AAuthSigningInterceptor(ClientCallInterceptor):
         # Sign the request if we have a URL
         if url:
             try:
+                # Determine authorization scheme from environment variable (default: autonomous)
+                auth_scheme = os.getenv("AAUTH_AUTHORIZATION_SCHEME", "autonomous").lower()
+                
                 # Determine signature scheme from environment variable (default: hwk)
                 sig_scheme = os.getenv("AAUTH_SIGNATURE_SCHEME", "hwk").lower()
+                
+                # Check if we should use scheme=jwt (requires auth_token)
+                # Note: Only use scheme=jwt if auth_token is explicitly provided (e.g., from retry after challenge)
+                # Do NOT check cache here - let the first request use hwk/jwks to trigger the challenge
+                auth_token = self.auth_token  # Use instance-level auth_token if provided
+                
+                if auth_token:
+                    # Auth token provided explicitly (e.g., from retry after challenge)
+                    # This means we already went through the challenge flow
+                    sig_scheme = "jwt"
+                    logger.info(f"🔐 AAuth: Using provided auth_token for scheme=jwt (retry after challenge)")
+                    if settings.debug:
+                        logger.debug(f"🔐 AAuth: Auth token length: {len(auth_token)}")
+                else:
+                    # No auth_token provided - use signature scheme (hwk/jwks)
+                    # This will trigger a 401 challenge, which will be handled by a2a_service
+                    logger.info(f"🔐 AAuth: No auth_token provided, using signature scheme: {sig_scheme} (will trigger challenge)")
+                    if settings.debug:
+                        logger.debug(f"🔐 AAuth: Will trigger challenge to obtain auth_token")
                 
                 # Prepare signing parameters
                 sign_kwargs = {}
                 agent_id = None
                 kid = None
+                
+                if sig_scheme == "jwt":
+                    # For JWT scheme, include auth_token in Signature-Key header
+                    if auth_token:
+                        sign_kwargs = {
+                            "jwt": auth_token
+                        }
+                        logger.info(f"🔐 AAuth: Signing request to {url} with JWT scheme (auth_token present)")
+                        if settings.debug:
+                            logger.debug(f"🔐 AAuth: Auth token: {auth_token[:50]}...")
+                    else:
+                        # Fallback to signature scheme if no auth_token
+                        logger.warning(f"⚠️ AAuth: JWT scheme requested but no auth_token available, falling back to {sig_scheme}")
+                        sig_scheme = os.getenv("AAUTH_SIGNATURE_SCHEME", "hwk").lower()
                 
                 if sig_scheme == "jwks":
                     # For JWKS scheme, need agent identifier and key ID
@@ -166,9 +204,8 @@ class AAuthSigningInterceptor(ClientCallInterceptor):
                     logger.info(f"🔐 AAuth: Signing request to {url} with JWKS scheme (agent: {agent_id}, kid: {kid})")
                     if settings.debug:
                         logger.debug(f"🔐 AAuth: Agent ID: {agent_id}, Kid: {kid}")
-                else:
+                elif sig_scheme == "hwk":
                     # Default to HWK scheme
-                    sig_scheme = "hwk"
                     logger.info(f"🔐 AAuth: Signing request to {url} with HWK scheme")
                 
                 if settings.debug:

@@ -165,6 +165,7 @@ if __name__ == '__main__':
         """AAuth agent metadata endpoint per SPEC Section 8.1.
         
         Returns agent identifier and JWKS URI for JWKS signature scheme discovery.
+        This is used when the entity acts as an AGENT (making signed requests).
         """
         agent_id_url = os.getenv("SUPPLY_CHAIN_AGENT_ID_URL", agent_url.rstrip('/'))
         jwks_uri = f"{agent_id_url}/jwks.json"
@@ -173,16 +174,32 @@ if __name__ == '__main__':
             "jwks_uri": jwks_uri
         })
     
+    @app.route("/.well-known/aauth-resource", methods=["GET"])
+    async def aauth_resource_metadata(request):
+        """AAuth resource metadata endpoint per SPEC Section 8.2.
+        
+        Returns resource identifier and JWKS URI for resource token validation.
+        This is used when the entity acts as a RESOURCE (issuing resource tokens).
+        Keycloak fetches this to validate resource tokens issued by this agent.
+        """
+        resource_id_url = os.getenv("SUPPLY_CHAIN_AGENT_ID_URL", agent_url.rstrip('/'))
+        jwks_uri = f"{resource_id_url}/jwks.json"
+        return JSONResponse({
+            "resource": resource_id_url,
+            "jwks_uri": jwks_uri
+        })
+    
     @app.route("/jwks.json", methods=["GET"])
     async def jwks_endpoint(request):
         """JWKS endpoint for AAuth signature verification.
         
         Returns JSON Web Key Set containing the agent's public signing key.
+        Used by both agent and resource metadata endpoints.
         """
         _, _, public_jwk = get_signing_keypair()
         jwks = generate_jwks([public_jwk])
         return JSONResponse(jwks)
     
-    print(f"🔐 Added JWKS endpoints: /.well-known/aauth-agent and /jwks.json")
+    print(f"🔐 Added JWKS endpoints: /.well-known/aauth-agent, /.well-known/aauth-resource, and /jwks.json")
     
     uvicorn.run(app, host='0.0.0.0', port=port)

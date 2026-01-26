@@ -185,16 +185,11 @@ async def start_optimization(
                     add_event("trace_context_extracted_from_headers")
                     set_attribute("tracing.context_extracted", True)
             
-            # Get access token from the Authorization header for agent-to-agent authentication
-            auth_token = None
-            if http_request:
-                authorization_header = http_request.headers.get("Authorization")
-                if authorization_header and authorization_header.startswith("Bearer "):
-                    auth_token = authorization_header.replace("Bearer ", "")
-                    if auth_token:
-                        add_event("access_token_extracted_for_agent_auth")
-                        set_attribute("jwt.access_token_extracted", True)
-                        print(f"🔐 Access token extracted for agent authentication: {auth_token[:20]}...")
+            # Note: We do NOT pass the OIDC token as AAuth auth_token
+            # The AAuth auth_token is obtained separately from Keycloak's AAuth endpoint
+            # after receiving a resource_token challenge from the supply-chain-agent
+            # Pass None here - the A2A service will handle the AAuth flow automatically
+            aauth_auth_token = None
             
             print(f"🚀 Starting optimization for user: {current_user['payload'].get('sub')}")
             print(f"📝 Request: {request}")
@@ -211,14 +206,15 @@ async def start_optimization(
             print(f"✅ Created optimization request: {request_id}")
             add_event("optimization_request_created", {"request_id": request_id})
             
-            # Add background task with tracing context and auth token
+            # Add background task with tracing context
+            # Note: aauth_auth_token is None - will be obtained via challenge/response flow
             background_tasks.add_task(
                 run_optimization_workflow, 
                 request_id, 
                 current_user['payload'].get("sub"), 
                 request,
                 trace_context,
-                auth_token
+                aauth_auth_token  # None - AAuth auth_token obtained via challenge flow
             )
             print(f"🔄 Added background task for request: {request_id}")
             add_event("background_task_added", {"request_id": request_id})
@@ -456,19 +452,11 @@ async def test_a2a_connection(
                     add_event("trace_context_extracted_from_headers")
                     set_attribute("tracing.context_extracted", True)
             
-            # Extract auth token from headers if available
-            auth_token = None
-            if http_request:
-                authorization_header = http_request.headers.get("Authorization")
-                if authorization_header and authorization_header.startswith("Bearer "):
-                    auth_token = authorization_header.replace("Bearer ", "")
-                    if auth_token:
-                        add_event("access_token_extracted_for_agent_auth")
-                        set_attribute("jwt.access_token_extracted", True)
-            
+            # Note: We do NOT pass the OIDC token as AAuth auth_token
+            # The AAuth auth_token is obtained separately via the challenge/response flow
             add_event("a2a_connection_test_requested", {"user_id": current_user["payload"].get("sub")})
             
-            connection_status = await a2a_service.test_connection(auth_token=auth_token)
+            connection_status = await a2a_service.test_connection(auth_token=None)
             
             add_event("a2a_connection_test_completed", {"status": connection_status.get("status")})
             return connection_status

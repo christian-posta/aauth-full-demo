@@ -1,6 +1,8 @@
 import asyncio
 import json
 import uuid
+import os
+import re
 from typing import AsyncGenerator, Dict, Any, Optional
 import httpx
 from datetime import datetime
@@ -14,6 +16,7 @@ from app.config import settings
 from app.models import OptimizationRequest, OptimizationProgress, OptimizationResults
 from app.tracing_config import span, add_event, set_attribute, extract_context_from_headers
 from app.services.aauth_interceptor import AAuthSigningInterceptor
+from app.services.aauth_token_service import aauth_token_service
 
 
 class A2AService:
@@ -27,28 +30,49 @@ class A2AService:
             write=30.0,        # 30 seconds to write request
             pool=30.0          # 30 seconds for connection pool
         )
+        self._last_401_response = None  # Store last 401 response for Agent-Auth extraction
     
     async def _create_client(self, trace_context: Any = None, auth_token: str = None) -> tuple[Any, httpx.AsyncClient]:
-        """Create A2A client and HTTP client with AAuth HWK signing.
+        """Create A2A client and HTTP client with AAuth signing.
         
-        Note: auth_token parameter is kept for API compatibility but is no longer
-        used for STS token exchange. Authentication is now handled via AAuth HWK
-        request signing.
+        Args:
+            trace_context: Optional trace context for distributed tracing
+            auth_token: Optional auth token for scheme=jwt (if provided, will use JWT scheme)
         """
         with span("a2a_service.create_client", {
             "agent_url": self.agent_url,
             "has_trace_context": trace_context is not None,
-            "auth_method": "aauth_hwk"
+            "has_auth_token": auth_token is not None
         }) as span_obj:
             
             print(f"🔧 Creating A2A client for URL: {self.agent_url}")
-            print(f"🔐 Using AAuth HWK signing for request authentication")
+            if auth_token:
+                print(f"🔐 Using AAuth JWT signing with auth_token")
+            else:
+                print(f"🔐 Using AAuth signature signing (will trigger challenge if needed)")
             add_event("creating_a2a_client", {
                 "agent_url": self.agent_url,
-                "auth_method": "aauth_hwk"
+                "has_auth_token": auth_token is not None
             })
             
-            httpx_client = httpx.AsyncClient(timeout=self.timeout)
+            # Create httpx client with event hook to intercept 401 responses
+            service_instance = self  # Capture self for use in closure
+            async def response_hook(response: httpx.Response):
+                """Hook to intercept HTTP responses and extract Agent-Auth header from 401."""
+                if response.status_code == 401:
+                    agent_auth_header = response.headers.get("Agent-Auth")
+                    if agent_auth_header:
+                        # Store in service instance for later extraction
+                        service_instance._last_401_response = response
+                        print(f"🔐 Intercepted 401 with Agent-Auth header")
+                        add_event("agent_auth_challenge_received", {
+                            "has_agent_auth": bool(agent_auth_header)
+                        })
+            
+            httpx_client = httpx.AsyncClient(
+                timeout=self.timeout,
+                event_hooks={"response": [response_hook]}
+            )
             print("✅ HTTPX client created")
             add_event("httpx_client_created")
             
@@ -75,14 +99,14 @@ class A2AService:
             add_event("agent_card_created", {"agent_url": self.agent_url})
             
             # Create AAuth signing interceptor
-            # This signs all outgoing requests with HTTP Message Signatures (scheme=hwk)
-            aauth_interceptor = AAuthSigningInterceptor()
+            # If auth_token is provided, it will use scheme=jwt
+            aauth_interceptor = AAuthSigningInterceptor(auth_token=auth_token)
             print("🔐 AAuth signing interceptor created")
             add_event("aauth_interceptor_created")
             
             # Create client with AAuth signing interceptor
             client = factory.create(agent_card, interceptors=[aauth_interceptor])
-            print("✅ A2A client created with AAuth HWK signing")
+            print("✅ A2A client created with AAuth signing")
             add_event("a2a_client_created_with_aauth_signing")
             
             return client, httpx_client
@@ -94,13 +118,17 @@ class A2AService:
         trace_context: Any = None,
         auth_token: str = None
     ) -> Dict[str, Any]:
-        """Optimize supply chain using A2A agent with tracing support and access token authentication"""
+        """Optimize supply chain using A2A agent with tracing support.
+        
+        Note: auth_token parameter is for AAuth auth_token (obtained from Keycloak AAuth endpoint),
+        NOT the OIDC token. The OIDC token should NOT be passed here.
+        """
         
         with span("a2a_service.optimize_supply_chain", {
             "user_id": user_id,
             "request_type": request.effective_optimization_type,
             "has_trace_context": trace_context is not None,
-            "has_auth_token": auth_token is not None
+            "has_aauth_auth_token": auth_token is not None
         }, parent_context=trace_context) as span_obj:
             
             client, httpx_client = None, None
@@ -115,6 +143,7 @@ class A2AService:
                 })
                 
                 # Create A2A client with tracing
+                # Note: auth_token should be None on first request - will be obtained via challenge flow
                 print("🔧 Creating A2A client...")
                 client, httpx_client = await self._create_client(trace_context, auth_token)
                 print("✅ A2A client created successfully")
@@ -144,39 +173,192 @@ class A2AService:
                 
                 response_content = None
                 response_count = 0
+                agent_auth_header = None
                 
-                async for event in client.send_message(message):
-                    response_count += 1
-                    print(f"📨 Received event #{response_count}: {event}")
-                    print(f"📨 Event type: {type(event)}")
-                    print(f"📨 Event attributes: {dir(event)}")
+                try:
+                    async for event in client.send_message(message):
+                        response_count += 1
+                        print(f"📨 Received event #{response_count}: {event}")
+                        print(f"📨 Event type: {type(event)}")
+                        print(f"📨 Event attributes: {dir(event)}")
+                        
+                        add_event("agent_response_received", {
+                            "event_number": response_count,
+                            "event_type": str(type(event))
+                        })
+                        
+                        # Get the response content from the A2A message structure
+                        if hasattr(event, 'content') and event.content:
+                            if isinstance(event.content, str):
+                                response_content = event.content
+                                print(f"📝 String content: {response_content[:100]}...")
+                            elif isinstance(event.content, dict) and 'content' in event.content:
+                                response_content = event.content['content']
+                                print(f"📝 Dict content: {response_content[:100]}...")
+                        elif hasattr(event, 'text'):
+                            response_content = event.text
+                            print(f"📝 Text attribute: {response_content[:100]}...")
+                        elif hasattr(event, 'parts') and event.parts:
+                            # Handle parts structure
+                            for part in event.parts:
+                                if hasattr(part, 'root') and hasattr(part.root, 'text'):
+                                    response_content = part.root.text
+                                    print(f"📝 Part text: {response_content[:100]}...")
+                                    break
+                        
+                        # Just get the first response for now
+                        break
+                except httpx.HTTPStatusError as e:
+                    # Check if this is a 401 with Agent-Auth header
+                    if e.response.status_code == 401:
+                        agent_auth_header = e.response.headers.get("Agent-Auth")
+                        if agent_auth_header:
+                            print(f"🔐 Received 401 with Agent-Auth challenge")
+                            add_event("agent_auth_challenge_received", {
+                                "has_agent_auth": True
+                            })
+                        else:
+                            # 401 without Agent-Auth - re-raise
+                            raise
+                    else:
+                        # Other HTTP error - re-raise
+                        raise
+                except httpx.HTTPStatusError as e:
+                    # Check if this is a 401 with Agent-Auth header
+                    if e.response.status_code == 401:
+                        agent_auth_header = e.response.headers.get("Agent-Auth")
+                        if agent_auth_header:
+                            print(f"🔐 Detected 401 with Agent-Auth challenge from HTTPStatusError")
+                            add_event("agent_auth_challenge_detected", {
+                                "has_agent_auth": True
+                            })
+                        else:
+                            # 401 without Agent-Auth - re-raise
+                            raise
+                    else:
+                        # Other HTTP error - re-raise
+                        raise
+                except Exception as e:
+                    # Check if we stored a 401 response from the event hook
+                    if self._last_401_response:
+                        agent_auth_header = self._last_401_response.headers.get("Agent-Auth")
+                        if agent_auth_header:
+                            print(f"🔐 Detected 401 with Agent-Auth challenge from stored response")
+                            add_event("agent_auth_challenge_detected", {
+                                "has_agent_auth": True
+                            })
+                            # Clear the stored response
+                            self._last_401_response = None
+                        else:
+                            raise
+                    else:
+                        raise
+                
+                # Handle Agent-Auth challenge if present
+                if agent_auth_header:
+                    print(f"🔐 Processing Agent-Auth challenge")
+                    add_event("processing_agent_auth_challenge")
                     
-                    add_event("agent_response_received", {
-                        "event_number": response_count,
-                        "event_type": str(type(event))
-                    })
+                    # Parse Agent-Auth header to extract resource_token and auth_server
+                    # Format: httpsig; auth-token; resource_token="<jwt>"; auth_server="<url>"
+                    resource_token = None
+                    auth_server = None
                     
-                    # Get the response content from the A2A message structure
-                    if hasattr(event, 'content') and event.content:
-                        if isinstance(event.content, str):
-                            response_content = event.content
-                            print(f"📝 String content: {response_content[:100]}...")
-                        elif isinstance(event.content, dict) and 'content' in event.content:
-                            response_content = event.content['content']
-                            print(f"📝 Dict content: {response_content[:100]}...")
-                    elif hasattr(event, 'text'):
-                        response_content = event.text
-                        print(f"📝 Text attribute: {response_content[:100]}...")
-                    elif hasattr(event, 'parts') and event.parts:
-                        # Handle parts structure
-                        for part in event.parts:
-                            if hasattr(part, 'root') and hasattr(part.root, 'text'):
-                                response_content = part.root.text
-                                print(f"📝 Part text: {response_content[:100]}...")
+                    # Extract resource_token
+                    resource_token_match = re.search(r'resource_token="([^"]+)"', agent_auth_header)
+                    if resource_token_match:
+                        resource_token = resource_token_match.group(1)
+                    
+                    # Extract auth_server
+                    auth_server_match = re.search(r'auth_server="([^"]+)"', agent_auth_header)
+                    if auth_server_match:
+                        auth_server = auth_server_match.group(1)
+                    
+                    if resource_token:
+                        print(f"🔐 Extracted resource_token (length: {len(resource_token)})")
+                        if auth_server:
+                            print(f"🔐 Auth server: {auth_server}")
+                        
+                        add_event("resource_token_extracted", {
+                            "has_resource_token": bool(resource_token),
+                            "has_auth_server": bool(auth_server)
+                        })
+                        
+                        # Request auth_token from Keycloak
+                        # The redirect_uri is not strictly used in autonomous flow but is required by spec
+                        backend_agent_url = os.getenv("BACKEND_AGENT_URL", f"http://{settings.host}:{settings.port}")
+                        redirect_uri = f"{backend_agent_url}/aauth/callback"  # Placeholder, not used for direct grant
+                        
+                        try:
+                            token_result = await aauth_token_service.request_auth_token(
+                                resource_token=resource_token,
+                                redirect_uri=redirect_uri
+                            )
+                            
+                            auth_token = token_result.get("auth_token")
+                            refresh_token = token_result.get("refresh_token")
+                            expires_in = token_result.get("expires_in", 3600)
+                            
+                            if auth_token:
+                                print(f"✅ Received auth_token from Keycloak (expires in {expires_in}s)")
+                                add_event("auth_token_received", {
+                                    "has_auth_token": True,
+                                    "expires_in": expires_in
+                                })
+                                
+                                # Cache the token for future use
+                                agent_id = os.getenv("BACKEND_AGENT_URL", f"http://{settings.host}:{settings.port}")
+                                scope = "supply-chain:optimize"
+                                aauth_token_service._cache_token(
+                                    agent_id=agent_id,
+                                    scope=scope,
+                                    auth_token=auth_token,
+                                    refresh_token=refresh_token or "",
+                                    expires_in=expires_in
+                                )
+                            
+                            # Retry the request with auth_token
+                            print(f"🔄 Retrying request with auth_token")
+                            add_event("retrying_request_with_auth_token")
+                            
+                            # Close old client
+                            await httpx_client.aclose()
+                            
+                            # Create new client with auth_token
+                            client, httpx_client = await self._create_client(trace_context, auth_token)
+                            
+                            # Retry sending the message
+                            async for event in client.send_message(message):
+                                response_count += 1
+                                print(f"📨 Received event #{response_count} (retry): {event}")
+                                
+                                add_event("agent_response_received_retry", {
+                                    "event_number": response_count
+                                })
+                                
+                                # Get the response content
+                                if hasattr(event, 'content') and event.content:
+                                    if isinstance(event.content, str):
+                                        response_content = event.content
+                                    elif isinstance(event.content, dict) and 'content' in event.content:
+                                        response_content = event.content['content']
+                                elif hasattr(event, 'text'):
+                                    response_content = event.text
+                                elif hasattr(event, 'parts') and event.parts:
+                                    for part in event.parts:
+                                        if hasattr(part, 'root') and hasattr(part.root, 'text'):
+                                            response_content = part.root.text
+                                            break
+                                
                                 break
-                    
-                    # Just get the first response for now
-                    break
+                        except Exception as token_error:
+                            print(f"❌ Failed to get auth_token: {token_error}")
+                            add_event("auth_token_request_failed", {"error": str(token_error)})
+                            raise Exception(f"Failed to get auth_token: {token_error}")
+                    else:
+                        print(f"❌ Agent-Auth header missing resource_token")
+                        add_event("agent_auth_missing_resource_token")
+                        raise Exception("Agent-Auth header missing resource_token")
                 
                 if response_content:
                     print(f"✅ Got response from agent: {response_content[:100]}...")

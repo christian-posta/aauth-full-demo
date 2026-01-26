@@ -289,3 +289,64 @@ backend/
 - **`app/services/aauth_interceptor.py`** - Signs outgoing requests to agents
 - **`app/main.py`** - Exposes JWKS endpoints (`/.well-known/aauth-agent`, `/jwks.json`)
 - **`app/services/a2a_service.py`** - Uses `AAuthSigningInterceptor` for agent calls
+
+
+## Additional notes:
+
+
+Checking the Keycloak AAuth support:
+
+```bash
+curl localhost:8080/realms/aauth-test/.well-known/aauth-issuer | jq
+
+{
+  "issuer": "http://localhost:8080/realms/aauth-test",
+  "jwks_uri": "http://localhost:8080/realms/aauth-test/protocol/aauth/certs",
+  "agent_token_endpoint": "http://localhost:8080/realms/aauth-test/protocol/aauth/agent/token",
+  "agent_auth_endpoint": "http://localhost:8080/realms/aauth-test/protocol/aauth/agent/auth",
+  "agent_signing_algs_supported": [
+    "RSA-OAEP",
+    "RS256"
+  ],
+  "request_types_supported": [
+    "auth"
+  ],
+  "scopes_supported": []
+}
+```
+
+
+```bash
+curl http://supply-chain-agent.localhost:3000/.well-known/aauth-agent | jq
+
+{
+  "agent": "http://supply-chain-agent.localhost:3000",
+  "jwks_uri": "http://supply-chain-agent.localhost:3000/jwks.json"
+}
+```
+
+Test full flow from the backend API:
+
+```bash
+TOKEN="your-keycloak-jwt-token"
+
+curl -X POST "http://localhost:8000/optimization/start" \
+     -H "Authorization: Bearer $TOKEN" \
+     -H "Content-Type: application/json" \
+     -d '{
+       "optimization_type": "laptop_supply_chain",
+       "scenario": "laptop_procurement",
+       "custom_prompt": "optimize laptop supply chain",
+       "constraints": {
+         "budget_limit": 500000,
+         "delivery_time": "2 weeks",
+         "quality_requirement": "enterprise_grade"
+       }
+     }'
+```
+
+Trying to call supply-chain-agent directly to review 401 response:
+
+```bash
+
+```
