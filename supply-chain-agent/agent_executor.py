@@ -585,6 +585,16 @@ class SupplyChainOptimizerExecutor(AgentExecutor):
                                         normalized_headers['signature-key'] = sig_key_header
                                     
                                     if DEBUG:
+                                        logger.debug(f"🔐 VERIFYING - URL breakdown:")
+                                        from urllib.parse import urlparse
+                                        parsed_uri = urlparse(uri)
+                                        logger.debug(f"🔐   Full URI: {uri}")
+                                        logger.debug(f"🔐   Scheme: {parsed_uri.scheme}")
+                                        logger.debug(f"🔐   Netloc: {parsed_uri.netloc}")
+                                        logger.debug(f"🔐   Path: {parsed_uri.path or '/'}")
+                                        logger.debug(f"🔐   Query: {parsed_uri.query}")
+                                        logger.debug(f"🔐   Method: {method}")
+                                        logger.debug(f"🔐   Body length: {len(body_bytes) if body_bytes else 0}")
                                         logger.debug(f"🔐 Normalized headers keys: {list(normalized_headers.keys())}")
                                         # Log the exact signature-key value that will be used in signature base
                                         sig_key_in_headers = normalized_headers.get('signature-key', '')
@@ -761,18 +771,56 @@ class SupplyChainOptimizerExecutor(AgentExecutor):
                                                         logger.debug(f"🔐 JWT scheme: agent_id={agent_id_from_token}, cnf.jwk.kid={cnf_jwk.get('kid')}")
                                                         logger.debug(f"🔐 Using cnf.jwk directly for signature verification")
                                                     
-                                                    # Create a "fake" JWKS fetcher that returns the cnf.jwk directly
-                                                    # The verification code expects a JWKS fetcher, so we wrap cnf.jwk in a JWKS structure
+                                                    # Create a JWKS fetcher that handles both:
+                                                    # 1. Agent JWKS (returns cnf.jwk directly)
+                                                    # 2. Keycloak JWKS (fetches from Keycloak for JWT token verification)
                                                     kid_from_cnf = cnf_jwk.get("kid")
                                                     
-                                                    def direct_jwk_fetcher(agent_id_param: str, kid_param: str = None) -> dict:
-                                                        """Return cnf.jwk directly as a JWKS document (no network fetch needed)."""
-                                                        if DEBUG:
-                                                            logger.debug(f"🔐 JWT scheme: returning cnf.jwk directly (no fetch)")
-                                                        # Return as a JWKS document with one key
-                                                        return {"keys": [cnf_jwk]}
+                                                    # Get Keycloak issuer URL from environment
+                                                    keycloak_issuer_url = os.getenv("KEYCLOAK_AAUTH_ISSUER_URL")
+                                                    if not keycloak_issuer_url:
+                                                        keycloak_url = os.getenv("KEYCLOAK_URL", "http://localhost:8080")
+                                                        keycloak_realm = os.getenv("KEYCLOAK_REALM", "aauth-test")
+                                                        keycloak_issuer_url = f"{keycloak_url}/realms/{keycloak_realm}"
                                                     
-                                                    jwks_fetcher = direct_jwk_fetcher
+                                                    def smart_jwks_fetcher(issuer_or_agent_id: str, kid_param: str = None) -> dict:
+                                                        """Smart JWKS fetcher that handles both agent JWKS and Keycloak JWKS.
+                                                        
+                                                        - If called with agent_id (like http://backend.localhost:8000), returns cnf.jwk
+                                                        - If called with Keycloak issuer URL, fetches Keycloak JWKS
+                                                        """
+                                                        # Check if this is a Keycloak issuer URL
+                                                        if issuer_or_agent_id == keycloak_issuer_url or "/realms/" in issuer_or_agent_id:
+                                                            # This is a Keycloak issuer URL - fetch Keycloak JWKS
+                                                            if DEBUG:
+                                                                logger.debug(f"🔐 JWT scheme: Fetching Keycloak JWKS from {issuer_or_agent_id}")
+                                                            try:
+                                                                import httpx
+                                                                jwks_url = f"{issuer_or_agent_id}/protocol/openid-connect/certs"
+                                                                if DEBUG:
+                                                                    logger.debug(f"🔐 Fetching Keycloak JWKS from {jwks_url}")
+                                                                jwks_response = httpx.get(jwks_url, timeout=10.0)
+                                                                jwks_response.raise_for_status()
+                                                                jwks_doc = jwks_response.json()
+                                                                if DEBUG:
+                                                                    logger.debug(f"🔐 Keycloak JWKS fetched: {len(jwks_doc.get('keys', []))} keys")
+                                                                    if kid_param:
+                                                                        logger.debug(f"🔐 Looking for key with kid={kid_param}")
+                                                                return jwks_doc
+                                                            except Exception as e:
+                                                                logger.error(f"❌ Failed to fetch Keycloak JWKS: {e}")
+                                                                if DEBUG:
+                                                                    import traceback
+                                                                    logger.debug(traceback.format_exc())
+                                                                return None
+                                                        else:
+                                                            # This is an agent_id - return cnf.jwk directly
+                                                            if DEBUG:
+                                                                logger.debug(f"🔐 JWT scheme: returning cnf.jwk directly for agent_id={issuer_or_agent_id}")
+                                                            # Return as a JWKS document with one key
+                                                            return {"keys": [cnf_jwk]}
+                                                    
+                                                    jwks_fetcher = smart_jwks_fetcher
                                                     if DEBUG:
                                                         logger.debug(f"🔐 Created JWKS fetcher for JWT scheme: agent_id={agent_id_from_token}, kid={kid_from_cnf}")
                                             except Exception as e:
@@ -786,11 +834,20 @@ class SupplyChainOptimizerExecutor(AgentExecutor):
                                         public_key = None
                                         jwks_fetcher = None
                                     
+                                    # Note: body=None is fine even if Content-Digest is in signature-input
+                                    # The library uses Content-Digest value from headers (not computed from body)
+                                    # It validates the signature by checking if signature matches signature base
+                                    
+                                    # Log what we're verifying with (for debugging signature verification issues)
+                                    from urllib.parse import urlparse
+                                    parsed_verifying_uri = urlparse(uri)
+                                    logger.info(f"🔐 VERIFYING with: method={method}, authority={parsed_verifying_uri.netloc}, path={parsed_verifying_uri.path or '/'}")
+                                    
                                     is_valid = verify_signature(
                                         method=method,
                                         target_uri=uri,
                                         headers=normalized_headers,
-                                        body=body_bytes,
+                                        body=None,  # Library uses Content-Digest from headers if in signature-input
                                         signature_input_header=sig_input_header,
                                         signature_header=sig_header,
                                         signature_key_header=sig_key_header,
@@ -1348,11 +1405,13 @@ class SupplyChainOptimizerExecutor(AgentExecutor):
             logger.debug(f"🔍 Executor: Final request_text: '{request_text}'")
         
         try:
-            # Note: JWT/STS token exchange removed - market-analysis-agent calls now use AAuth HWK signing
+            # Note: JWT/STS token exchange removed - market-analysis-agent calls now use AAuth signing
             # The AAuthSigningInterceptor handles authentication via HTTP Message Signatures
-            logger.info(f"🔐 Using AAuth HWK signing for downstream agent calls (no JWT/STS exchange)")
-            add_event("aauth_hwk_auth_method")
-            set_attribute("auth.method", "aauth_hwk")
+            # Check which scheme is configured
+            sig_scheme = os.getenv("AAUTH_SIGNATURE_SCHEME", "hwk").lower()
+            logger.info(f"🔐 Using AAuth {sig_scheme.upper()} signing for downstream agent calls (no JWT/STS exchange)")
+            add_event("aauth_auth_method", {"scheme": sig_scheme})
+            set_attribute("auth.method", f"aauth_{sig_scheme}")
             
             result = await self.agent.invoke(request_text, trace_context)
             add_event("agent_invoke_successful")

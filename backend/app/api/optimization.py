@@ -1,4 +1,5 @@
 import asyncio
+import logging
 from fastapi import APIRouter, Depends, HTTPException, BackgroundTasks, Request
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from typing import List, Any
@@ -10,7 +11,11 @@ from app.services.a2a_service import a2a_service
 from app.services.keycloak_service import keycloak_service
 from app.services.agent_sts_service import agent_sts_service
 from app.tracing_config import span, add_event, set_attribute, extract_context_from_headers
+from app.config import settings
 from fastapi.responses import JSONResponse
+
+# Configure logging
+logger = logging.getLogger(__name__)
 
 router = APIRouter()
 security = HTTPBearer()
@@ -52,15 +57,18 @@ async def run_optimization_workflow(request_id: str, user_id: str, request: Opti
             
             # Update progress to running
             optimization_service.update_progress(request_id, 0.0, "Connecting to A2A supply-chain agent")
-            print("📊 Progress updated: Connecting to A2A agent")
+            if settings.debug:
+                logger.debug("📊 Progress updated: Connecting to A2A agent")
             add_event("progress_updated", {"step": "Connecting to A2A agent", "percentage": 0.0})
             
             # Get response from A2A agent with tracing context and auth token
-            print("🤖 Calling A2A service...")
+            if settings.debug:
+                logger.debug("🤖 Calling A2A service...")
             add_event("calling_a2a_service")
             
             response = await a2a_service.optimize_supply_chain(request, user_id, trace_context, auth_token)
-            print(f"📨 A2A service response: {response}")
+            if settings.debug:
+                logger.debug(f"📨 A2A service response: {response}")
             
             add_event("a2a_service_response_received", {
                 "response_type": response.get("type"),
@@ -68,7 +76,8 @@ async def run_optimization_workflow(request_id: str, user_id: str, request: Opti
             })
             
             if response["type"] == "success":
-                print("✅ A2A optimization successful")
+                if settings.debug:
+                    logger.debug("✅ A2A optimization successful")
                 add_event("a2a_optimization_successful")
                 
                 # Update progress to completed
@@ -110,7 +119,8 @@ async def run_optimization_workflow(request_id: str, user_id: str, request: Opti
                     add_event("optimization_results_verified", {"results_found": False})
                 
             elif response["type"] == "error":
-                print(f"❌ A2A optimization failed: {response['message']}")
+                if settings.debug:
+                    logger.debug(f"❌ A2A optimization failed: {response['message']}")
                 add_event("a2a_optimization_failed", {"error_message": response['message']})
                 
                 # Handle error

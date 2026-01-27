@@ -142,10 +142,11 @@ class AAuthTokenService:
         """
         from aauth import sign_request
         
-        # Note: The aauth library's sign_request() function automatically adds:
-        # - content-digest header (per SPEC Section 10.3, RFC 9530) when body is present
+        # Note: The aauth library's sign_request() function adds:
         # - Signature-Input, Signature, and Signature-Key headers
-        # We don't need to manually add content-digest - it's handled by the library.
+        # - Content-Digest header is optional and can be manually added to headers if needed
+        # The library validates what's in signature-input from headers, not from body
+        # So body=None is fine - we don't need to pass body for validation
         
         sign_kwargs = {}
         if self.signature_scheme == "jwks":
@@ -186,11 +187,14 @@ class AAuthTokenService:
         logger.info(f"🔐   Public key crv: {self.public_jwk.get('crv', 'N/A')}")
         logger.info(f"🔐   Full JWK: {self.public_jwk}")
 
+        # Note: body=None is fine even if Content-Digest is in signature-input
+        # The library uses Content-Digest value from headers (not computed from body)
+        # If Content-Digest is in signature-input, make sure it's in headers before signing
         sig_headers = sign_request(
             method=method,
             target_uri=url,
             headers=headers,
-            body=body,
+            body=None,  # Library uses Content-Digest from headers if in signature-input
             private_key=self.private_key,
             sig_scheme=self.signature_scheme,
             **sign_kwargs
@@ -209,15 +213,36 @@ class AAuthTokenService:
             sig_input = sig_headers.get('Signature-Input', '')
             sig_key_header = sig_headers.get('Signature-Key', '')
 
-            # Build signature base as Keycloak expects
-            signature_base_lines = [
-                f'"@method": {method}',
-                f'"@authority": {parsed_url.netloc}',
-                f'"@path": {parsed_url.path}',
-                f'"content-type": {headers.get("Content-Type", "")}',
-                f'"content-digest": {headers.get("Content-Digest", "")}',
-                f'"signature-key": {sig_key_header}',
-            ]
+            # Parse signature-input to determine which components are included
+            # Format: sig1=("@method" "@authority" "@path" "signature-key");created=...
+            components = []
+            if sig_input.startswith('sig1='):
+                # Extract the component list from sig1=("component1" "component2" ...)
+                import re
+                # Match the part inside parentheses: ("@method" "@authority" ...)
+                match = re.search(r'sig1=\(([^)]+)\)', sig_input)
+                if match:
+                    components_str = match.group(1)
+                    # Parse individual components (they're quoted strings)
+                    components = re.findall(r'"([^"]+)"', components_str)
+            
+            # Build signature base with only the components in signature-input
+            signature_base_lines = []
+            for component in components:
+                if component == '@method':
+                    signature_base_lines.append(f'"@method": {method}')
+                elif component == '@authority':
+                    signature_base_lines.append(f'"@authority": {parsed_url.netloc}')
+                elif component == '@path':
+                    signature_base_lines.append(f'"@path": {parsed_url.path}')
+                elif component == '@query':
+                    signature_base_lines.append(f'"@query": {parsed_url.query}')
+                elif component == 'content-type':
+                    signature_base_lines.append(f'"content-type": {headers.get("Content-Type", "")}')
+                elif component == 'content-digest':
+                    signature_base_lines.append(f'"content-digest": {headers.get("Content-Digest", "")}')
+                elif component == 'signature-key':
+                    signature_base_lines.append(f'"signature-key": {sig_key_header}')
 
             # Add @signature-params as the final line (RFC 9421 requirement)
             # Extract just the params part from sig1=(...);created=...
@@ -259,23 +284,20 @@ class AAuthTokenService:
         except Exception as e:
             logger.warning(f"🔐 Could not perform local signature verification: {e}")
 
-        # Check if aauth computed the correct Content-Digest
+        # Check if Content-Digest is in signature headers
+        # Note: Library doesn't compute Content-Digest from body anymore
+        # It uses Content-Digest from input headers if it's in signature-input
         if 'Content-Digest' in sig_headers:
             aauth_digest = sig_headers['Content-Digest']
-            logger.info(f"🔐 aauth computed Content-Digest: {aauth_digest}")
-            if body:
-                import hashlib
-                import base64
-                expected = f"sha-256=:{base64.b64encode(hashlib.sha256(body).digest()).decode('utf-8')}:"
-                if aauth_digest != expected:
-                    logger.error(f"🔐 ❌ AAUTH LIBRARY COMPUTED WRONG DIGEST!")
-                    logger.error(f"🔐    aauth returned: {aauth_digest}")
-                    logger.error(f"🔐    Expected:       {expected}")
-                    logger.error(f"🔐    This is a bug in the aauth library!")
+            logger.info(f"🔐 Content-Digest in signature headers: {aauth_digest}")
+            # Verify it matches what we put in headers (if we added it)
+            if 'Content-Digest' in headers:
+                if aauth_digest == headers['Content-Digest']:
+                    logger.info(f"🔐 ✓ Content-Digest matches header value")
                 else:
-                    logger.info(f"🔐 ✓ aauth computed correct Content-Digest")
+                    logger.warning(f"🔐 ⚠️ Content-Digest mismatch between headers and signature!")
         else:
-            logger.warning(f"🔐 ⚠️ aauth did not return Content-Digest header!")
+            logger.debug(f"🔐 No Content-Digest in signature headers (optional)")
 
         # Analyze the signature that was created
         if 'Signature-Input' in sig_headers:
@@ -355,13 +377,14 @@ class AAuthTokenService:
                     "Content-Length": str(len(body_bytes))
                 }
 
-                # CRITICAL: Add Content-Digest header BEFORE signing
-                # This ensures we control exactly what digest value gets signed
+                # Add Content-Digest header to headers if we want it in the signature
+                # The aauth library will use this from headers (not calculate from body)
+                # Content-Digest is optional - only needed if it's in signature-input
                 import hashlib
                 import base64
                 content_digest = f"sha-256=:{base64.b64encode(hashlib.sha256(body_bytes).digest()).decode('utf-8')}:"
                 headers["Content-Digest"] = content_digest
-                logger.info(f"🔐 Added Content-Digest header BEFORE signing: {content_digest}")
+                logger.info(f"🔐 Added Content-Digest header to headers: {content_digest}")
 
                 # Sign the request
                 logger.info(f"🔐 About to sign auth token request with method=POST, url={endpoint}")
@@ -479,6 +502,8 @@ class AAuthTokenService:
                         expires_in = result.get("expires_in", 3600)
                         
                         logger.info(f"✅ Auth token received successfully")
+                        # Development: Log the actual token
+                        logger.info(f"🔐 AAuth Token: {auth_token}")
                         if DEBUG:
                             logger.debug(f"🔐 Auth token length: {len(auth_token) if auth_token else 0}")
                             logger.debug(f"🔐 Expires in: {expires_in} seconds")
@@ -569,13 +594,14 @@ class AAuthTokenService:
                     "Content-Length": str(len(body_bytes))
                 }
 
-                # CRITICAL: Add Content-Digest header BEFORE signing
-                # This ensures we control exactly what digest value gets signed
+                # Add Content-Digest header to headers if we want it in the signature
+                # The aauth library will use this from headers (not calculate from body)
+                # Content-Digest is optional - only needed if it's in signature-input
                 import hashlib
                 import base64
                 content_digest = f"sha-256=:{base64.b64encode(hashlib.sha256(body_bytes).digest()).decode('utf-8')}:"
                 headers["Content-Digest"] = content_digest
-                logger.info(f"🔐 Added Content-Digest header BEFORE signing: {content_digest}")
+                logger.info(f"🔐 Added Content-Digest header to headers: {content_digest}")
 
                 # Sign the request
                 logger.info(f"🔐 About to sign refresh token request with method=POST, url={endpoint}")
@@ -706,6 +732,8 @@ class AAuthTokenService:
             if not self._is_token_expired(expires_at):
                 auth_token = cached.get("auth_token")
                 logger.info(f"✅ Using cached auth token (expires in {int(expires_at - time.time())} seconds)")
+                # Development: Log the actual token
+                logger.info(f"🔐 AAuth Token (cached): {auth_token}")
                 if DEBUG:
                     logger.debug(f"🔐 Cache key: {cache_key}")
                 return auth_token

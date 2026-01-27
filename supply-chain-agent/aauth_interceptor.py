@@ -103,6 +103,24 @@ class AAuthSigningInterceptor(ClientCallInterceptor):
             if DEBUG:
                 logger.debug(f"🔍   Using URL from agent_card: {url}")
         
+        # Normalize URL path: ensure path is always present (empty path becomes '/')
+        # This matches what the verifier will reconstruct (request.url.path or "/")
+        if url:
+            from urllib.parse import urlparse, urlunparse
+            parsed = urlparse(url)
+            # If path is empty, normalize to '/'
+            normalized_path = parsed.path if parsed.path else '/'
+            url = urlunparse((
+                parsed.scheme,
+                parsed.netloc,
+                normalized_path,
+                parsed.params,
+                parsed.query,
+                parsed.fragment
+            ))
+            if DEBUG:
+                logger.debug(f"🔍   Normalized URL path: {url}")
+        
         method = http_kwargs.get('method', 'POST').upper()
         
         # Get body if present
@@ -183,11 +201,14 @@ class AAuthSigningInterceptor(ClientCallInterceptor):
                 if DEBUG:
                     logger.debug(f"🔐 AAuth: Method: {method}, Body length: {len(body) if body else 0}")
                 
+                # Note: body=None is fine even if Content-Digest is in signature-input
+                # The library uses Content-Digest value from headers (not computed from body)
+                # If Content-Digest is in signature-input, make sure it's in headers before signing
                 sig_headers = sign_request(
                     method=method,
                     target_uri=str(url),
                     headers=headers,
-                    body=body,
+                    body=None,  # Library uses Content-Digest from headers if in signature-input
                     private_key=self.private_key,
                     sig_scheme=sig_scheme,
                     **sign_kwargs

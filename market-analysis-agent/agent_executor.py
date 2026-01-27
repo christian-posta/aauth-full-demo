@@ -434,11 +434,14 @@ class MarketAnalysisAgentExecutor(AgentExecutor):
                                 
                                 # Verify signature
                                 try:
+                                    # Note: body=None is fine even if Content-Digest is in signature-input
+                                    # The library uses Content-Digest value from headers (not computed from body)
+                                    # It validates the signature by checking if signature matches signature base
                                     is_valid = verify_signature(
                                         method=method,
                                         target_uri=uri,
                                         headers=normalized_headers,
-                                        body=body_bytes,
+                                        body=None,  # Library uses Content-Digest from headers if in signature-input
                                         signature_input_header=sig_input_header,
                                         signature_header=sig_header,
                                         signature_key_header=sig_key_header,

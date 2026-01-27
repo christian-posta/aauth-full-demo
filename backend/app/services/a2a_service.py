@@ -3,6 +3,7 @@ import json
 import uuid
 import os
 import re
+import logging
 from typing import AsyncGenerator, Dict, Any, Optional
 import httpx
 from datetime import datetime
@@ -17,6 +18,9 @@ from app.models import OptimizationRequest, OptimizationProgress, OptimizationRe
 from app.tracing_config import span, add_event, set_attribute, extract_context_from_headers
 from app.services.aauth_interceptor import AAuthSigningInterceptor
 from app.services.aauth_token_service import aauth_token_service
+
+# Configure logging
+logger = logging.getLogger(__name__)
 
 
 class A2AService:
@@ -45,11 +49,12 @@ class A2AService:
             "has_auth_token": auth_token is not None
         }) as span_obj:
             
-            print(f"🔧 Creating A2A client for URL: {self.agent_url}")
-            if auth_token:
-                print(f"🔐 Using AAuth JWT signing with auth_token")
-            else:
-                print(f"🔐 Using AAuth signature signing (will trigger challenge if needed)")
+            if settings.debug:
+                logger.debug(f"🔧 Creating A2A client for URL: {self.agent_url}")
+                if auth_token:
+                    logger.debug(f"🔐 Using AAuth JWT signing with auth_token")
+                else:
+                    logger.debug(f"🔐 Using AAuth signature signing (will trigger challenge if needed)")
             add_event("creating_a2a_client", {
                 "agent_url": self.agent_url,
                 "has_auth_token": auth_token is not None
@@ -64,7 +69,8 @@ class A2AService:
                     if agent_auth_header:
                         # Store in service instance for later extraction
                         service_instance._last_401_response = response
-                        print(f"🔐 Intercepted 401 with Agent-Auth header")
+                        if settings.debug:
+                            logger.debug(f"🔐 Intercepted 401 with Agent-Auth header")
                         add_event("agent_auth_challenge_received", {
                             "has_agent_auth": bool(agent_auth_header)
                         })
@@ -73,7 +79,8 @@ class A2AService:
                 timeout=self.timeout,
                 event_hooks={"response": [response_hook]}
             )
-            print("✅ HTTPX client created")
+            if settings.debug:
+                logger.debug("✅ HTTPX client created")
             add_event("httpx_client_created")
             
             # Create client configuration
@@ -82,12 +89,14 @@ class A2AService:
                 supported_transports=[TransportProtocol.jsonrpc],
                 streaming=False
             )
-            print("✅ Client config created")
+            if settings.debug:
+                logger.debug("✅ Client config created")
             add_event("client_config_created")
             
             # Create client factory
             factory = ClientFactory(config)
-            print("✅ Client factory created")
+            if settings.debug:
+                logger.debug("✅ Client factory created")
             add_event("client_factory_created")
             
             # Create agent card
@@ -95,18 +104,26 @@ class A2AService:
                 url=self.agent_url,
                 transports=["JSONRPC"]
             )
-            print(f"✅ Agent card created: {agent_card}")
+            if settings.debug:
+                logger.debug(f"✅ Agent card created: {agent_card}")
             add_event("agent_card_created", {"agent_url": self.agent_url})
             
             # Create AAuth signing interceptor
-            # If auth_token is provided, it will use scheme=jwt
+            # IMPORTANT: On first attempt, auth_token MUST be None to use JWKS and trigger 401 challenge
+            # Only on retry after getting auth_token should we pass it here
+            if auth_token:
+                logger.info(f"🔐 Creating interceptor WITH auth_token (retry after challenge)")
+            else:
+                logger.info(f"🔐 Creating interceptor WITHOUT auth_token (first attempt - will use JWKS)")
             aauth_interceptor = AAuthSigningInterceptor(auth_token=auth_token)
-            print("🔐 AAuth signing interceptor created")
+            if settings.debug:
+                logger.debug("🔐 AAuth signing interceptor created")
             add_event("aauth_interceptor_created")
             
             # Create client with AAuth signing interceptor
             client = factory.create(agent_card, interceptors=[aauth_interceptor])
-            print("✅ A2A client created with AAuth signing")
+            if settings.debug:
+                logger.debug("✅ A2A client created with AAuth signing")
             add_event("a2a_client_created_with_aauth_signing")
             
             return client, httpx_client
@@ -134,8 +151,9 @@ class A2AService:
             client, httpx_client = None, None
             
             try:
-                print(f"🚀 Starting A2A optimization for user: {user_id}")
-                print(f"📝 Request: {request}")
+                if settings.debug:
+                    logger.debug(f"🚀 Starting A2A optimization for user: {user_id}")
+                    logger.debug(f"📝 Request: {request}")
                 
                 add_event("optimization_started", {
                     "user_id": user_id,
@@ -143,17 +161,26 @@ class A2AService:
                 })
                 
                 # Create A2A client with tracing
-                # Note: auth_token should be None on first request - will be obtained via challenge flow
-                print("🔧 Creating A2A client...")
+                # CRITICAL: auth_token MUST be None on first request to use JWKS and trigger 401 challenge
+                # Only on retry after getting auth_token should we pass it here
+                if auth_token:
+                    logger.warning(f"⚠️ WARNING: auth_token provided on first call! This should be None for first attempt!")
+                    logger.warning(f"⚠️ First attempt MUST use JWKS to trigger 401 challenge!")
+                else:
+                    logger.info(f"🔐 First attempt: auth_token=None, will use JWKS scheme")
+                if settings.debug:
+                    logger.debug("🔧 Creating A2A client...")
                 client, httpx_client = await self._create_client(trace_context, auth_token)
-                print("✅ A2A client created successfully")
+                if settings.debug:
+                    logger.debug("✅ A2A client created successfully")
                 add_event("a2a_client_created_successfully")
                 
                 # Create optimization message
                 message_content = self._create_optimization_message(request)
-                print(f"💬 Created message: {message_content}")
-                print(f"🔍 Custom prompt was: {request.custom_prompt}")
-                print(f"🔍 Final message length: {len(message_content)}")
+                if settings.debug:
+                    logger.debug(f"💬 Created message: {message_content}")
+                    logger.debug(f"🔍 Custom prompt was: {request.custom_prompt}")
+                    logger.debug(f"🔍 Final message length: {len(message_content)}")
                 add_event("optimization_message_created", {
                     "message_length": len(message_content),
                     "custom_prompt": request.custom_prompt,
@@ -164,11 +191,13 @@ class A2AService:
                     role=Role.user, 
                     content=message_content
                 )
-                print(f"📤 Message object created: {message}")
+                if settings.debug:
+                    logger.debug(f"📤 Message object created: {message}")
                 add_event("message_object_created")
                 
                 # Send message to agent and get response
-                print(f"📡 Sending message to agent at: {self.agent_url}")
+                if settings.debug:
+                    logger.debug(f"📡 Sending message to agent at: {self.agent_url}")
                 add_event("sending_message_to_agent", {"agent_url": self.agent_url})
                 
                 response_content = None
@@ -178,9 +207,10 @@ class A2AService:
                 try:
                     async for event in client.send_message(message):
                         response_count += 1
-                        print(f"📨 Received event #{response_count}: {event}")
-                        print(f"📨 Event type: {type(event)}")
-                        print(f"📨 Event attributes: {dir(event)}")
+                        if settings.debug:
+                            logger.debug(f"📨 Received event #{response_count}: {event}")
+                            logger.debug(f"📨 Event type: {type(event)}")
+                            logger.debug(f"📨 Event attributes: {dir(event)}")
                         
                         add_event("agent_response_received", {
                             "event_number": response_count,
@@ -191,19 +221,23 @@ class A2AService:
                         if hasattr(event, 'content') and event.content:
                             if isinstance(event.content, str):
                                 response_content = event.content
-                                print(f"📝 String content: {response_content[:100]}...")
+                                if settings.debug:
+                                    logger.debug(f"📝 String content: {response_content[:100]}...")
                             elif isinstance(event.content, dict) and 'content' in event.content:
                                 response_content = event.content['content']
-                                print(f"📝 Dict content: {response_content[:100]}...")
+                                if settings.debug:
+                                    logger.debug(f"📝 Dict content: {response_content[:100]}...")
                         elif hasattr(event, 'text'):
                             response_content = event.text
-                            print(f"📝 Text attribute: {response_content[:100]}...")
+                            if settings.debug:
+                                logger.debug(f"📝 Text attribute: {response_content[:100]}...")
                         elif hasattr(event, 'parts') and event.parts:
                             # Handle parts structure
                             for part in event.parts:
                                 if hasattr(part, 'root') and hasattr(part.root, 'text'):
                                     response_content = part.root.text
-                                    print(f"📝 Part text: {response_content[:100]}...")
+                                    if settings.debug:
+                                        logger.debug(f"📝 Part text: {response_content[:100]}...")
                                     break
                         
                         # Just get the first response for now
@@ -213,7 +247,8 @@ class A2AService:
                     if e.response.status_code == 401:
                         agent_auth_header = e.response.headers.get("Agent-Auth")
                         if agent_auth_header:
-                            print(f"🔐 Received 401 with Agent-Auth challenge")
+                            if settings.debug:
+                                logger.debug(f"🔐 Received 401 with Agent-Auth challenge")
                             add_event("agent_auth_challenge_received", {
                                 "has_agent_auth": True
                             })
@@ -228,7 +263,8 @@ class A2AService:
                     if e.response.status_code == 401:
                         agent_auth_header = e.response.headers.get("Agent-Auth")
                         if agent_auth_header:
-                            print(f"🔐 Detected 401 with Agent-Auth challenge from HTTPStatusError")
+                            if settings.debug:
+                                logger.debug(f"🔐 Detected 401 with Agent-Auth challenge from HTTPStatusError")
                             add_event("agent_auth_challenge_detected", {
                                 "has_agent_auth": True
                             })
@@ -243,7 +279,8 @@ class A2AService:
                     if self._last_401_response:
                         agent_auth_header = self._last_401_response.headers.get("Agent-Auth")
                         if agent_auth_header:
-                            print(f"🔐 Detected 401 with Agent-Auth challenge from stored response")
+                            if settings.debug:
+                                logger.debug(f"🔐 Detected 401 with Agent-Auth challenge from stored response")
                             add_event("agent_auth_challenge_detected", {
                                 "has_agent_auth": True
                             })
@@ -256,7 +293,8 @@ class A2AService:
                 
                 # Handle Agent-Auth challenge if present
                 if agent_auth_header:
-                    print(f"🔐 Processing Agent-Auth challenge")
+                    if settings.debug:
+                        logger.debug(f"🔐 Processing Agent-Auth challenge")
                     add_event("processing_agent_auth_challenge")
                     
                     # Parse Agent-Auth header to extract resource_token and auth_server
@@ -275,9 +313,10 @@ class A2AService:
                         auth_server = auth_server_match.group(1)
                     
                     if resource_token:
-                        print(f"🔐 Extracted resource_token (length: {len(resource_token)})")
-                        if auth_server:
-                            print(f"🔐 Auth server: {auth_server}")
+                        if settings.debug:
+                            logger.debug(f"🔐 Extracted resource_token (length: {len(resource_token)})")
+                            if auth_server:
+                                logger.debug(f"🔐 Auth server: {auth_server}")
                         
                         add_event("resource_token_extracted", {
                             "has_resource_token": bool(resource_token),
@@ -300,7 +339,10 @@ class A2AService:
                             expires_in = token_result.get("expires_in", 3600)
                             
                             if auth_token:
-                                print(f"✅ Received auth_token from Keycloak (expires in {expires_in}s)")
+                                if settings.debug:
+                                    logger.debug(f"✅ Received auth_token from Keycloak (expires in {expires_in}s)")
+                                    # Development: Log the actual token
+                                    logger.debug(f"🔐 AAuth Token: {auth_token}")
                                 add_event("auth_token_received", {
                                     "has_auth_token": True,
                                     "expires_in": expires_in
@@ -318,19 +360,24 @@ class A2AService:
                                 )
                             
                             # Retry the request with auth_token
-                            print(f"🔄 Retrying request with auth_token")
+                            logger.info(f"🔄 RETRY: Retrying request with auth_token (scheme=JWT)")
+                            logger.info(f"🔄 RETRY: Auth token length: {len(auth_token)}")
+                            if settings.debug:
+                                logger.debug(f"🔄 Retrying request with auth_token")
                             add_event("retrying_request_with_auth_token")
                             
                             # Close old client
                             await httpx_client.aclose()
                             
                             # Create new client with auth_token
+                            logger.info(f"🔄 RETRY: Creating new client with auth_token for JWT scheme")
                             client, httpx_client = await self._create_client(trace_context, auth_token)
                             
                             # Retry sending the message
                             async for event in client.send_message(message):
                                 response_count += 1
-                                print(f"📨 Received event #{response_count} (retry): {event}")
+                                if settings.debug:
+                                    logger.debug(f"📨 Received event #{response_count} (retry): {event}")
                                 
                                 add_event("agent_response_received_retry", {
                                     "event_number": response_count
@@ -352,16 +399,19 @@ class A2AService:
                                 
                                 break
                         except Exception as token_error:
-                            print(f"❌ Failed to get auth_token: {token_error}")
+                            if settings.debug:
+                                logger.debug(f"❌ Failed to get auth_token: {token_error}")
                             add_event("auth_token_request_failed", {"error": str(token_error)})
                             raise Exception(f"Failed to get auth_token: {token_error}")
                     else:
-                        print(f"❌ Agent-Auth header missing resource_token")
+                        if settings.debug:
+                            logger.debug(f"❌ Agent-Auth header missing resource_token")
                         add_event("agent_auth_missing_resource_token")
                         raise Exception("Agent-Auth header missing resource_token")
                 
                 if response_content:
-                    print(f"✅ Got response from agent: {response_content[:100]}...")
+                    if settings.debug:
+                        logger.debug(f"✅ Got response from agent: {response_content[:100]}...")
                     add_event("agent_response_processed", {
                         "response_length": len(response_content),
                         "response_preview": response_content[:100]
@@ -379,7 +429,8 @@ class A2AService:
                         "request_id": str(uuid.uuid4())
                     }
                 else:
-                    print("❌ No response content received from agent")
+                    if settings.debug:
+                        logger.debug("❌ No response content received from agent")
                     add_event("no_agent_response_received")
                     
                     # Close HTTP client
@@ -393,10 +444,11 @@ class A2AService:
                     }
                     
             except Exception as e:
-                print(f"💥 Exception in A2A optimization: {e}")
-                print(f"💥 Exception type: {type(e)}")
-                import traceback
-                traceback.print_exc()
+                if settings.debug:
+                    logger.debug(f"💥 Exception in A2A optimization: {e}")
+                    logger.debug(f"💥 Exception type: {type(e)}")
+                    import traceback
+                    logger.debug(traceback.format_exc())
                 
                 add_event("a2a_optimization_exception", {
                     "error": str(e),
@@ -547,7 +599,8 @@ class A2AService:
                     "auth_method": "aauth_hwk"
                 })
                 
-                print(f"🔐 Testing connection with AAuth HWK signing...")
+                if settings.debug:
+                    logger.debug(f"🔐 Testing connection with AAuth HWK signing...")
                 
                 # Create a simple test client with AAuth signing
                 client, httpx_client = await self._create_client()
