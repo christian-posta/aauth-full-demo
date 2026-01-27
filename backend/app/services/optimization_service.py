@@ -1,6 +1,6 @@
 import uuid
 from datetime import datetime, timedelta
-from typing import Dict, List, Optional
+from typing import Dict, List, Optional, Any
 from app.models import (
     OptimizationRequest, OptimizationProgress, OptimizationResults,
     OptimizationSummary, PurchaseRecommendation, OptimizationReasoning, OptimizationStatus
@@ -11,6 +11,27 @@ class OptimizationService:
     def __init__(self):
         self.optimizations: Dict[str, OptimizationProgress] = {}
         self.results: Dict[str, OptimizationResults] = {}
+        # Pending user-delegated AAuth: request_id -> {user_id, request, trace_context}
+        # Set when returning consent_required; consumed by /auth/aauth/callback
+        self._pending_aauth: Dict[str, Dict[str, Any]] = {}
+
+    def set_pending_aauth_request(
+        self,
+        request_id: str,
+        user_id: str,
+        request: OptimizationRequest,
+        trace_context: Optional[Any] = None,
+    ) -> None:
+        """Store pending optimization for user-delegated AAuth. Consumed by callback after code exchange."""
+        self._pending_aauth[request_id] = {
+            "user_id": user_id,
+            "request": request,
+            "trace_context": trace_context,
+        }
+
+    def get_and_clear_pending_aauth_request(self, request_id: str) -> Optional[Dict[str, Any]]:
+        """Return and remove pending optimization for request_id, or None if not found."""
+        return self._pending_aauth.pop(request_id, None)
     
     def create_optimization_request(self, request: OptimizationRequest, user_id: str) -> str:
         """Create a new optimization request with tracing support"""

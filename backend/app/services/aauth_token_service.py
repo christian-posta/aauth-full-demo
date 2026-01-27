@@ -1,14 +1,17 @@
 #!/usr/bin/env python3
 """AAuth Token Service for requesting auth tokens from Keycloak.
 
-This service implements autonomous AAuth authorization flow (SPEC Section 3.4)
-where agents request auth tokens based on their identity and policy evaluation,
-without user interaction.
+This service implements:
+- Autonomous AAuth flow (SPEC 3.4): request_type=auth, direct grant of auth_token.
+- User-delegated AAuth flow (SPEC 3.6, 9.4–9.6): when Keycloak returns request_token
+  (user consent required), get_consent_url() and exchange_code_for_token() support
+  the consent redirect and code exchange.
 
 Per SPEC Section 9.3, this service:
 - Fetches Keycloak AAuth metadata from `/.well-known/aauth-issuer`
 - Makes signed HTTPSig requests to Keycloak's `agent_token_endpoint`
 - Handles token caching and refresh
+- Uses agent_auth_endpoint (SPEC 8.2) for user consent URL
 """
 
 import logging
@@ -46,6 +49,7 @@ class AAuthTokenService:
             self.issuer_url = f"{keycloak_url}/realms/{keycloak_realm}"
         
         self.agent_token_endpoint = os.getenv("KEYCLOAK_AAUTH_AGENT_TOKEN_ENDPOINT")
+        self.agent_auth_endpoint = os.getenv("KEYCLOAK_AAUTH_AGENT_AUTH_ENDPOINT")  # User consent URL (SPEC 8.2)
         # Construct metadata URL by appending path to issuer URL (not using urljoin which treats / as absolute)
         self.metadata_url = f"{self.issuer_url.rstrip('/')}/.well-known/aauth-issuer"
         self.cache_ttl = int(os.getenv("AAUTH_AUTH_TOKEN_CACHE_TTL", "3600"))
@@ -120,6 +124,27 @@ class AAuthTokenService:
         
         self.agent_token_endpoint = endpoint
         logger.info(f"🔐 Agent token endpoint: {self.agent_token_endpoint}")
+        return endpoint
+
+    async def _get_agent_auth_endpoint(self) -> str:
+        """Get the agent_auth_endpoint URL (SPEC 8.2). Used for user consent redirect.
+        
+        Returns:
+            Full URL to the agent_auth_endpoint (user consent page).
+        """
+        if self.agent_auth_endpoint:
+            return self.agent_auth_endpoint
+        
+        # Fetch metadata to get endpoint
+        metadata = await self._fetch_metadata()
+        endpoint = metadata.get("agent_auth_endpoint")
+        if not endpoint:
+            # Default to standard path per SPEC
+            base = self.issuer_url.rstrip("/")
+            endpoint = f"{base}/protocol/aauth/agent/auth"
+        
+        self.agent_auth_endpoint = endpoint
+        logger.info(f"🔐 Agent auth endpoint (consent): {self.agent_auth_endpoint}")
         return endpoint
     
     async def _sign_request(
@@ -499,8 +524,23 @@ class AAuthTokenService:
                         result = response.json()
                         auth_token = result.get("auth_token")
                         refresh_token = result.get("refresh_token")
+                        request_token = result.get("request_token")
                         expires_in = result.get("expires_in", 3600)
-                        
+
+                        # User-delegated flow (SPEC 9.4): Keycloak may return request_token when user consent is required
+                        if request_token and not auth_token:
+                            logger.info(f"🔐 Keycloak returned request_token (user consent required)")
+                            add_event("aauth_request_token_received", {
+                                "consent_required": True,
+                                "expires_in": expires_in
+                            })
+                            set_attribute("aauth.consent_required", True)
+                            return {
+                                "request_token": request_token,
+                                "expires_in": expires_in,
+                                "consent_required": True,
+                            }
+
                         logger.info(f"✅ Auth token received successfully")
                         # Development: Log the actual token
                         logger.info(f"🔐 AAuth Token: {auth_token}")
@@ -545,6 +585,100 @@ class AAuthTokenService:
                     import traceback
                     logger.debug(traceback.format_exc())
                 add_event("aauth_token_request_exception", {"error": str(e)})
+                raise
+
+    async def get_consent_url(
+        self,
+        request_token: str,
+        redirect_uri: str,
+        state: Optional[str] = None
+    ) -> str:
+        """Build the user consent URL (SPEC 9.5).
+        
+        Uses agent_auth_endpoint from metadata. Returns URL to which the user
+        should be redirected to give consent: agent_auth_endpoint?request_token=...&redirect_uri=...&state=...
+        
+        Args:
+            request_token: The request_token from Keycloak (user consent required).
+            redirect_uri: Callback URL (backend /auth/aauth/callback).
+            state: Optional state (e.g. request_id) to restore context after redirect.
+            
+        Returns:
+            Full URL string for redirecting the user.
+        """
+        from urllib.parse import urlencode
+        auth_endpoint = await self._get_agent_auth_endpoint()
+        params = {"request_token": request_token, "redirect_uri": redirect_uri}
+        if state:
+            params["state"] = state
+        return f"{auth_endpoint}?{urlencode(params)}"
+
+    async def exchange_code_for_token(self, code: str, redirect_uri: str) -> Dict[str, Any]:
+        """Exchange authorization code for auth_token (SPEC 9.6).
+        
+        POST to agent_token_endpoint with request_type=code, code, redirect_uri.
+        Called when the user returns from the consent page; Keycloak redirects
+        to redirect_uri with ?code=...&state=...
+        
+        Args:
+            code: Authorization code from the redirect query.
+            redirect_uri: Must match the redirect_uri used in get_consent_url.
+            
+        Returns:
+            Dictionary with auth_token, refresh_token, expires_in.
+        """
+        with span("aauth_token_service.exchange_code_for_token", {
+            "issuer": self.issuer_url,
+            "has_code": bool(code)
+        }) as span_obj:
+            try:
+                logger.info(f"🔐 Exchanging code for auth token")
+                endpoint = await self._get_agent_token_endpoint()
+                import urllib.parse
+                body_data = {
+                    "request_type": "code",
+                    "code": code,
+                    "redirect_uri": redirect_uri,
+                }
+                body_bytes = urllib.parse.urlencode(body_data).encode("utf-8")
+                headers = {
+                    "Content-Type": "application/x-www-form-urlencoded",
+                    "Content-Length": str(len(body_bytes)),
+                }
+                import hashlib
+                import base64
+                content_digest = f"sha-256=:{base64.b64encode(hashlib.sha256(body_bytes).digest()).decode('utf-8')}:"
+                headers["Content-Digest"] = content_digest
+                sig_headers = await self._sign_request("POST", endpoint, headers, body_bytes)
+                headers.update(sig_headers)
+
+                async with httpx.AsyncClient(timeout=30.0) as client:
+                    response = await client.post(endpoint, headers=headers, content=body_bytes)
+                if response.status_code != 200:
+                    err = response.text
+                    try:
+                        err = response.json().get("error", err)
+                    except Exception:
+                        pass
+                    logger.error(f"❌ Code exchange failed: {err}")
+                    add_event("aauth_code_exchange_failed", {"error": err})
+                    raise Exception(f"Code exchange failed: {err}")
+
+                result = response.json()
+                auth_token = result.get("auth_token")
+                refresh_token = result.get("refresh_token")
+                expires_in = result.get("expires_in", 3600)
+                if not auth_token:
+                    raise Exception("Code exchange did not return auth_token")
+                add_event("aauth_code_exchange_success", {"expires_in": expires_in})
+                return {
+                    "auth_token": auth_token,
+                    "refresh_token": refresh_token or "",
+                    "expires_in": expires_in,
+                }
+            except Exception as e:
+                logger.error(f"❌ Exception in code exchange: {e}")
+                add_event("aauth_code_exchange_exception", {"error": str(e)})
                 raise
     
     async def refresh_auth_token(self, refresh_token: str) -> Dict[str, str]:

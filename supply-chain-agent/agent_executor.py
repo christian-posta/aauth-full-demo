@@ -838,14 +838,13 @@ class SupplyChainOptimizerExecutor(AgentExecutor):
                                     # The library uses Content-Digest value from headers (not computed from body)
                                     # It validates the signature by checking if signature matches signature base
                                     
-                                    # Log what we're verifying with (for debugging signature verification issues)
-                                    from urllib.parse import urlparse
-                                    parsed_verifying_uri = urlparse(uri)
-                                    logger.info(f"🔐 VERIFYING with: method={method}, authority={parsed_verifying_uri.netloc}, path={parsed_verifying_uri.path or '/'}")
+                                    # Log the exact target_uri we pass to verify_signature (critical for signature verification debugging)
+                                    target_uri = uri
+                                    logger.info(f"🔐 VERIFYING with: method={method}, target_uri={target_uri!r}")
                                     
                                     is_valid = verify_signature(
                                         method=method,
-                                        target_uri=uri,
+                                        target_uri=target_uri,
                                         headers=normalized_headers,
                                         body=None,  # Library uses Content-Digest from headers if in signature-input
                                         signature_input_header=sig_input_header,

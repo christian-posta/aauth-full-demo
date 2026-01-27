@@ -1,5 +1,6 @@
 import asyncio
 import logging
+import os
 from fastapi import APIRouter, Depends, HTTPException, BackgroundTasks, Request
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from typing import List, Any
@@ -34,14 +35,26 @@ async def get_current_user(credentials: HTTPAuthorizationCredentials = Depends(s
     # Return both the payload and the raw token for use in downstream services
     return {"payload": payload, "token": token}
 
-async def run_optimization_workflow(request_id: str, user_id: str, request: OptimizationRequest, trace_context: Any = None, auth_token: str = None):
-    """Background task to run the optimization workflow using A2A agent with tracing support"""
+async def run_optimization_workflow(
+    request_id: str,
+    user_id: str,
+    request: OptimizationRequest,
+    trace_context: Any = None,
+    auth_token: str = None,
+    precomputed_response: Any = None,
+):
+    """Background task to run the optimization workflow using A2A agent with tracing support.
+    
+    If precomputed_response is set (e.g. from a sync user-delegated A2A call), skips the A2A
+    call and applies success/error handling from that response.
+    """
     with span("optimization_api.run_optimization_workflow", {
         "request_id": request_id,
         "user_id": user_id,
         "request_type": request.optimization_type,
         "has_trace_context": trace_context is not None,
-        "has_auth_token": auth_token is not None
+        "has_auth_token": auth_token is not None,
+        "has_precomputed_response": precomputed_response is not None,
     }, parent_context=trace_context) as span_obj:
         
         try:
@@ -61,12 +74,18 @@ async def run_optimization_workflow(request_id: str, user_id: str, request: Opti
                 logger.debug("📊 Progress updated: Connecting to A2A agent")
             add_event("progress_updated", {"step": "Connecting to A2A agent", "percentage": 0.0})
             
-            # Get response from A2A agent with tracing context and auth token
-            if settings.debug:
-                logger.debug("🤖 Calling A2A service...")
-            add_event("calling_a2a_service")
+            if precomputed_response is not None:
+                response = precomputed_response
+                if settings.debug:
+                    logger.debug("📨 Using precomputed A2A response")
+                add_event("using_precomputed_a2a_response")
+            else:
+                # Get response from A2A agent with tracing context and auth token
+                if settings.debug:
+                    logger.debug("🤖 Calling A2A service...")
+                add_event("calling_a2a_service")
+                response = await a2a_service.optimize_supply_chain(request, user_id, trace_context, auth_token)
             
-            response = await a2a_service.optimize_supply_chain(request, user_id, trace_context, auth_token)
             if settings.debug:
                 logger.debug(f"📨 A2A service response: {response}")
             
@@ -215,16 +234,73 @@ async def start_optimization(
             request_id = optimization_service.create_optimization_request(request, current_user['payload'].get("sub"))
             print(f"✅ Created optimization request: {request_id}")
             add_event("optimization_request_created", {"request_id": request_id})
+
+            aauth_scheme = os.getenv("AAUTH_AUTHORIZATION_SCHEME", "autonomous").strip().lower()
+            user_id = current_user['payload'].get("sub")
+
+            if aauth_scheme == "user-delegated":
+                # Two-phase flow: sync call may return consent_required; do not start background task until consent
+                add_event("user_delegated_phase1_start", {"request_id": request_id})
+                result = await a2a_service.optimize_supply_chain(
+                    request, user_id, trace_context, aauth_auth_token, request_id=request_id
+                )
+                if result.get("type") == "consent_required":
+                    optimization_service.set_pending_aauth_request(
+                        request_id, user_id, request, trace_context
+                    )
+                    add_event("consent_required_returned_to_api", {"request_id": request_id})
+                    return {
+                        "consent_required": True,
+                        "consent_url": result.get("consent_url", ""),
+                        "request_id": request_id,
+                    }
+                if result.get("type") == "success":
+                    await run_optimization_workflow(
+                        request_id, user_id, request, trace_context,
+                        aauth_auth_token, precomputed_response=result
+                    )
+                    return {
+                        "request_id": request_id,
+                        "status": "completed",
+                        "message": "Optimization completed (user-delegated direct grant)",
+                    }
+                if result.get("type") == "error":
+                    optimization_service.update_progress(
+                        request_id, 0.0, f"Error: {result.get('message', 'Unknown error')}"
+                    )
+                    if request_id in optimization_service.optimizations:
+                        optimization_service.optimizations[request_id].status = OptimizationStatus.FAILED
+                    return JSONResponse(
+                        status_code=200,
+                        content={
+                            "request_id": request_id,
+                            "status": "failed",
+                            "message": result.get("message", "Optimization failed"),
+                        },
+                    )
+                # Unexpected result type in user-delegated mode
+                optimization_service.update_progress(
+                    request_id, 0.0, f"Unexpected A2A result: {result.get('type', 'unknown')}"
+                )
+                if request_id in optimization_service.optimizations:
+                    optimization_service.optimizations[request_id].status = OptimizationStatus.FAILED
+                return JSONResponse(
+                    status_code=200,
+                    content={
+                        "request_id": request_id,
+                        "status": "failed",
+                        "message": "Unexpected response from optimization agent",
+                    },
+                )
             
-            # Add background task with tracing context
-            # Note: aauth_auth_token is None - will be obtained via challenge/response flow
+            # Autonomous flow: add background task; AAuth token obtained via challenge/response
             background_tasks.add_task(
-                run_optimization_workflow, 
-                request_id, 
-                current_user['payload'].get("sub"), 
+                run_optimization_workflow,
+                request_id,
+                user_id,
                 request,
                 trace_context,
-                aauth_auth_token  # None - AAuth auth_token obtained via challenge flow
+                aauth_auth_token,
             )
             print(f"🔄 Added background task for request: {request_id}")
             add_event("background_task_added", {"request_id": request_id})

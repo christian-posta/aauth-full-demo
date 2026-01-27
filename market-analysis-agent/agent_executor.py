@@ -5,32 +5,16 @@ This module implements the core execution logic for the Market Analysis Agent,
 handling delegation requests and orchestrating market analysis workflows.
 """
 
-import json
+# =============================================================================
+# CRITICAL: Load environment and configure logging BEFORE any library imports!
+# The aauth library checks logging configuration at import time. If we import
+# aauth before calling logging.basicConfig(), the aauth library's internal logs
+# (e.g., VERIFIER debug output) won't appear because they'll be silenced.
+# =============================================================================
+
 import logging
 import os
-from typing import Dict, Any, List, Optional
-from datetime import datetime, timedelta
 from dotenv import load_dotenv
-
-from a2a.server.agent_execution import AgentExecutor, RequestContext
-from a2a.server.events import EventQueue
-from a2a.utils import new_agent_text_message
-from a2a.client.middleware import ClientCallInterceptor, ClientCallContext
-
-from business_policies import (
-    market_analysis_policies,
-    InventoryItem,
-    MarketTrend,
-    DemandPattern
-)
-from mcp_client import MCPClient
-from tracing_config import (
-    span, add_event, set_attribute, extract_context_from_headers, 
-    inject_context_to_headers, initialize_tracing
-)
-from http_headers_middleware import get_current_request_headers, get_current_request_info
-from aauth import verify_signature
-from aauth.errors import SignatureError
 
 # Load environment variables FIRST (before reading DEBUG/LOG_LEVEL)
 load_dotenv()
@@ -58,8 +42,50 @@ def get_log_level():
         return logging.DEBUG if DEBUG else logging.INFO
 
 log_level = get_log_level()
-logging.basicConfig(level=log_level)
+
+# Configure root logger BEFORE importing any libraries that use logging
+# This ensures all library loggers (including aauth.signing) will propagate to root
+logging.basicConfig(level=log_level, format='%(levelname)s:%(name)s:%(message)s')
 logger = logging.getLogger(__name__)
+
+# =============================================================================
+# Now import everything else (after logging is configured)
+# =============================================================================
+
+import json
+import re
+from typing import Dict, Any, List, Optional
+from urllib.parse import urlparse, urlunparse
+from datetime import datetime, timedelta
+
+from a2a.server.agent_execution import AgentExecutor, RequestContext
+from a2a.server.events import EventQueue
+from a2a.utils import new_agent_text_message
+from a2a.client.middleware import ClientCallInterceptor, ClientCallContext
+
+from business_policies import (
+    market_analysis_policies,
+    InventoryItem,
+    MarketTrend,
+    DemandPattern
+)
+from mcp_client import MCPClient
+from tracing_config import (
+    span, add_event, set_attribute, extract_context_from_headers, 
+    inject_context_to_headers, initialize_tracing
+)
+from http_headers_middleware import get_current_request_headers, get_current_request_info
+
+# Import aauth AFTER logging is configured so its internal loggers propagate correctly
+from aauth import verify_signature
+from aauth.errors import SignatureError
+
+# Enable aauth library logs (VERIFIER / sign_request details) so they match supply-chain-agent output
+# Logger name comes from the aauth package (e.g. aauth.signing)
+for _name in ("aauth", "aauth.signing"):
+    _aauth_logger = logging.getLogger(_name)
+    _aauth_logger.setLevel(log_level)
+    _aauth_logger.propagate = True  # Ensure logs propagate to root handler
 
 
 class MarketAnalysisAgent:
@@ -367,7 +393,6 @@ class MarketAnalysisAgentExecutor(AgentExecutor):
                                     kid = None
                                     
                                     # Parse Signature-Key header to extract id and kid
-                                    import re
                                     id_match = re.search(r'id="([^"]+)"', sig_key_header)
                                     kid_match = re.search(r'kid="([^"]+)"', sig_key_header)
                                     
@@ -385,7 +410,8 @@ class MarketAnalysisAgentExecutor(AgentExecutor):
                                         def sync_jwks_fetcher(agent_id_param: str, kid_param: str = None) -> dict:
                                             """Fetch JWKS for agent using metadata discovery."""
                                             try:
-                                                metadata_url = f"{agent_id_param}/.well-known/aauth-agent"
+                                                base = (agent_id_param or "").rstrip("/")
+                                                metadata_url = f"{base}/.well-known/aauth-agent"
                                                 if DEBUG:
                                                     logger.debug(f"🔐 Fetching metadata from {metadata_url}")
                                                 metadata_response = httpx.get(metadata_url, timeout=10.0)
@@ -398,6 +424,10 @@ class MarketAnalysisAgentExecutor(AgentExecutor):
                                                     if DEBUG:
                                                         logger.debug(f"🔐 No jwks_uri in metadata")
                                                     return None
+                                                # Normalize jwks_uri to avoid double slashes (e.g. metadata from base URL with trailing slash)
+                                                p = urlparse(jwks_uri)
+                                                path = "/" + "/".join(filter(None, p.path.split("/"))) if p.path else "/"
+                                                jwks_uri = urlunparse((p.scheme, p.netloc, path, p.params, p.query, p.fragment))
                                                 if DEBUG:
                                                     logger.debug(f"🔐 Fetching JWKS from {jwks_uri}")
                                                 jwks_response = httpx.get(jwks_uri, timeout=10.0)
@@ -432,6 +462,49 @@ class MarketAnalysisAgentExecutor(AgentExecutor):
                                     public_key = None
                                     jwks_fetcher = None
                                 
+                                # Optional: relax body/content-digest (supply-chain does NOT strip;
+                                # only enable if signer omits content-digest and verification fails on digest).
+                                if os.getenv("AAUTH_RELAX_CONTENT_DIGEST", "false").lower() == "true":
+                                    normalized_headers.pop("content-digest", None)
+                                    sig_input_header = re.sub(r'\s*"content-digest"\s*', ' ', sig_input_header)
+                                    sig_input_header = re.sub(r' {2,}', ' ', sig_input_header)
+                                    logger.info("🔐 AAuth: relaxed content-digest (AAUTH_RELAX_CONTENT_DIGEST=true)")
+                                
+                                # Per SPEC 10.3.1 the verifier MUST use configured canonical authority for
+                                # @authority and MUST NOT use Host (or Forwarded, X-Forwarded-Host, etc.).
+                                # Our target_uri (uri) is built from canonical authority + path in middleware;
+                                # the aauth library's verify_signature(target_uri=...) should derive
+                                # @authority and @path from that target_uri, not from the Host header.
+                                
+                                # Log the exact target_uri we pass to verify_signature (critical for debugging)
+                                target_uri = uri
+                                logger.info(f"🔐 VERIFYING with: method={method}, target_uri={target_uri!r}")
+                                if DEBUG:
+                                    logger.debug(
+                                        f"🔐 Signature-Input (first 220 chars): {sig_input_header[:220]!r}"
+                                    )
+                                
+                                # FORCE aauth.signing logger to output - the a2a framework configures
+                                # logging before our code runs, so basicConfig has no effect. We must
+                                # add handlers directly to the aauth loggers to see VERIFIER output.
+                                import sys
+                                for _logger_name in ("aauth", "aauth.signing"):
+                                    _alog = logging.getLogger(_logger_name)
+                                    _alog.setLevel(logging.DEBUG)
+                                    _alog.propagate = True
+                                    # Always add handler (checking handlers doesn't work - they may exist but not output)
+                                    if not any(isinstance(h, logging.StreamHandler) and h.stream == sys.stderr for h in _alog.handlers):
+                                        _stderr_handler = logging.StreamHandler(sys.stderr)
+                                        _stderr_handler.setLevel(logging.DEBUG)
+                                        _stderr_handler.setFormatter(logging.Formatter('%(levelname)s:%(name)s:%(message)s'))
+                                        _alog.addHandler(_stderr_handler)
+                                        logger.debug(f"🔧 Added stderr handler to {_logger_name} logger")
+                                
+                                # Test: explicitly log from aauth.signing to verify it works
+                                _test_logger = logging.getLogger("aauth.signing")
+                                _test_logger.info("🧪 TEST: Direct log to aauth.signing logger from agent_executor")
+                                logger.debug(f"🔧 aauth.signing logger state: level={_test_logger.level}, handlers={_test_logger.handlers}, propagate={_test_logger.propagate}, disabled={_test_logger.disabled}")
+                                
                                 # Verify signature
                                 try:
                                     # Note: body=None is fine even if Content-Digest is in signature-input
@@ -439,7 +512,7 @@ class MarketAnalysisAgentExecutor(AgentExecutor):
                                     # It validates the signature by checking if signature matches signature base
                                     is_valid = verify_signature(
                                         method=method,
-                                        target_uri=uri,
+                                        target_uri=target_uri,
                                         headers=normalized_headers,
                                         body=None,  # Library uses Content-Digest from headers if in signature-input
                                         signature_input_header=sig_input_header,
@@ -455,7 +528,10 @@ class MarketAnalysisAgentExecutor(AgentExecutor):
                                         set_attribute("auth.aauth.verified", True)
                                         set_attribute("auth.aauth.verification_result", "valid")
                                     else:
-                                        logger.error(f"❌ AAuth signature verification failed")
+                                        logger.error(
+                                            f"❌ AAuth signature verification failed — target_uri={target_uri!r}, "
+                                            f"sig_input_prefix={sig_input_header[:180]!r}"
+                                        )
                                         if DEBUG:
                                             logger.debug(f"🔐 Verification returned False - signature mismatch or expired")
                                         add_event("aauth_signature_verification_failed", {"scheme": scheme, "valid": False})

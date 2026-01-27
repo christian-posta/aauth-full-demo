@@ -301,20 +301,19 @@ class AAuthSigningInterceptor(ClientCallInterceptor):
                 # The library uses Content-Digest value from headers (not computed from body)
                 # If Content-Digest is in signature-input, make sure it's in headers before signing
                 
-                # Log what we're signing with (for debugging signature verification issues)
-                from urllib.parse import urlparse
-                parsed_signing_url = urlparse(str(url))
-                logger.info(f"🔐 SIGNING with: method={method}, authority={parsed_signing_url.netloc}, path={parsed_signing_url.path or '/'}")
+                # Log the exact target_uri we pass to sign_request (critical for signature verification debugging)
+                target_uri = str(url)
+                logger.info(f"🔐 SIGNING with: method={method}, target_uri={target_uri!r}")
                 
                 # Log before signing (especially important for JWT retry)
                 if sig_scheme == "jwt":
                     logger.info(f"🔐 JWT RETRY: About to sign with JWT scheme")
-                    logger.info(f"🔐 JWT RETRY: method={method}, url={url}")
+                    logger.info(f"🔐 JWT RETRY: method={method}, target_uri={target_uri!r}")
                     logger.info(f"🔐 JWT RETRY: headers keys: {list(headers.keys())}")
                 
                 sig_headers = sign_request(
                     method=method,
-                    target_uri=str(url),
+                    target_uri=target_uri,
                     headers=headers,
                     body=None,  # Library uses Content-Digest from headers if in signature-input
                     private_key=self.private_key,

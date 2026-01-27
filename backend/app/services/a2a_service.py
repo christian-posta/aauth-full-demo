@@ -129,16 +129,21 @@ class A2AService:
             return client, httpx_client
     
     async def optimize_supply_chain(
-        self, 
+                self,
         request: OptimizationRequest, 
         user_id: str,
         trace_context: Any = None,
-        auth_token: str = None
+        auth_token: str = None,
+        request_id: Optional[str] = None,
     ) -> Dict[str, Any]:
         """Optimize supply chain using A2A agent with tracing support.
         
         Note: auth_token parameter is for AAuth auth_token (obtained from Keycloak AAuth endpoint),
         NOT the OIDC token. The OIDC token should NOT be passed here.
+        
+        When in user-delegated mode and Keycloak returns request_token (consent required),
+        returns {type: "consent_required", consent_url, request_id} instead of retrying.
+        request_id is used as state in the consent URL and must be passed by the caller in that flow.
         """
         
         with span("a2a_service.optimize_supply_chain", {
@@ -324,15 +329,34 @@ class A2AService:
                         })
                         
                         # Request auth_token from Keycloak
-                        # The redirect_uri is not strictly used in autonomous flow but is required by spec
+                        # redirect_uri must match backend callback (user-delegated) or is required by spec (autonomous)
                         backend_agent_url = os.getenv("BACKEND_AGENT_URL", f"http://{settings.host}:{settings.port}")
-                        redirect_uri = f"{backend_agent_url}/aauth/callback"  # Placeholder, not used for direct grant
+                        redirect_uri = f"{backend_agent_url.rstrip('/')}/auth/aauth/callback"
                         
                         try:
                             token_result = await aauth_token_service.request_auth_token(
                                 resource_token=resource_token,
                                 redirect_uri=redirect_uri
                             )
+                            
+                            # User-delegated flow (SPEC 9.4): Keycloak may return request_token when consent is required
+                            if token_result.get("consent_required") and token_result.get("request_token"):
+                                consent_url = await aauth_token_service.get_consent_url(
+                                    request_token=token_result["request_token"],
+                                    redirect_uri=redirect_uri,
+                                    state=request_id,
+                                )
+                                if settings.debug:
+                                    logger.debug(f"🔐 Returning consent_required (do not retry)")
+                                add_event("consent_required_returned", {
+                                    "has_request_id": bool(request_id),
+                                })
+                                return {
+                                    "type": "consent_required",
+                                    "consent_required": True,
+                                    "consent_url": consent_url,
+                                    "request_id": request_id,
+                                }
                             
                             auth_token = token_result.get("auth_token")
                             refresh_token = token_result.get("refresh_token")

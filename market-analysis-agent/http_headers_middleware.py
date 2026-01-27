@@ -147,11 +147,12 @@ class HTTPHeadersCaptureMiddleware(BaseHTTPMiddleware):
             if body_bytes:
                 logger.debug(f"🔍 Body length: {len(body_bytes)} bytes")
         
-        # Log AAuth-specific headers if present
+        # Log AAuth-specific headers if present (and reconstructed URI for verification debugging)
         aauth_headers = {k: v for k, v in headers.items() 
                         if k.lower() in ['signature-input', 'signature', 'signature-key']}
         if aauth_headers:
             logger.info(f"🔐 AAuth headers received: {list(aauth_headers.keys())}")
+            logger.info(f"🔐 Reconstructed URI for verification: {method} {uri}")
             if DEBUG:
                 for name, value in aauth_headers.items():
                     display_value = value if len(value) <= 80 else f"{value[:80]}..."

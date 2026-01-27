@@ -168,7 +168,7 @@ if __name__ == '__main__':
         This is used when the entity acts as an AGENT (making signed requests).
         """
         agent_id_url = os.getenv("SUPPLY_CHAIN_AGENT_ID_URL", agent_url.rstrip('/'))
-        jwks_uri = f"{agent_id_url}/jwks.json"
+        jwks_uri = f"{agent_id_url.rstrip('/')}/jwks.json"
         return JSONResponse({
             "agent": agent_id_url,
             "jwks_uri": jwks_uri
@@ -183,7 +183,7 @@ if __name__ == '__main__':
         Keycloak fetches this to validate resource tokens issued by this agent.
         """
         resource_id_url = os.getenv("SUPPLY_CHAIN_AGENT_ID_URL", agent_url.rstrip('/'))
-        jwks_uri = f"{resource_id_url}/jwks.json"
+        jwks_uri = f"{resource_id_url.rstrip('/')}/jwks.json"
         return JSONResponse({
             "resource": resource_id_url,
             "jwks_uri": jwks_uri
