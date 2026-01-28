@@ -97,7 +97,7 @@ class ApiService {
   }
 
   async getOptimizationResults(requestId) {
-    return await this.request(`/optimization/${requestId}/results`);
+    return await this.request(`/optimization/results/${requestId}`);
   }
 }
 

@@ -171,11 +171,15 @@ async def run_optimization_workflow(
 @router.post("/start", response_model=dict)
 async def start_optimization(
     request: OptimizationRequest,
-    background_tasks: BackgroundTasks,
     current_user: dict = Depends(get_current_user),
     http_request: Request = None
 ):
-    """Start a new optimization request with tracing support"""
+    """Start a new optimization request with tracing support.
+    
+    Always performs a synchronous A2A call first. The flow is determined by Keycloak's response:
+    - If Keycloak returns request_token (user consent required), returns consent_url to the frontend
+    - If Keycloak returns auth_token (direct grant), proceeds with the optimization workflow
+    """
     
     try:
         # Debug: Log the raw request data
@@ -235,52 +239,45 @@ async def start_optimization(
             print(f"✅ Created optimization request: {request_id}")
             add_event("optimization_request_created", {"request_id": request_id})
 
-            aauth_scheme = os.getenv("AAUTH_AUTHORIZATION_SCHEME", "autonomous").strip().lower()
             user_id = current_user['payload'].get("sub")
 
-            if aauth_scheme == "user-delegated":
-                # Two-phase flow: sync call may return consent_required; do not start background task until consent
-                add_event("user_delegated_phase1_start", {"request_id": request_id})
-                result = await a2a_service.optimize_supply_chain(
-                    request, user_id, trace_context, aauth_auth_token, request_id=request_id
+            # Always do a synchronous A2A call first to determine if user consent is required.
+            # Keycloak's response (auth_token vs request_token) determines the flow:
+            # - If request_token: Keycloak requires user consent, return consent_url to frontend
+            # - If auth_token: Direct grant, proceed with optimization workflow
+            add_event("a2a_sync_call_start", {"request_id": request_id})
+            result = await a2a_service.optimize_supply_chain(
+                request, user_id, trace_context, aauth_auth_token, request_id=request_id
+            )
+            
+            if result.get("type") == "consent_required":
+                # Keycloak returned request_token - user consent required
+                optimization_service.set_pending_aauth_request(
+                    request_id, user_id, request, trace_context
                 )
-                if result.get("type") == "consent_required":
-                    optimization_service.set_pending_aauth_request(
-                        request_id, user_id, request, trace_context
-                    )
-                    add_event("consent_required_returned_to_api", {"request_id": request_id})
-                    return {
-                        "consent_required": True,
-                        "consent_url": result.get("consent_url", ""),
-                        "request_id": request_id,
-                    }
-                if result.get("type") == "success":
-                    await run_optimization_workflow(
-                        request_id, user_id, request, trace_context,
-                        aauth_auth_token, precomputed_response=result
-                    )
-                    return {
-                        "request_id": request_id,
-                        "status": "completed",
-                        "message": "Optimization completed (user-delegated direct grant)",
-                    }
-                if result.get("type") == "error":
-                    optimization_service.update_progress(
-                        request_id, 0.0, f"Error: {result.get('message', 'Unknown error')}"
-                    )
-                    if request_id in optimization_service.optimizations:
-                        optimization_service.optimizations[request_id].status = OptimizationStatus.FAILED
-                    return JSONResponse(
-                        status_code=200,
-                        content={
-                            "request_id": request_id,
-                            "status": "failed",
-                            "message": result.get("message", "Optimization failed"),
-                        },
-                    )
-                # Unexpected result type in user-delegated mode
+                add_event("consent_required_returned_to_api", {"request_id": request_id})
+                return {
+                    "consent_required": True,
+                    "consent_url": result.get("consent_url", ""),
+                    "request_id": request_id,
+                }
+            
+            if result.get("type") == "success":
+                # Keycloak returned auth_token - direct grant, proceed with workflow
+                await run_optimization_workflow(
+                    request_id, user_id, request, trace_context,
+                    aauth_auth_token, precomputed_response=result
+                )
+                return {
+                    "request_id": request_id,
+                    "status": "completed",
+                    "message": "Optimization completed",
+                }
+            
+            if result.get("type") == "error":
+                # A2A call failed
                 optimization_service.update_progress(
-                    request_id, 0.0, f"Unexpected A2A result: {result.get('type', 'unknown')}"
+                    request_id, 0.0, f"Error: {result.get('message', 'Unknown error')}"
                 )
                 if request_id in optimization_service.optimizations:
                     optimization_service.optimizations[request_id].status = OptimizationStatus.FAILED
@@ -289,27 +286,24 @@ async def start_optimization(
                     content={
                         "request_id": request_id,
                         "status": "failed",
-                        "message": "Unexpected response from optimization agent",
+                        "message": result.get("message", "Optimization failed"),
                     },
                 )
             
-            # Autonomous flow: add background task; AAuth token obtained via challenge/response
-            background_tasks.add_task(
-                run_optimization_workflow,
-                request_id,
-                user_id,
-                request,
-                trace_context,
-                aauth_auth_token,
+            # Unexpected result type
+            optimization_service.update_progress(
+                request_id, 0.0, f"Unexpected A2A result: {result.get('type', 'unknown')}"
             )
-            print(f"🔄 Added background task for request: {request_id}")
-            add_event("background_task_added", {"request_id": request_id})
-            
-            return {
-                "request_id": request_id,
-                "status": "started",
-                "message": "Optimization request started successfully"
-            }
+            if request_id in optimization_service.optimizations:
+                optimization_service.optimizations[request_id].status = OptimizationStatus.FAILED
+            return JSONResponse(
+                status_code=200,
+                content={
+                    "request_id": request_id,
+                    "status": "failed",
+                    "message": "Unexpected response from optimization agent",
+                },
+            )
             
     except Exception as e:
         print(f"💥 Exception starting optimization: {e}")

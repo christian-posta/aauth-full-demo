@@ -19,14 +19,17 @@ def _aauth_callback_redirect_uri() -> str:
 
 
 def _frontend_redirect_base() -> str:
-    """Base URL for redirecting the user after AAuth callback."""
+    """Base URL for redirecting the user after AAuth callback.
+    Must match the URL where the frontend (supply-chain-ui) is served.
+    supply-chain-ui runs on port 3050 by default (see package.json)."""
     url = os.getenv("AAUTH_FRONTEND_REDIRECT_URL", "").strip()
     if url:
         return url.rstrip("/")
     origins = getattr(settings, "allowed_origins", None) or []
     if origins and origins != ["*"] and len(origins) > 0:
         return origins[0].rstrip("/")
-    return "http://localhost:3000"
+    # Default to supply-chain-ui default port (3050); Keycloak/backend are on 8080/8000
+    return "http://localhost:3050"
 
 async def get_current_user(credentials: HTTPAuthorizationCredentials = Depends(security)):
     """Get current user from Keycloak token"""

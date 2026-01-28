@@ -187,9 +187,6 @@ class AAuthSigningInterceptor(ClientCallInterceptor):
         # Sign the request if we have a URL
         if url:
             try:
-                # Determine authorization scheme from environment variable (default: autonomous)
-                auth_scheme = os.getenv("AAUTH_AUTHORIZATION_SCHEME", "autonomous").lower()
-                
                 # Determine signature scheme from environment variable (default: hwk)
                 # For first attempt, MUST use JWKS (or HWK) to trigger 401 challenge
                 sig_scheme = os.getenv("AAUTH_SIGNATURE_SCHEME", "hwk").lower()

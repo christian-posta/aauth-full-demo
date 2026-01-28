@@ -1205,16 +1205,30 @@ class SupplyChainOptimizerExecutor(AgentExecutor):
                         keycloak_issuer_url = f"{keycloak_url}/realms/{keycloak_realm}"
                     
                     if agent_id and agent_jwk:
+                        # Build scope: base scope + optionally "profile" for user consent flow
+                        base_scope = "supply-chain:optimize"
+                        # Automatically include "profile" if authorization scheme is user-delegated
+                        # (can be overridden with AAUTH_RESOURCE_SCOPE_INCLUDE_PROFILE)
+                        auth_scheme = os.getenv("AAUTH_AUTHORIZATION_SCHEME", "autonomous").lower()
+                        explicit_include_profile = os.getenv("AAUTH_RESOURCE_SCOPE_INCLUDE_PROFILE", "").lower()
+                        include_profile = (
+                            auth_scheme == "user-delegated" or 
+                            explicit_include_profile in ("true", "1", "yes")
+                        ) and explicit_include_profile not in ("false", "0", "no")
+                        scope = f"{base_scope} profile" if include_profile else base_scope
+                        
                         resource_token = generate_resource_token(
                             agent_id=agent_id,
                             agent_jwk=agent_jwk,
                             auth_server_url=keycloak_issuer_url,
-                            scope="supply-chain:optimize"
+                            scope=scope
                         )
                         
                         logger.info(f"🔐 Issuing resource_token for agent: {agent_id}")
+                        if include_profile:
+                            logger.info(f"🔐 Resource token scope includes 'profile' - will trigger user consent flow")
                         if DEBUG:
-                            logger.debug(f"🔐 Resource token claims: iss={os.getenv('SUPPLY_CHAIN_AGENT_ID_URL', 'http://localhost:9999')}, aud={keycloak_issuer_url}, agent={agent_id}, scope=supply-chain:optimize")
+                            logger.debug(f"🔐 Resource token claims: iss={os.getenv('SUPPLY_CHAIN_AGENT_ID_URL', 'http://localhost:9999')}, aud={keycloak_issuer_url}, agent={agent_id}, scope={scope}")
                         
                         # Return 401 with Agent-Auth header
                         agent_auth_header_value = f'httpsig; auth-token; resource_token="{resource_token}"; auth_server="{keycloak_issuer_url}"'
