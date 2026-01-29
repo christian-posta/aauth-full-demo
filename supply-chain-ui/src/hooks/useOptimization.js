@@ -47,6 +47,8 @@ export const useOptimization = () => {
       // If backend requires user consent (Keycloak returned request_token), redirect to consent URL
       if (response.consent_required && response.consent_url) {
         setIsRunning(false);
+        console.log('User consent required for agent, redirecting to consent page', response.consent_url);
+        window.alert(`This requires consent. Sending you to:\n\n${response.consent_url}`);
         window.location.href = response.consent_url;
         return;
       }
@@ -280,6 +282,30 @@ export const useOptimization = () => {
       hasInterval: !!modulePollingState.intervalId,
       hasTimeout: !!modulePollingState.timeoutId,
     }));
+
+    // Check for AAuth error (backend redirected here after consent failed)
+    const params = new URLSearchParams(window.location.search);
+    const urlError = params.get('aauth_error');
+    const storedError = sessionStorage.getItem('aauth_error');
+    const storedErrorDesc = sessionStorage.getItem('aauth_error_description');
+    if (urlError === '1' || storedError) {
+      const errCode = params.get('error') || storedError || 'unknown';
+      const errDesc = params.get('error_description') || storedErrorDesc || 'AAuth consent flow failed';
+      console.log('[useOptimization] ⚠️ AAuth error detected:', errCode, errDesc);
+      setError(`AAuth consent failed: ${errDesc} (${errCode})`);
+      setIsRunning(false);
+      // Clear URL params and sessionStorage
+      const url = new URL(window.location.href);
+      url.searchParams.delete('aauth_error');
+      url.searchParams.delete('error');
+      url.searchParams.delete('error_description');
+      url.searchParams.delete('request_id');
+      window.history.replaceState({}, '', url.pathname + (url.search || ''));
+      sessionStorage.removeItem('aauth_error');
+      sessionStorage.removeItem('aauth_error_description');
+      sessionStorage.removeItem('aauth_error_request_id');
+      return;
+    }
     
     // If module-level polling is already in progress, just reconnect state updates
     if (modulePollingState.isPolling) {
@@ -303,7 +329,6 @@ export const useOptimization = () => {
     }
     
     // Get the request_id - first from URL, then from sessionStorage
-    const params = new URLSearchParams(window.location.search);
     const urlAuthorized = params.get('aauth_authorized');
     const urlRequestId = params.get('request_id');
     

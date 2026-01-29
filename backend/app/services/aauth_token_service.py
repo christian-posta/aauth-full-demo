@@ -349,7 +349,8 @@ class AAuthTokenService:
     async def request_auth_token(
         self,
         resource_token: str,
-        redirect_uri: str
+        redirect_uri: str,
+        state: Optional[str] = None
     ) -> Dict[str, str]:
         """Request an auth token from Keycloak using a resource token.
         
@@ -362,6 +363,7 @@ class AAuthTokenService:
         Args:
             resource_token: Signed JWT from the resource (Supply Chain Agent)
             redirect_uri: Redirect URI for the authorization flow
+            state: Optional state value to bind to the authorization request (will be persisted in request_token)
             
         Returns:
             Dictionary with `auth_token`, `refresh_token`, and `expires_in`
@@ -385,16 +387,19 @@ class AAuthTokenService:
                     "resource_token": resource_token,
                     "redirect_uri": redirect_uri
                 }
+                # Include state if provided so Keycloak will persist it in the request_token
+                if state:
+                    body_data["state"] = state
 
                 # Serialize body as form-urlencoded
                 import urllib.parse
                 body_bytes = urllib.parse.urlencode(body_data).encode('utf-8')
 
-                logger.info(f"🔐 BODY SERIALIZATION:")
-                logger.info(f"🔐 body_data dict: {body_data}")
-                logger.info(f"🔐 urllib.parse.urlencode result: {urllib.parse.urlencode(body_data)}")
-                logger.info(f"🔐 body_bytes: {body_bytes}")
-                logger.info(f"🔐 body_bytes length: {len(body_bytes)}")
+                logger.debug(f"🔐 BODY SERIALIZATION:")
+                logger.debug(f"🔐 body_data dict: {body_data}")
+                logger.debug(f"🔐 urllib.parse.urlencode result: {urllib.parse.urlencode(body_data)}")
+                logger.debug(f"🔐 body_bytes: {body_bytes}")
+                logger.debug(f"🔐 body_bytes length: {len(body_bytes)}")
                 
                 # Prepare headers
                 headers = {
@@ -412,45 +417,45 @@ class AAuthTokenService:
                 logger.info(f"🔐 Added Content-Digest header to headers: {content_digest}")
 
                 # Sign the request
-                logger.info(f"🔐 About to sign auth token request with method=POST, url={endpoint}")
-                logger.info(f"🔐 Headers before signing: {dict(headers)}")
-                logger.info(f"🔐 Body bytes length: {len(body_bytes)}")
-                logger.info(f"🔐 EXACT BODY BYTES FOR SIGNING (hex): {body_bytes.hex()[:200]}...")
-                logger.info(f"🔐 Body as string: {body_bytes.decode('utf-8')[:200]}...")
+                logger.debug(f"🔐 About to sign auth token request with method=POST, url={endpoint}")
+                logger.debug(f"🔐 Headers before signing: {dict(headers)}")
+                logger.debug(f"🔐 Body bytes length: {len(body_bytes)}")
+                logger.debug(f"🔐 EXACT BODY BYTES FOR SIGNING (hex): {body_bytes.hex()[:200]}...")
+                logger.debug(f"🔐 Body as string: {body_bytes.decode('utf-8')[:200]}...")
 
                 # Manually compute Content-Digest to verify what the aauth library SHOULD compute
                 import hashlib
                 import base64
                 body_digest = base64.b64encode(hashlib.sha256(body_bytes).digest()).decode('utf-8')
                 expected_digest = f"sha-256=:{body_digest}:"
-                logger.info(f"🔐 MANUALLY COMPUTED CONTENT-DIGEST (from body_bytes we're passing to aauth): {expected_digest}")
-                logger.info(f"🔐 If aauth returns a different digest, it's processing the body differently!")
+                logger.debug(f"🔐 MANUALLY COMPUTED CONTENT-DIGEST (from body_bytes we're passing to aauth): {expected_digest}")
+                logger.debug(f"🔐 If aauth returns a different digest, it's processing the body differently!")
 
                 sig_headers = await self._sign_request("POST", endpoint, headers, body_bytes)
                 headers.update(sig_headers)
 
-                logger.info(f"🔐 Signature headers added: {sig_headers}")
-                logger.info(f"🔐 Final headers after signing: {dict(headers)}")
+                logger.debug(f"🔐 Signature headers added: {sig_headers}")
+                logger.debug(f"🔐 Final headers after signing: {dict(headers)}")
 
                 logger.info(f"🔐 Making signed request to {endpoint}")
 
                 # Always log detailed headers for auth server calls (critical for signature debugging)
-                logger.info(f"🔐 ===== AUTH SERVER REQUEST HEADERS =====")
-                logger.info(f"🔐 Method: POST")
-                logger.info(f"🔐 URL: {endpoint}")
-                logger.info(f"🔐 Body length: {len(body_bytes)} bytes")
-                logger.info(f"🔐 Body content: {body_bytes.decode('utf-8')}")
-                logger.info(f"🔐 All headers being sent:")
+                logger.debug(f"🔐 ===== AUTH SERVER REQUEST HEADERS =====")
+                logger.debug(f"🔐 Method: POST")
+                logger.debug(f"🔐 URL: {endpoint}")
+                logger.debug(f"🔐 Body length: {len(body_bytes)} bytes")
+                logger.debug(f"🔐 Body content: {body_bytes.decode('utf-8')}")
+                logger.debug(f"🔐 All headers being sent:")
                 for header_name, header_value in headers.items():
                     # Show full header values for debugging (don't truncate)
-                    logger.info(f"🔐   {header_name}: {header_value}")
+                    logger.debug(f"🔐   {header_name}: {header_value}")
                     # Special detailed logging for Signature-Key header
                     if header_name.lower() == "signature-key":
-                        logger.info(f"🔐     ^^^ Signature-Key raw value: {repr(header_value)}")
-                        logger.info(f"🔐     ^^^ Signature-Key bytes: {[b for b in header_value.encode('utf-8')]}")
+                        logger.debug(f"🔐     ^^^ Signature-Key raw value: {repr(header_value)}")
+                        logger.debug(f"🔐     ^^^ Signature-Key bytes: {[b for b in header_value.encode('utf-8')]}")
                     # Highlight content-digest if present
                     if header_name.lower() == "content-digest":
-                        logger.info(f"🔐     ^^^ Content-Digest (added by aauth library when body is present)")
+                        logger.debug(f"🔐     ^^^ Content-Digest (added by aauth library when body is present)")
                 logger.info(f"🔐 ========================================")
 
                 if DEBUG:

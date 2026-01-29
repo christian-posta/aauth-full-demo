@@ -336,7 +336,8 @@ class A2AService:
                         try:
                             token_result = await aauth_token_service.request_auth_token(
                                 resource_token=resource_token,
-                                redirect_uri=redirect_uri
+                                redirect_uri=redirect_uri,
+                                state=request_id
                             )
                             
                             # User-delegated flow (SPEC 9.4): Keycloak may return request_token when consent is required
