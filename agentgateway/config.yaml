@@ -25,12 +25,24 @@ config:
         user_id: 'jwt.name'
         token_issuer: 'jwt.iss'
         token_audience: 'jwt.aud'
+        aauth_scheme: 'aauth.scheme'
+        aauth_agent_identity: 'aauth.agent'
+# CEL / authorization – You can use the same aauth fields in CEL, e.g.:
+# aauth.scheme == "Jwt"
+# aauth.agent == "https://agent.example.com"
+# aauth.agent_delegate (user/sub for auth+jwt)
+# aauth.jwt_claims (full JWT claims when scheme is JWT).        
+
 binds:
 - port: 3000
   listeners:
   - hostname: "supply-chain-agent.localhost"
     routes:
     - policies:
+        aauth:
+          mode: optional
+          requiredScheme: jwks
+          timestampTolerance: 60    
         # Mark this route as a2a traffic
         a2a: {}
         backendAuth:
