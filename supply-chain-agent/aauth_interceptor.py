@@ -212,7 +212,7 @@ class AAuthSigningInterceptor(ClientCallInterceptor):
                 else:
                     # Default to HWK scheme
                     sig_scheme = "hwk"
-                    logger.info(f"🔐 AAuth: Signing request to {url} with HWK scheme")
+                    logger.info(f"🔐 AAuth: Signing request to {url} with {sig_scheme} scheme")
                 
                 if DEBUG:
                     logger.debug(f"🔐 AAuth: Method: {method}, Body length: {len(body) if body else 0}")

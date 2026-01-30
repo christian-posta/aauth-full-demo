@@ -681,7 +681,7 @@ class SupplyChainOptimizerExecutor(AgentExecutor):
                     sig_key_value = next((v for k, v in aauth_headers.items() if k.lower() == 'signature-key'), '')
                     if 'scheme=hwk' in sig_key_value.lower():
                         scheme = "hwk"
-                        logger.info(f"🔐 AAuth scheme: HWK (Header Web Key) - pseudonymous authentication")
+                        logger.info(f"🔐 AAuth scheme: {scheme} (Header Web Key) - pseudonymous authentication")
                         set_attribute("auth.aauth.scheme", "hwk")
                     elif 'scheme=jwks' in sig_key_value.lower():
                         scheme = "jwks"
@@ -1388,7 +1388,7 @@ class SupplyChainOptimizerExecutor(AgentExecutor):
                                 agent_id = os.getenv("BACKEND_AGENT_URL", "http://backend.localhost:8000")
                         except Exception as e:
                             if DEBUG:
-                                logger.debug(f"🔐 Failed to extract JWK from HWK header: {e}")
+                                logger.debug(f"🔐 Failed to extract JWK from Signature-Key header: {e}")
                 
                 # Generate resource_token
                 try:

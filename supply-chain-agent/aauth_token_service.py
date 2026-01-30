@@ -176,7 +176,7 @@ class AAuthTokenService:
         else:
             # Default to HWK scheme
             effective_scheme = "hwk"
-            logger.info(f"🔐 Signing with HWK scheme")
+            logger.info(f"🔐 Signing with {effective_scheme} scheme")
         
         # Sign the request
         sig_headers = sign_request(

@@ -324,7 +324,7 @@ class MarketAnalysisAgentExecutor(AgentExecutor):
                     sig_key_value = next((v for k, v in aauth_headers.items() if k.lower() == 'signature-key'), '')
                     if 'scheme=hwk' in sig_key_value.lower():
                         scheme = "hwk"
-                        logger.info(f"🔐 AAuth scheme: HWK (Header Web Key) - pseudonymous authentication")
+                        logger.info(f"🔐 AAuth scheme: {scheme} (Header Web Key) - pseudonymous authentication")
                         set_attribute("auth.aauth.scheme", "hwk")
                     elif 'scheme=jwks' in sig_key_value.lower():
                         scheme = "jwks"
@@ -891,7 +891,7 @@ class MarketAnalysisAgentExecutor(AgentExecutor):
         
         try:
             # Note: JWT/STS token exchange removed - authentication is now handled via AAuth HWK signing
-            logger.info(f"🔐 Using AAuth HWK authentication (no JWT/STS exchange)")
+            logger.info(f"🔐 Using AAuth authentication (signature verification already performed)")
             add_event("aauth_hwk_auth_method")
             set_attribute("auth.method", "aauth_hwk")
             
