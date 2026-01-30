@@ -107,6 +107,8 @@ AAUTH_SIGNATURE_SCHEME=jwks
 MARKET_ANALYSIS_AGENT_ID_URL=http://market-analysis-agent.localhost:3000
 ```
 
+For **user-delegated AAuth** (resource tokens, JWT verification, Keycloak JWKS), see [docs/USER_DELEGATED_AAUTH.md](../docs/USER_DELEGATED_AAUTH.md) and [docs/AAUTH_CONFIGURATION.md](../docs/AAUTH_CONFIGURATION.md). Key variables: `AAUTH_AUTHORIZATION_SCHEME=user-delegated`, `KEYCLOAK_AAUTH_ISSUER_URL`.
+
 ### Code Locations
 
 #### Verification Implementation (Incoming Requests)

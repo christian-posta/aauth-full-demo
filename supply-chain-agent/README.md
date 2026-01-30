@@ -127,6 +127,8 @@ AAUTH_SIGNATURE_SCHEME=jwks
 SUPPLY_CHAIN_AGENT_ID_URL=http://supply-chain-agent.localhost:3000
 ```
 
+For **user-delegated AAuth** (resource tokens, JWT verification, token exchange to Market Analysis Agent), see [docs/USER_DELEGATED_AAUTH.md](../docs/USER_DELEGATED_AAUTH.md) and [docs/AAUTH_CONFIGURATION.md](../docs/AAUTH_CONFIGURATION.md). Key variables: `AAUTH_AUTHORIZATION_SCHEME`, `KEYCLOAK_AAUTH_ISSUER_URL`.
+
 ### Code Locations
 
 #### 1. Signing Implementation (Outgoing Requests to Market-Analysis-Agent)

@@ -12,6 +12,8 @@ This repository provides a **complete, working example** of:
 - **Multiple Signature Schemes**: 
   - **HWK (Header Web Key)**: Pseudonymous authentication with public key in header
   - **JWKS (JSON Web Key Set)**: Identified agent authentication with key discovery
+  - **JWT (Auth Token)**: User-delegated authorization with Keycloak-issued auth tokens
+- **User-Delegated AAuth**: Consent flow (Backend → Keycloak → user consent → auth token), resource tokens, and multi-hop token exchange (Supply Chain Agent → Market Analysis Agent)
 - **Multi-Agent Architecture**: Three agents communicating with signed requests
 - **Key Discovery**: JWKS endpoints and metadata discovery per AAuth specification
 - **User Authentication**: Keycloak OIDC integration for user-facing frontend
@@ -113,23 +115,23 @@ cd ..
 
 ### 4. Configure Environment Variables
 
-Each component needs environment configuration:
+Each component needs environment configuration. Copy `env.example` to `.env` in each directory and set values. For user-delegated AAuth (consent + token exchange), see [docs/AAUTH_CONFIGURATION.md](docs/AAUTH_CONFIGURATION.md).
 
 ```bash
 # Backend
 cd backend
 cp env.example .env
-# Edit .env - set BACKEND_AGENT_URL, AAUTH_SIGNATURE_SCHEME, etc.
+# Edit .env - set BACKEND_AGENT_URL, AAUTH_SIGNATURE_SCHEME, KEYCLOAK_*, AAUTH_CALLBACK_URL, etc.
 
 # Supply Chain Agent
 cd ../supply-chain-agent
 cp env.example .env
-# Edit .env - set SUPPLY_CHAIN_AGENT_ID_URL, AAUTH_SIGNATURE_SCHEME, etc.
+# Edit .env - set SUPPLY_CHAIN_AGENT_ID_URL, AAUTH_SIGNATURE_SCHEME, KEYCLOAK_AAUTH_ISSUER_URL, etc.
 
 # Market Analysis Agent
 cd ../market-analysis-agent
 cp env.example .env
-# Edit .env - set MARKET_ANALYSIS_AGENT_ID_URL, AAUTH_SIGNATURE_SCHEME, etc.
+# Edit .env - set MARKET_ANALYSIS_AGENT_ID_URL, AAUTH_SIGNATURE_SCHEME, AAUTH_AUTHORIZATION_SCHEME, KEYCLOAK_*, etc.
 ```
 
 ### 5. Start Services
@@ -181,6 +183,12 @@ Both **HWK** and **JWKS** schemes are supported and configurable via `AAUTH_SIGN
   - Provides agent identity verification
   - Example: `scheme=jwks id="http://agent.example" kid="key-1"`
 
+- **JWT (Auth Token)**: User-delegated authorization
+  - Auth token from Keycloak (after user consent or token exchange) in `Signature-Key` header
+  - Receivers verify JWT with Keycloak JWKS and validate claims (`aud`, `agent`, `act`, etc.)
+  - Example: `scheme=jwt jwt="<auth-token>"`
+  - See [docs/USER_DELEGATED_AAUTH.md](docs/USER_DELEGATED_AAUTH.md) for the full flow
+
 ### Key Discovery
 
 Agents expose JWKS endpoints for key discovery:
@@ -227,6 +235,10 @@ Each component's README includes detailed AAuth documentation:
 - ✅ **HTTP Message Signatures** (RFC 9421) for request signing
 - ✅ **HWK Scheme** - Pseudonymous authentication
 - ✅ **JWKS Scheme** - Identified agent authentication with key discovery
+- ✅ **JWT Scheme** - User-delegated auth tokens (Keycloak-issued; JWK→PEM for verification)
+- ✅ **User consent flow** - Backend redirects to Keycloak consent; callback exchanges code for auth token and retries with `scheme=jwt`
+- ✅ **Resource tokens** - Supply Chain Agent and Market Analysis Agent issue resource tokens on 401 (Agent-Auth header)
+- ✅ **Token exchange** - Supply Chain Agent exchanges upstream auth token for new token when calling Market Analysis Agent (SPEC §9.10; `act` claim)
 - ✅ **Canonical Authority** - Proper authority handling per SPEC 10.3.1
 - ✅ **Content-Digest** - RFC 9530 compliant body digest
 - ✅ **Ephemeral Keys** - Per-process keypair generation
@@ -250,6 +262,8 @@ Each component's README includes detailed AAuth documentation:
 ## 📚 Documentation
 
 - **[AAuth Specification](SPEC.md)** - Complete AAuth specification
+- **[User-Delegated AAuth Flow](docs/USER_DELEGATED_AAUTH.md)** - Consent flow, resource tokens, token exchange (Backend → SCA → MAA)
+- **[AAuth Configuration](docs/AAUTH_CONFIGURATION.md)** - Environment variables and Keycloak setup for all components
 - **[Backend README](backend/README.md)** - Backend API and AAuth signing documentation
 - **[Supply Chain Agent README](supply-chain-agent/README.md)** - Agent documentation with AAuth details
 - **[Market Analysis Agent README](market-analysis-agent/README.md)** - Agent documentation with AAuth details
@@ -272,6 +286,17 @@ Set `AAUTH_SIGNATURE_SCHEME` in each component's `.env`:
 
 - `hwk` - Header Web Key (pseudonymous)
 - `jwks` - JSON Web Key Set (identified agent)
+- `jwt` - Auth token (user-delegated; used by backend/agents when an auth token is available after consent or token exchange)
+
+### User-Delegated AAuth (Consent + Token Exchange)
+
+For the full user consent and multi-hop flow:
+
+1. **Backend**: Set `AAUTH_AUTHORIZATION_SCHEME` (or equivalent) so that when Supply Chain Agent returns 401 with Agent-Auth, the backend requests an auth token from Keycloak. Configure `AAUTH_CALLBACK_URL` and `AAUTH_FRONTEND_REDIRECT_URL` for the consent callback and post-consent redirect.
+2. **Supply Chain Agent**: Can act as a resource (issue resource tokens on 401) and perform token exchange when Market Analysis Agent returns 401. Set `KEYCLOAK_AAUTH_ISSUER_URL` and optional token endpoint.
+3. **Market Analysis Agent**: Set `AAUTH_AUTHORIZATION_SCHEME=user-delegated` to require `scheme=jwt` and return 401 with resource token when missing. Set `KEYCLOAK_AAUTH_ISSUER_URL` for JWT verification (Keycloak JWKS).
+
+See **[docs/USER_DELEGATED_AAUTH.md](docs/USER_DELEGATED_AAUTH.md)** for the full flow and **[docs/AAUTH_CONFIGURATION.md](docs/AAUTH_CONFIGURATION.md)** for all environment variables.
 
 ### Agent URLs
 

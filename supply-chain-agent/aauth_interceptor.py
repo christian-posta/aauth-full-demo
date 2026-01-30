@@ -41,27 +41,32 @@ def get_signing_keypair():
 
 
 class AAuthSigningInterceptor(ClientCallInterceptor):
-    """Interceptor that signs HTTP requests using AAuth HWK scheme.
+    """Interceptor that signs HTTP requests using AAuth schemes (HWK, JWKS, or JWT).
     
     This interceptor adds HTTP Message Signature headers to all outgoing
-    requests, providing cryptographic proof-of-possession without requiring
-    identity verification (pseudonymous authentication).
+    requests. Supports multiple signature schemes:
+    - HWK: Pseudonymous authentication (default)
+    - JWKS: Identified agent authentication
+    - JWT: User-delegated authentication (requires auth_token)
     
     Per AAuth SPEC.md Section 10, the following headers are added:
     - Signature-Input: Describes which components are covered by the signature
     - Signature: The actual cryptographic signature
-    - Signature-Key: Contains the public key (scheme=hwk)
+    - Signature-Key: Contains the public key (scheme=hwk/jwks) or auth token (scheme=jwt)
     """
     
-    def __init__(self, trace_headers: Optional[Dict[str, str]] = None):
+    def __init__(self, trace_headers: Optional[Dict[str, str]] = None, auth_token: Optional[str] = None):
         """Initialize the AAuth signing interceptor.
         
         Args:
             trace_headers: Optional additional headers to inject (e.g., for tracing)
+            auth_token: Optional auth token to use for scheme=jwt. When provided,
+                       the interceptor will use scheme=jwt instead of HWK/JWKS.
         """
         self.trace_headers = trace_headers or {}
         self.private_key = _PRIVATE_KEY
         self.public_key = _PUBLIC_KEY
+        self.auth_token = auth_token  # Store auth_token for scheme=jwt
     
     async def intercept(
         self,
@@ -165,7 +170,8 @@ class AAuthSigningInterceptor(ClientCallInterceptor):
         # Sign the request if we have a URL
         if url:
             try:
-                # Determine signature scheme from environment variable (default: hwk)
+                # Determine signature scheme
+                # If auth_token is provided, use scheme=jwt; otherwise use env var (default: hwk)
                 sig_scheme = os.getenv("AAUTH_SIGNATURE_SCHEME", "hwk").lower()
                 
                 # Prepare signing parameters
@@ -173,7 +179,17 @@ class AAuthSigningInterceptor(ClientCallInterceptor):
                 agent_id = None
                 kid = None
                 
-                if sig_scheme == "jwks":
+                # Check if we should use scheme=jwt (requires auth_token)
+                if self.auth_token:
+                    # Use JWT scheme with auth_token
+                    sig_scheme = "jwt"
+                    sign_kwargs = {
+                        "jwt": self.auth_token
+                    }
+                    logger.info(f"🔐 AAuth: Signing request to {url} with JWT scheme (auth_token present)")
+                    if DEBUG:
+                        logger.debug(f"🔐 AAuth: Auth token length: {len(self.auth_token)}")
+                elif sig_scheme == "jwks":
                     # For JWKS scheme, need agent identifier and key ID
                     # Try SUPPLY_CHAIN_AGENT_ID_URL first, then SUPPLY_CHAIN_AGENT_URL, then agent_card.url
                     agent_id = os.getenv("SUPPLY_CHAIN_AGENT_ID_URL")

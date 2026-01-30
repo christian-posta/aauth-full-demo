@@ -27,6 +27,9 @@ from a2a.types import (
     HTTPAuthSecurityScheme,
 )
 from agent_executor import MarketAnalysisAgentExecutor
+from resource_token_service import get_signing_keypair
+from aauth import generate_jwks
+from starlette.responses import JSONResponse
 from tracing_config import initialize_tracing
 
 
@@ -153,8 +156,10 @@ if __name__ == '__main__':
             print("🔗 Tracing configured with console exporter DISABLED")
 
     # Start the server on port 9998 (different from supply-chain-agent's 9999)
-    print("🚀 Starting Market Analysis Agent on http://localhost:9998")
-    print("📊 Agent Card: http://localhost:9998/.well-known/agent-card.json")
+    port = int(os.getenv("MARKET_ANALYSIS_AGENT_PORT", "9998"))
+    agent_url = os.getenv("MARKET_ANALYSIS_AGENT_URL", f"http://localhost:{port}/")
+    print(f"🚀 Starting Market Analysis Agent on http://localhost:{port}")
+    print(f"📊 Agent Card: http://localhost:{port}/.well-known/agent-card.json")
     print("🔍 Skills: Inventory Analysis, Market Forecasting, Demand Modeling")
     
     # Build the Starlette app and add middleware to capture HTTP headers
@@ -163,4 +168,40 @@ if __name__ == '__main__':
     app.add_middleware(HTTPHeadersCaptureMiddleware)
     print(f"🔐 Added HTTPHeadersCaptureMiddleware for AAuth header capture")
     
-    uvicorn.run(app, host='0.0.0.0', port=9998)
+    # Add JWKS endpoints for AAuth (agent metadata, resource metadata, and key set)
+    # Keycloak fetches /.well-known/aauth-resource to validate resource tokens issued by this agent.
+    @app.route("/.well-known/aauth-agent", methods=["GET"])
+    async def aauth_agent_metadata(request):
+        """AAuth agent metadata endpoint per SPEC Section 8.1.
+        Returns agent identifier and JWKS URI for JWKS signature scheme discovery.
+        """
+        agent_id_url = os.getenv("MARKET_ANALYSIS_AGENT_ID_URL", agent_url.rstrip('/'))
+        jwks_uri = f"{agent_id_url.rstrip('/')}/jwks.json"
+        return JSONResponse({
+            "agent": agent_id_url,
+            "jwks_uri": jwks_uri
+        })
+    
+    @app.route("/.well-known/aauth-resource", methods=["GET"])
+    async def aauth_resource_metadata(request):
+        """AAuth resource metadata endpoint per SPEC Section 8.2.
+        Returns resource identifier and JWKS URI for resource token validation.
+        Keycloak fetches this to validate resource tokens issued by this agent.
+        """
+        resource_id_url = os.getenv("MARKET_ANALYSIS_AGENT_ID_URL", agent_url.rstrip('/'))
+        jwks_uri = f"{resource_id_url.rstrip('/')}/jwks.json"
+        return JSONResponse({
+            "resource": resource_id_url,
+            "jwks_uri": jwks_uri
+        })
+    
+    @app.route("/jwks.json", methods=["GET"])
+    async def jwks_endpoint(request):
+        """JWKS endpoint for AAuth signature verification and resource token validation."""
+        _, _, public_jwk = get_signing_keypair()
+        jwks = generate_jwks([public_jwk])
+        return JSONResponse(jwks)
+    
+    print(f"🔐 Added JWKS endpoints: /.well-known/aauth-agent, /.well-known/aauth-resource, and /jwks.json")
+    
+    uvicorn.run(app, host='0.0.0.0', port=port)

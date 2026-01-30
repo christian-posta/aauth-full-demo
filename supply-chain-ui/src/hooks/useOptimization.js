@@ -48,7 +48,6 @@ export const useOptimization = () => {
       if (response.consent_required && response.consent_url) {
         setIsRunning(false);
         console.log('User consent required for agent, redirecting to consent page', response.consent_url);
-        window.alert(`This requires consent. Sending you to:\n\n${response.consent_url}`);
         window.location.href = response.consent_url;
         return;
       }

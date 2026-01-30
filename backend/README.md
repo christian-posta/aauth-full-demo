@@ -149,6 +149,8 @@ AAUTH_SIGNATURE_SCHEME=jwks
 BACKEND_AGENT_URL=http://backend.localhost:8000
 ```
 
+For **user-delegated AAuth** (consent flow, auth tokens, callback), see [docs/USER_DELEGATED_AAUTH.md](../docs/USER_DELEGATED_AAUTH.md) and [docs/AAUTH_CONFIGURATION.md](../docs/AAUTH_CONFIGURATION.md). Key backend variables: `AAUTH_CALLBACK_URL`, `AAUTH_FRONTEND_REDIRECT_URL`, `KEYCLOAK_AAUTH_ISSUER_URL`, `KEYCLOAK_AAUTH_AGENT_AUTH_ENDPOINT`.
+
 ### Code Locations
 
 #### 1. Signing Implementation (Outgoing Requests)

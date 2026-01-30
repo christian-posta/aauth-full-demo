@@ -79,6 +79,9 @@ from http_headers_middleware import get_current_request_headers, get_current_req
 # Import aauth AFTER logging is configured so its internal loggers propagate correctly
 from aauth import verify_signature
 from aauth.errors import SignatureError
+from resource_token_service import generate_resource_token
+from starlette.exceptions import HTTPException
+import jwt
 
 # Enable aauth library logs (VERIFIER / sign_request details) so they match supply-chain-agent output
 # Logger name comes from the aauth package (e.g. aauth.signing)
@@ -386,7 +389,121 @@ class MarketAnalysisAgentExecutor(AgentExecutor):
                                 public_key = None
                                 jwks_fetcher = None
                                 
-                                if scheme == "jwks":
+                                if scheme == "jwt":
+                                    # For JWT scheme: (1) decode unverified to get cnf.jwk and build jwks_fetcher for verify_signature;
+                                    # (2) verify auth_token with Keycloak JWKS (Keycloak returns JWK; PyJWT expects PEM - convert JWK to PEM).
+                                    # Format: sig1=(scheme=jwt jwt="<auth-token>")
+                                    jwt_match = re.search(r'jwt="([^"]+)"', sig_key_header)
+                                    if jwt_match:
+                                        auth_token_str = jwt_match.group(1)
+                                        logger.info(f"🔐 JWT scheme detected: verifying auth_token")
+                                        if DEBUG:
+                                            logger.debug(f"🔐 Auth token length: {len(auth_token_str)}")
+                                        keycloak_issuer_url = os.getenv("KEYCLOAK_AAUTH_ISSUER_URL")
+                                        if not keycloak_issuer_url:
+                                            keycloak_url = os.getenv("KEYCLOAK_URL", "http://localhost:8080")
+                                            keycloak_realm = os.getenv("KEYCLOAK_REALM", "aauth-test")
+                                            keycloak_issuer_url = f"{keycloak_url}/realms/{keycloak_realm}"
+                                        # Decode without verification to get cnf.jwk for jwks_fetcher (sig=jwt requires jwks_fetcher)
+                                        try:
+                                            payload_unverified = jwt.decode(auth_token_str, options={"verify_signature": False})
+                                            cnf_jwk = payload_unverified.get("cnf", {}).get("jwk")
+                                            agent_id_from_token = payload_unverified.get("agent")
+                                            if cnf_jwk and agent_id_from_token:
+                                                def smart_jwks_fetcher(issuer_or_agent_id: str, kid_param: str = None) -> dict:
+                                                    if issuer_or_agent_id == keycloak_issuer_url or "/realms/" in issuer_or_agent_id:
+                                                        try:
+                                                            import httpx
+                                                            jwks_url = f"{issuer_or_agent_id}/protocol/openid-connect/certs"
+                                                            jwks_response = httpx.get(jwks_url, timeout=10.0)
+                                                            jwks_response.raise_for_status()
+                                                            return jwks_response.json()
+                                                        except Exception as e:
+                                                            logger.error(f"❌ Failed to fetch Keycloak JWKS: {e}")
+                                                            return None
+                                                    return {"keys": [cnf_jwk]}
+                                                jwks_fetcher = smart_jwks_fetcher
+                                                if DEBUG:
+                                                    logger.debug(f"🔐 JWT scheme: created smart_jwks_fetcher for agent_id={agent_id_from_token}")
+                                            else:
+                                                jwks_fetcher = None
+                                        except Exception as e:
+                                            if DEBUG:
+                                                logger.debug(f"🔐 Failed to parse JWT for jwks_fetcher: {e}")
+                                            jwks_fetcher = None
+                                        # Verify auth_token JWT signature and claims (Keycloak JWKS is JWK format; PyJWT expects PEM - convert)
+                                        try:
+                                            import httpx
+                                            jwks_uri = f"{keycloak_issuer_url}/protocol/openid-connect/certs"
+                                            jwks_response = httpx.get(jwks_uri, timeout=10.0)
+                                            jwks_response.raise_for_status()
+                                            jwks_doc = jwks_response.json()
+                                            resource_id = os.getenv("MARKET_ANALYSIS_AGENT_ID_URL")
+                                            if not resource_id:
+                                                resource_id = os.getenv("MARKET_ANALYSIS_AGENT_URL", "http://localhost:9998").rstrip('/')
+                                            unverified_header = jwt.get_unverified_header(auth_token_str)
+                                            kid = unverified_header.get("kid")
+                                            signing_key = None
+                                            for key in jwks_doc.get("keys", []):
+                                                if key.get("kid") == kid:
+                                                    signing_key = key
+                                                    break
+                                            if not signing_key:
+                                                logger.error(f"❌ Auth token validation failed: key with kid={kid} not found in Keycloak JWKS")
+                                                raise Exception("Key not found in JWKS")
+                                            # Convert Keycloak JWK (RSA) to PEM for PyJWT - Keycloak returns JWK, PyJWT expects PEM
+                                            from cryptography.hazmat.primitives import serialization
+                                            from cryptography.hazmat.primitives.asymmetric import rsa
+                                            from cryptography.hazmat.backends import default_backend
+                                            import base64
+                                            if signing_key.get("kty") == "RSA":
+                                                n = int.from_bytes(base64.urlsafe_b64decode(signing_key["n"] + "=="), "big")
+                                                e = int.from_bytes(base64.urlsafe_b64decode(signing_key["e"] + "=="), "big")
+                                                public_key_obj = rsa.RSAPublicNumbers(e, n).public_key(default_backend())
+                                                public_key_pem = public_key_obj.public_bytes(
+                                                    encoding=serialization.Encoding.PEM,
+                                                    format=serialization.PublicFormat.SubjectPublicKeyInfo
+                                                )
+                                            else:
+                                                public_key_pem = signing_key
+                                            decoded_payload = jwt.decode(
+                                                auth_token_str,
+                                                public_key_pem if isinstance(public_key_pem, bytes) else signing_key,
+                                                algorithms=[unverified_header.get("alg", "RS256")],
+                                                audience=resource_id,
+                                                options={"verify_signature": True, "verify_exp": True, "verify_aud": True}
+                                            )
+                                            if unverified_header.get("typ") != "auth+jwt":
+                                                logger.error(f"❌ Auth token validation failed: invalid typ (expected auth+jwt)")
+                                                raise Exception("Invalid token type")
+                                            scope = decoded_payload.get("scope", "")
+                                            act_claim = decoded_payload.get("act")
+                                            logger.info(f"✅ Auth token verified successfully")
+                                            if DEBUG:
+                                                logger.debug(f"🔐 Auth token claims: agent={agent_id_from_token}, aud={decoded_payload.get('aud')}, scope={scope}")
+                                            add_event("auth_token_verified", {"agent": agent_id_from_token, "scope": scope, "has_act": bool(act_claim)})
+                                            set_attribute("auth.auth_token.verified", True)
+                                            set_attribute("auth.auth_token.agent", agent_id_from_token or "")
+                                            is_valid = True
+                                        except jwt.ExpiredSignatureError:
+                                            logger.error(f"❌ Auth token validation failed: token expired")
+                                            is_valid = False
+                                        except jwt.InvalidAudienceError:
+                                            logger.error(f"❌ Auth token validation failed: invalid audience (expected {resource_id})")
+                                            is_valid = False
+                                        except jwt.InvalidSignatureError:
+                                            logger.error(f"❌ Auth token validation failed: invalid signature")
+                                            is_valid = False
+                                        except Exception as jwt_error:
+                                            logger.error(f"❌ Auth token validation failed: {jwt_error}")
+                                            if DEBUG:
+                                                import traceback
+                                                logger.debug(traceback.format_exc())
+                                            is_valid = False
+                                    else:
+                                        logger.error(f"❌ Failed to extract auth_token from Signature-Key header for JWT scheme")
+                                        is_valid = False
+                                elif scheme == "jwks":
                                     # Extract agent_id and kid from Signature-Key header
                                     # Format: sig1=(scheme=jwks id="https://agent.example" kid="key-1")
                                     agent_id = None
@@ -527,6 +644,119 @@ class MarketAnalysisAgentExecutor(AgentExecutor):
                                         add_event("aauth_signature_verified", {"scheme": scheme, "valid": True})
                                         set_attribute("auth.aauth.verified", True)
                                         set_attribute("auth.aauth.verification_result", "valid")
+                                        
+                                        # Check if authorization is required (scheme=jwt needed)
+                                        auth_scheme = os.getenv("AAUTH_AUTHORIZATION_SCHEME", "autonomous").lower()
+                                        logger.info(f"🔐 Authorization check: scheme={scheme}, AAUTH_AUTHORIZATION_SCHEME={auth_scheme}")
+                                        if auth_scheme == "user-delegated" and scheme != "jwt":
+                                            logger.info(f"🔐 Authorization REQUIRED: user-delegated mode requires scheme=jwt but received {scheme}")
+                                            # Authorization required but no auth_token provided
+                                            logger.info(f"🔐 Authorization required: scheme=jwt needed but received {scheme}")
+                                            add_event("authorization_required", {"scheme": scheme})
+                                            
+                                            # Extract agent identifier from Signature-Key header
+                                            agent_id = None
+                                            agent_jwk = None
+                                            
+                                            if scheme == "jwks":
+                                                id_match = re.search(r'id="([^"]+)"', sig_key_header)
+                                                kid_match = re.search(r'kid="([^"]+)"', sig_key_header)
+                                                if id_match:
+                                                    agent_id = id_match.group(1)
+                                                    # Fetch agent JWKS to get public key
+                                                    import httpx
+                                                    try:
+                                                        metadata_url = f"{agent_id}/.well-known/aauth-agent"
+                                                        metadata_response = httpx.get(metadata_url, timeout=10.0)
+                                                        if metadata_response.status_code == 200:
+                                                            metadata = metadata_response.json()
+                                                            jwks_uri = metadata.get("jwks_uri")
+                                                            if jwks_uri:
+                                                                jwks_response = httpx.get(jwks_uri, timeout=10.0)
+                                                                if jwks_response.status_code == 200:
+                                                                    jwks = jwks_response.json()
+                                                                    keys = jwks.get("keys", [])
+                                                                    if kid_match:
+                                                                        kid = kid_match.group(1)
+                                                                        for key in keys:
+                                                                            if key.get("kid") == kid:
+                                                                                agent_jwk = key
+                                                                                break
+                                                                    elif keys:
+                                                                        agent_jwk = keys[0]
+                                                    except Exception as e:
+                                                        logger.error(f"❌ Failed to fetch agent JWKS: {e}")
+                                            elif scheme == "hwk":
+                                                # Extract public key from header
+                                                x_match = re.search(r'x="([^"]+)"', sig_key_header)
+                                                if x_match:
+                                                    agent_jwk = {
+                                                        "kty": "OKP",
+                                                        "crv": "Ed25519",
+                                                        "x": x_match.group(1)
+                                                    }
+                                                    agent_id = os.getenv("SUPPLY_CHAIN_AGENT_ID_URL", "http://supply-chain-agent.localhost:3000")
+                                            
+                                            if agent_id and agent_jwk:
+                                                # Generate resource_token
+                                                try:
+                                                    keycloak_issuer_url = os.getenv("KEYCLOAK_AAUTH_ISSUER_URL")
+                                                    if not keycloak_issuer_url:
+                                                        keycloak_url = os.getenv("KEYCLOAK_URL", "http://localhost:8080")
+                                                        keycloak_realm = os.getenv("KEYCLOAK_REALM", "aauth-test")
+                                                        keycloak_issuer_url = f"{keycloak_url}/realms/{keycloak_realm}"
+                                                    
+                                                    scope = "market-analysis:analyze"
+                                                    resource_token = generate_resource_token(
+                                                        agent_id=agent_id,
+                                                        agent_jwk=agent_jwk,
+                                                        auth_server_url=keycloak_issuer_url,
+                                                        scope=scope
+                                                    )
+                                                    
+                                                    logger.info(f"🔐 Issuing resource_token for agent: {agent_id}")
+                                                    if DEBUG:
+                                                        logger.debug(f"🔐 Resource token claims: iss={os.getenv('MARKET_ANALYSIS_AGENT_ID_URL', 'http://localhost:9998')}, aud={keycloak_issuer_url}, agent={agent_id}, scope={scope}")
+                                                    
+                                                    # Return 401 with Agent-Auth header
+                                                    agent_auth_header_value = f'httpsig; auth-token; resource_token="{resource_token}"; auth_server="{keycloak_issuer_url}"'
+                                                    
+                                                    logger.info(f"🔐 Returning 401 with Agent-Auth header")
+                                                    add_event("resource_token_issued", {
+                                                        "agent_id": agent_id,
+                                                        "auth_server": keycloak_issuer_url
+                                                    })
+                                                    set_attribute("auth.resource_token.issued", True)
+                                                    
+                                                    # Raise HTTPException to return 401
+                                                    raise HTTPException(
+                                                        status_code=401,
+                                                        detail="Authorization required",
+                                                        headers={"Agent-Auth": agent_auth_header_value}
+                                                    )
+                                                except HTTPException:
+                                                    raise
+                                                except Exception as e:
+                                                    logger.error(f"❌ Failed to generate resource_token: {e}")
+                                                    if DEBUG:
+                                                        import traceback
+                                                        logger.debug(traceback.format_exc())
+                                                    raise HTTPException(
+                                                        status_code=401,
+                                                        detail="Authorization required"
+                                                    )
+                                            else:
+                                                logger.warning(f"⚠️ Cannot generate resource_token: agent_id or agent_jwk not available")
+                                                raise HTTPException(
+                                                    status_code=401,
+                                                    detail="Authorization required"
+                                                )
+                                        else:
+                                            # Authorization not required or already satisfied
+                                            if auth_scheme == "user-delegated" and scheme == "jwt":
+                                                logger.info(f"🔐 Authorization satisfied: user-delegated mode with scheme=jwt")
+                                            elif auth_scheme != "user-delegated":
+                                                logger.info(f"🔐 Authorization not required: AAUTH_AUTHORIZATION_SCHEME={auth_scheme} (not user-delegated)")
                                     else:
                                         logger.error(
                                             f"❌ AAuth signature verification failed — target_uri={target_uri!r}, "
@@ -538,6 +768,13 @@ class MarketAnalysisAgentExecutor(AgentExecutor):
                                         set_attribute("auth.aauth.verified", False)
                                         set_attribute("auth.aauth.verification_result", "invalid")
                                 except Exception as verify_ex:
+                                    # If the verification step raised an HTTPException (e.g. we raised
+                                    # HTTPException(status_code=401, ... ) to indicate Agent-Auth is required),
+                                    # re-raise it so the framework returns the 401 to the caller.
+                                    from starlette.exceptions import HTTPException as StarletteHTTPException
+                                    if isinstance(verify_ex, StarletteHTTPException):
+                                        logger.info(f"🔐 Re-raising HTTPException from verification: {verify_ex.status_code}")
+                                        raise verify_ex
                                     logger.error(f"❌ AAuth signature verification exception: {verify_ex}")
                                     if DEBUG:
                                         import traceback
@@ -562,6 +799,13 @@ class MarketAnalysisAgentExecutor(AgentExecutor):
                             import traceback
                             logger.debug(traceback.format_exc())
                     except Exception as e:
+                        # If a Starlette HTTPException was raised (e.g., we raised a 401 to
+                        # indicate Agent-Auth required), propagate it so the framework can
+                        # return the 401 response to the caller. Otherwise log and continue.
+                        from starlette.exceptions import HTTPException as StarletteHTTPException
+                        if isinstance(e, StarletteHTTPException):
+                            logger.info(f"🔐 Propagating HTTPException from verification: {e.status_code}")
+                            raise e
                         logger.error(f"❌ Unexpected error during AAuth signature verification: {e}")
                         add_event("aauth_signature_verification_exception", {"error": str(e)})
                         set_attribute("auth.aauth.verified", False)
