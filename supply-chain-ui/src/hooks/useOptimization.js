@@ -1,4 +1,4 @@
-import { useState, useCallback, useEffect } from 'react';
+import { useState, useCallback, useEffect, useRef } from 'react';
 import apiService from '../api';
 
 // Module-level state to survive component unmounts during Keycloak state transitions
@@ -9,6 +9,8 @@ let modulePollingState = {
   timeoutId: null,
   requestId: null,
   onComplete: null,  // Callback to update React state when polling completes
+  restoredState: null,  // Cache restored state for remounts
+  hasRestoredOnce: false,  // Track if we've restored at least once
 };
 
 export const useOptimization = () => {
@@ -20,6 +22,15 @@ export const useOptimization = () => {
   const [selectedActivityId, setSelectedActivityId] = useState(null);
   const [error, setError] = useState(null);
   const [requestId, setRequestId] = useState(null);
+  const [promptText, setPromptText] = useState('');
+  
+  // Use a ref to track current activities value for closures
+  const activitiesRef = useRef(activities);
+  
+  // Keep ref in sync with state
+  useEffect(() => {
+    activitiesRef.current = activities;
+  }, [activities]);
 
   const startOptimization = useCallback(async (customPrompt = '') => {
     try {
@@ -48,6 +59,18 @@ export const useOptimization = () => {
       if (response.consent_required && response.consent_url) {
         setIsRunning(false);
         console.log('User consent required for agent, redirecting to consent page', response.consent_url);
+        
+        // Persist current state before redirect so we can restore it when returning
+        // Use activitiesRef.current to get the latest activities (avoid stale closure)
+        const stateToPreserve = {
+          activities: activitiesRef.current,
+          promptText: customPrompt,
+          timestamp: new Date().toISOString()
+        };
+        sessionStorage.setItem('aauth_preserved_state', JSON.stringify(stateToPreserve));
+        console.log('💾 Saved UI state before consent redirect:', stateToPreserve);
+        console.log('💾 Activities count:', activitiesRef.current.length);
+        
         window.location.href = response.consent_url;
         return;
       }
@@ -146,6 +169,7 @@ export const useOptimization = () => {
     setSelectedActivityId(null);
     setResults(null);
     setShowResults(false);
+    setPromptText('');
   }, []);
 
   const createResultsFromActivity = useCallback((activity) => {
@@ -282,6 +306,40 @@ export const useOptimization = () => {
       hasTimeout: !!modulePollingState.timeoutId,
     }));
 
+    // Restore preserved state from before consent redirect
+    // Check module-level cache first (for remounts), then sessionStorage
+    let preservedState = modulePollingState.restoredState;
+    
+    if (!preservedState) {
+      const preservedStateJson = sessionStorage.getItem('aauth_preserved_state');
+      if (preservedStateJson) {
+        try {
+          preservedState = JSON.parse(preservedStateJson);
+          // Cache in module-level state for subsequent remounts
+          modulePollingState.restoredState = preservedState;
+          console.log('🔄 Restoring preserved UI state from sessionStorage:', preservedState);
+        } catch (err) {
+          console.error('Failed to parse preserved state:', err);
+        }
+      }
+    } else {
+      console.log('🔄 Restoring preserved UI state from module cache:', preservedState);
+    }
+    
+    if (preservedState) {
+      if (preservedState.activities && preservedState.activities.length > 0) {
+        setActivities(preservedState.activities);
+        console.log('📋 Restored', preservedState.activities.length, 'activities');
+      }
+      
+      if (preservedState.promptText) {
+        setPromptText(preservedState.promptText);
+        console.log('✏️ Restored prompt text:', preservedState.promptText);
+      }
+      
+      modulePollingState.hasRestoredOnce = true;
+    }
+
     // Check for AAuth error (backend redirected here after consent failed)
     const params = new URLSearchParams(window.location.search);
     const urlError = params.get('aauth_error');
@@ -312,7 +370,27 @@ export const useOptimization = () => {
       // Update the callback to use current component's setState functions
       modulePollingState.onComplete = (data) => {
         console.log('[useOptimization] 🔗 Reconnected callback received data');
-        if (data.activities) setActivities(data.activities);
+        if (data.activities) {
+          // Merge new activities with existing ones (to preserve restored activities)
+          setActivities(prevActivities => {
+            const existingMap = new Map();
+            prevActivities.forEach(act => {
+              const key = `${act.id}_${act.timestamp}`;
+              existingMap.set(key, act);
+            });
+            
+            data.activities.forEach(act => {
+              const key = `${act.id}_${act.timestamp}`;
+              if (!existingMap.has(key)) {
+                existingMap.set(key, act);
+              }
+            });
+            
+            return Array.from(existingMap.values()).sort(
+              (a, b) => new Date(b.timestamp) - new Date(a.timestamp)
+            );
+          });
+        }
         if (data.progress !== undefined) setProgress(data.progress);
         if (data.results) {
           setResults(data.results);
@@ -373,7 +451,34 @@ export const useOptimization = () => {
     // Set up callback for state updates
     modulePollingState.onComplete = (data) => {
       console.log('[useOptimization] Callback received data:', data);
-      if (data.activities) setActivities(data.activities);
+      if (data.activities) {
+        // Merge new activities with existing ones (to preserve restored activities)
+        setActivities(prevActivities => {
+          console.log('[useOptimization] Merging activities. Previous:', prevActivities.length, 'New:', data.activities.length);
+          
+          // Create a map of existing activities by ID+timestamp for deduplication
+          const existingMap = new Map();
+          prevActivities.forEach(act => {
+            const key = `${act.id}_${act.timestamp}`;
+            existingMap.set(key, act);
+          });
+          
+          // Add new activities that don't exist yet
+          data.activities.forEach(act => {
+            const key = `${act.id}_${act.timestamp}`;
+            if (!existingMap.has(key)) {
+              existingMap.set(key, act);
+            }
+          });
+          
+          // Convert back to array and sort
+          const mergedActivities = Array.from(existingMap.values()).sort(
+            (a, b) => new Date(b.timestamp) - new Date(a.timestamp)
+          );
+          console.log('[useOptimization] Merged activities count:', mergedActivities.length);
+          return mergedActivities;
+        });
+      }
       if (data.progress !== undefined) setProgress(data.progress);
       if (data.results) {
         setResults(data.results);
@@ -446,6 +551,10 @@ export const useOptimization = () => {
               // Clean up module state
               modulePollingState.isPolling = false;
               modulePollingState.requestId = null;
+              modulePollingState.restoredState = null;
+              modulePollingState.hasRestoredOnce = false;
+              // Also clear from sessionStorage
+              sessionStorage.removeItem('aauth_preserved_state');
             }, 1000);
             
           } else if (status === 'failed') {
@@ -463,6 +572,10 @@ export const useOptimization = () => {
             // Clean up module state
             modulePollingState.isPolling = false;
             modulePollingState.requestId = null;
+            modulePollingState.restoredState = null;
+            modulePollingState.hasRestoredOnce = false;
+            // Also clear from sessionStorage
+            sessionStorage.removeItem('aauth_preserved_state');
           }
         } catch (err) {
           console.error('[useOptimization] Error polling progress after consent:', err);
@@ -487,6 +600,8 @@ export const useOptimization = () => {
     selectedActivityId,
     error,
     requestId,
+    promptText,
+    setPromptText,
     startOptimization,
     clearOptimization,
     clearAllActivities,

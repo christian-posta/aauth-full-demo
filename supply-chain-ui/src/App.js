@@ -269,14 +269,14 @@ const Dashboard = () => {
     results,
     selectedActivityId,
     error,
+    promptText,
+    setPromptText,
     startOptimization,
     clearOptimization,
     clearAllActivities,
     selectActivity,
     createResultsFromActivity
   } = useOptimization();
-  
-  const [optimizationPrompt, setOptimizationPrompt] = useState('');
 
   // Set Keycloak instance in API service
   useEffect(() => {
@@ -323,8 +323,8 @@ const Dashboard = () => {
                     placeholder="e.g., Analyze our laptop procurement strategy for Q4, focusing on cost optimization and supplier diversity. Consider our budget of $100k and need for 50 units."
                     className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 resize-none"
                     rows={4}
-                    value={optimizationPrompt}
-                    onChange={(e) => setOptimizationPrompt(e.target.value)}
+                    value={promptText}
+                    onChange={(e) => setPromptText(e.target.value)}
                     disabled={isRunning}
                   />
                   <p className="text-xs text-gray-500 mt-1 text-left">
@@ -333,7 +333,7 @@ const Dashboard = () => {
                 </div>
                 
                 <button
-                  onClick={() => startOptimization(optimizationPrompt)}
+                  onClick={() => startOptimization(promptText)}
                   disabled={isRunning}
                   className={`inline-flex items-center px-8 py-4 border border-transparent text-lg font-medium rounded-lg ${
                     isRunning 
@@ -349,7 +349,7 @@ const Dashboard = () => {
                   ) : (
                     <>
                       <Package className="h-6 w-6 mr-3" />
-                      {optimizationPrompt.trim() ? 'Run Custom Optimization' : 'Optimize Laptop Supply Chain'}
+                      {promptText.trim() ? 'Run Custom Optimization' : 'Optimize Laptop Supply Chain'}
                     </>
                   )}
                 </button>
