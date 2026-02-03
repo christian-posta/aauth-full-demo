@@ -1,0 +1,25 @@
+title: AAuth Demo Documentation
+description: User-delegated AAuth flow, configuration, and multi-hop token exchange
+baseurl: ""
+url: ""
+markdown: kramdown
+kramdown:
+  input: GFM
+  syntax_highlighter: rouge
+  hardwrap: false
+
+# Navigation for sidebar (order matters)
+navigation:
+  - title: Overview
+    url: /
+  - title: User-Delegated AAuth Flow
+    url: /user-delegated-aauth/
+  - title: AAuth Configuration
+    url: /aauth-configuration/
+
+exclude:
+  - README.md
+  - AAUTH_CONFIGURATION.md
+  - USER_DELEGATED_AAUTH.md
+  - Gemfile
+  - Gemfile.lock

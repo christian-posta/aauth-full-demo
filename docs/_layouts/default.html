@@ -1,0 +1,42 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>{% if page.title %}{{ page.title }} | {% endif %}{{ site.title }}</title>
+  <link rel="stylesheet" href="{{ '/assets/css/style.css' | relative_url }}">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=DM+Sans:ital,opsz,wght@0,9..40,400;0,9..40,500;0,9..40,600;0,9..40,700;1,9..40,400&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+</head>
+<body>
+  <div class="layout">
+    <aside class="sidebar">
+      <div class="sidebar-header">
+        <a href="{{ '/' | relative_url }}" class="logo">
+          <span class="logo-icon">A²</span>
+          <span class="logo-text">AAuth Docs</span>
+        </a>
+      </div>
+      <nav class="sidebar-nav">
+        {% for item in site.navigation %}
+        <a href="{{ item.url | relative_url }}" class="nav-link {% if item.url == '/' %}{% if page.url == '/' or page.url == '' %}active{% endif %}{% elsif page.url == item.url %}active{% endif %}">
+          {{ item.title }}
+        </a>
+        {% endfor %}
+      </nav>
+      <div class="sidebar-footer">
+        <a href="{{ site.github.repository_url | default: 'https://github.com' }}" class="github-link" target="_blank" rel="noopener">View on GitHub</a>
+      </div>
+    </aside>
+    <main class="content">
+      <article class="page">
+        {{ content }}
+      </article>
+      <footer class="page-footer">
+        <p>AAuth Demo Documentation — Built with Jekyll</p>
+      </footer>
+    </main>
+  </div>
+</body>
+</html>
