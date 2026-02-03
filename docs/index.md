@@ -5,14 +5,13 @@ title: AAuth Demo Documentation
 
 # AAuth Demo Documentation
 
-User-delegated AAuth flow, configuration, and multi-hop token exchange for the supply chain and market analysis agents.
+Documentation for the AAuth (Agent-to-Agent Authentication) full demo.
 
 ## Documentation
 
-- **[User-Delegated AAuth Flow](user-delegated-aauth.md)** — Consent flow, auth tokens (`scheme=jwt`), resource tokens, and multi-hop token exchange from Backend → Supply Chain Agent → Market Analysis Agent.
-
-- **[AAuth Configuration](aauth-configuration.md)** — Environment variables for Backend, Supply Chain Agent, Market Analysis Agent, and Frontend; Keycloak setup; hostnames and ports.
-
----
-
-See also the root README, SPEC.md, and each component's README (`backend/`, `supply-chain-agent/`, `market-analysis-agent/`) in the [repository](https://github.com/christian-posta/aauth-full-demo).
+1. [Overview of AAuth protocol](overview-aauth.md)
+2. [Install AAuth into Keycloak](install-aauth-keycloak.md)
+3. [Agent Identity with JWKS](agent-identity-jwks.md)
+4. [Agent authorization (autonomous)](agent-authorization-autonomous.md)
+5. [Agent authorization (on behalf of)](agent-authorization-on-behalf-of.md)
+6. [Apply policy with AgentGateway](apply-policy-agentgateway.md)
