@@ -1,7 +1,6 @@
 ---
 layout: default
 title: AAuth Configuration Reference
-permalink: /aauth-configuration/
 ---
 
 # AAuth Configuration Reference
@@ -105,5 +104,5 @@ For signature verification, agents use **canonical authority** derived from thei
 
 ## See Also
 
-- [User-Delegated AAuth Flow]({{ '/user-delegated-aauth/' | relative_url }})
+- [User-Delegated AAuth Flow](user-delegated-aauth.md)
 - Component `env.example` files: `backend/env.example`, `supply-chain-agent/env.example`, `market-analysis-agent/env.example`, `supply-chain-ui/env.example`

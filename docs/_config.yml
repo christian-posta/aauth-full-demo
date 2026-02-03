@@ -1,21 +1,28 @@
 title: AAuth Demo Documentation
 description: User-delegated AAuth flow, configuration, and multi-hop token exchange
-baseurl: ""
-url: ""
+# For project pages: baseurl = "/repo-name", url = "https://username.github.io"
+baseurl: "/aauth-full-demo"
+url: "https://christian-posta.github.io"
+
+theme: jekyll-theme-cayman
+show_downloads: false
+
+# Theme / GitHub integration
+github: [metadata]
+github_username: christian-posta
+github_repository: aauth-full-demo
+
 markdown: kramdown
 kramdown:
   input: GFM
   syntax_highlighter: rouge
   hardwrap: false
 
-# Navigation for sidebar (order matters)
-navigation:
-  - title: Overview
-    url: /
-  - title: User-Delegated AAuth Flow
-    url: /user-delegated-aauth/
-  - title: AAuth Configuration
-    url: /aauth-configuration/
+plugins:
+  - jekyll-relative-links
+relative_links:
+  enabled: true
+  collections: true
 
 exclude:
   - README.md

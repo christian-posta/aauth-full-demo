@@ -1,7 +1,6 @@
 ---
 layout: default
 title: User-Delegated AAuth Flow
-permalink: /user-delegated-aauth/
 ---
 
 # User-Delegated AAuth Flow
@@ -117,6 +116,6 @@ Per **SPEC Section 3.6 (User Delegated Access)** and the implementation plan in 
 
 ## See Also
 
-- [AAuth Configuration]({{ '/aauth-configuration/' | relative_url }}) — Environment variables and Keycloak setup.
+- [AAuth Configuration](aauth-configuration.md) — Environment variables and Keycloak setup.
 - SPEC.md — AAuth specification (Sections 3.6, 6, 9.3–9.10).
 - Backlog: `backlog/user-delegated_aauth_flow_implementation_56ed9853.plan.md`, `backlog/cursor_supply_chain_agent_to_market_ana.md`, `backlog/current-status.md`.
