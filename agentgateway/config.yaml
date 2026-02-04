@@ -61,6 +61,10 @@ binds:
     routes:
     - policies:
         # Mark this route as a2a traffic
+        aauth:
+          mode: optional
+          requiredScheme: hwk
+          timestampTolerance: 60            
         a2a: {}
         backendAuth:
           passthrough: {}             
