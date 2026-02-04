@@ -43,7 +43,7 @@ binds:
     - policies:
         aauth:
           mode: optional
-          requiredScheme: jwks
+          requiredScheme: hwk
           timestampTolerance: 60    
         # Mark this route as a2a traffic
         a2a: {}
@@ -63,7 +63,7 @@ binds:
         # Mark this route as a2a traffic
         aauth:
           mode: optional
-          requiredScheme: jwks
+          requiredScheme: hwk
           timestampTolerance: 60            
         a2a: {}
         backendAuth:
