@@ -656,6 +656,9 @@ class SupplyChainOptimizerExecutor(AgentExecutor):
             set_attribute("auth.jwt_extracted", False)
         
         # Verify AAuth signature headers if present
+        scheme = None
+        sig_key_header = None
+        sig_verified = False
         if headers:
             aauth_headers = {}
             for key, value in headers.items():
@@ -1047,7 +1050,7 @@ class SupplyChainOptimizerExecutor(AgentExecutor):
                                         public_key=public_key,  # None for HWK (extracted from header), None for JWKS/JWT (fetched)
                                         jwks_fetcher=jwks_fetcher  # None for HWK, fetcher for JWKS/JWT
                                     )
-                                    
+                                    sig_verified = is_valid
                                     if is_valid:
                                         logger.info(f"✅ AAuth signature verification successful")
                                         add_event("aauth_signature_verified", {"scheme": scheme, "valid": True})
@@ -1304,17 +1307,28 @@ class SupplyChainOptimizerExecutor(AgentExecutor):
                     if DEBUG:
                         logger.debug(f"🔐 Scheme: {scheme}, Has sig_key_header: {bool(sig_key_header)}")
                     auth_token_valid = False
-            
-            # Per SPEC 3.1: HWK (pseudonymous) - accept without resource_token challenge.
-            # Only challenge with 401+resource_token for JWKS (identified agent) when auth is required.
-            if not auth_token_valid and scheme == "hwk":
-                logger.info(f"🔐 Accepting HWK (pseudonymous) request - no resource_token challenge per SPEC")
+        elif auth_scheme == "signature-only":
+            # Accept any request with valid signature (HWK, JWKS, or JWT) - no auth_token or resource_token flow
+            if sig_verified:
                 auth_token_valid = True
-                add_event("hwk_accepted_pseudonymous", {"scheme": "hwk"})
-                set_attribute("auth.hwk_accepted", True)
-            
-            # If authorization is required but token is invalid/missing, issue resource_token and return 401
-            if not auth_token_valid:
+                logger.info(f"🔐 Accepting request with valid signature (signature-only mode, scheme={scheme})")
+                add_event("signature_only_accepted", {"scheme": scheme})
+                set_attribute("auth.signature_only_accepted", True)
+            else:
+                # Reject: signature-only mode requires valid signature
+                logger.warning(f"⚠️ Signature-only mode: rejecting request with invalid/missing signature")
+                raise HTTPException(status_code=401, detail="Valid AAuth signature required")
+
+        # Per SPEC 3.1: HWK (pseudonymous) - accept without resource_token challenge.
+        # Applies to autonomous, user-delegated, and signature-only (HWK is valid for all).
+        if auth_scheme in ("autonomous", "user-delegated", "signature-only") and not auth_token_valid and scheme == "hwk":
+            logger.info(f"🔐 Accepting HWK (pseudonymous) request - no resource_token challenge per SPEC")
+            auth_token_valid = True
+            add_event("hwk_accepted_pseudonymous", {"scheme": "hwk"})
+            set_attribute("auth.hwk_accepted", True)
+        
+        # If authorization is required but token is invalid/missing, issue resource_token and return 401
+        if auth_scheme in ("autonomous", "user-delegated") and not auth_token_valid:
                 logger.info(f"🔐 Authorization required: auth_token missing or invalid")
                 if DEBUG:
                     logger.debug(f"🔐 Details: scheme={scheme}, auth_scheme={auth_scheme}")

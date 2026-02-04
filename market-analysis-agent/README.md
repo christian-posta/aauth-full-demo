@@ -109,6 +109,8 @@ MARKET_ANALYSIS_AGENT_ID_URL=http://market-analysis-agent.localhost:3000
 
 For **user-delegated AAuth** (resource tokens, JWT verification, Keycloak JWKS), see [docs/USER_DELEGATED_AAUTH.md](../docs/USER_DELEGATED_AAUTH.md) and [docs/AAUTH_CONFIGURATION.md](../docs/AAUTH_CONFIGURATION.md). Key variables: `AAUTH_AUTHORIZATION_SCHEME=user-delegated`, `KEYCLOAK_AAUTH_ISSUER_URL`.
 
+For **signature-only mode** (`AAUTH_AUTHORIZATION_SCHEME=signature-only`): accept requests with valid JWKS or HWK signatures without requiring auth_token or resource_token. Rejects requests with invalid signatures. Useful when using `AAUTH_SIGNATURE_SCHEME=jwks` and you only need proof-of-possession.
+
 ### Code Locations
 
 #### Verification Implementation (Incoming Requests)

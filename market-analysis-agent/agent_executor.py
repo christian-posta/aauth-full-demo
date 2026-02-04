@@ -648,7 +648,12 @@ class MarketAnalysisAgentExecutor(AgentExecutor):
                                         # Check if authorization is required (scheme=jwt needed)
                                         auth_scheme = os.getenv("AAUTH_AUTHORIZATION_SCHEME", "autonomous").lower()
                                         logger.info(f"🔐 Authorization check: scheme={scheme}, AAUTH_AUTHORIZATION_SCHEME={auth_scheme}")
-                                        if auth_scheme == "user-delegated" and scheme != "jwt":
+                                        if auth_scheme == "signature-only":
+                                            # Accept: signature-only mode - valid signature is sufficient
+                                            logger.info(f"🔐 Accepting request with valid signature (signature-only mode, scheme={scheme})")
+                                            add_event("signature_only_accepted", {"scheme": scheme})
+                                            set_attribute("auth.signature_only_accepted", True)
+                                        elif auth_scheme == "user-delegated" and scheme != "jwt":
                                             logger.info(f"🔐 Authorization REQUIRED: user-delegated mode requires scheme=jwt but received {scheme}")
                                             # Authorization required but no auth_token provided
                                             logger.info(f"🔐 Authorization required: scheme=jwt needed but received {scheme}")
@@ -752,11 +757,11 @@ class MarketAnalysisAgentExecutor(AgentExecutor):
                                                     detail="Authorization required"
                                                 )
                                         else:
-                                            # Authorization not required or already satisfied
+                                            # Authorization not required or already satisfied (autonomous, or user-delegated with jwt)
                                             if auth_scheme == "user-delegated" and scheme == "jwt":
                                                 logger.info(f"🔐 Authorization satisfied: user-delegated mode with scheme=jwt")
-                                            elif auth_scheme != "user-delegated":
-                                                logger.info(f"🔐 Authorization not required: AAUTH_AUTHORIZATION_SCHEME={auth_scheme} (not user-delegated)")
+                                            elif auth_scheme in ("autonomous", "signature-only"):
+                                                logger.info(f"🔐 Authorization not required: AAUTH_AUTHORIZATION_SCHEME={auth_scheme}")
                                     else:
                                         logger.error(
                                             f"❌ AAuth signature verification failed — target_uri={target_uri!r}, "
@@ -767,6 +772,10 @@ class MarketAnalysisAgentExecutor(AgentExecutor):
                                         add_event("aauth_signature_verification_failed", {"scheme": scheme, "valid": False})
                                         set_attribute("auth.aauth.verified", False)
                                         set_attribute("auth.aauth.verification_result", "invalid")
+                                        # signature-only mode requires valid signature; reject on failure
+                                        if os.getenv("AAUTH_AUTHORIZATION_SCHEME", "autonomous").lower() == "signature-only":
+                                            logger.warning(f"⚠️ Signature-only mode: rejecting request with invalid signature")
+                                            raise HTTPException(status_code=401, detail="Valid AAuth signature required")
                                 except Exception as verify_ex:
                                     # If the verification step raised an HTTPException (e.g. we raised
                                     # HTTPException(status_code=401, ... ) to indicate Agent-Auth is required),
