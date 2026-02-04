@@ -19,7 +19,8 @@ class KeycloakService:
             response.raise_for_status()
             realm_info = response.json()
             self.public_key = f"-----BEGIN PUBLIC KEY-----\n{realm_info['public_key']}\n-----END PUBLIC KEY-----"
-            print(f"Loaded Keycloak public key for realm: {self.realm}")
+            if settings.debug:
+                print(f"Loaded Keycloak public key for realm: {self.realm}")
         except Exception as e:
             print(f"Failed to load Keycloak public key: {e}")
             print(f"Make sure Keycloak is running at {self.server_url}")
@@ -31,16 +32,18 @@ class KeycloakService:
                 print("No public key available for token verification")
                 return None
             
-            print(f"Attempting to verify token with public key: {self.public_key[:100]}...")
-            print(f"Token to verify: {token[:50]}...")
+            if settings.debug:
+                print(f"Attempting to verify token with public key: {self.public_key[:100]}...")
+                print(f"Token to verify: {token[:50]}...")
             
             # First, let's decode the token without verification to see what algorithm it claims to use
-            try:
-                unverified_payload = jwt.decode(token, options={"verify_signature": False})
-                print(f"Unverified token payload: {unverified_payload}")
-                print(f"Token algorithm: {unverified_payload.get('alg', 'unknown')}")
-            except Exception as e:
-                print(f"Failed to decode unverified token: {e}")
+            if settings.debug:
+                try:
+                    unverified_payload = jwt.decode(token, options={"verify_signature": False})
+                    print(f"Unverified token payload: {unverified_payload}")
+                    print(f"Token algorithm: {unverified_payload.get('alg', 'unknown')}")
+                except Exception as e:
+                    print(f"Failed to decode unverified token: {e}")
             
             # Decode and verify the JWT token
             payload = jwt.decode(
@@ -51,7 +54,8 @@ class KeycloakService:
                 options={'verify_aud': False}  # Allow any audience for now
             )
             
-            print(f"Token verified successfully for user: {payload.get('preferred_username', 'unknown')}")
+            if settings.debug:
+                print(f"Token verified successfully for user: {payload.get('preferred_username', 'unknown')}")
             return payload
             
         except jwt.ExpiredSignatureError:
@@ -62,9 +66,10 @@ class KeycloakService:
             return None
         except Exception as e:
             print(f"Token verification failed: {e}")
-            print(f"Exception type: {type(e)}")
-            import traceback
-            traceback.print_exc()
+            if settings.debug:
+                print(f"Exception type: {type(e)}")
+                import traceback
+                traceback.print_exc()
             return None
     
     def get_user_info(self, token: str) -> Optional[Dict]:
@@ -75,7 +80,8 @@ class KeycloakService:
             response = requests.get(url, headers=headers)
             response.raise_for_status()
             user_info = response.json()
-            print(f"Retrieved user info for: {user_info.get('preferred_username', 'unknown')}")
+            if settings.debug:
+                print(f"Retrieved user info for: {user_info.get('preferred_username', 'unknown')}")
             return user_info
         except Exception as e:
             print(f"Failed to get user info: {e}")
@@ -83,7 +89,8 @@ class KeycloakService:
     
     def refresh_public_key(self):
         """Refresh the public key (useful if Keycloak restarts)"""
-        print("Refreshing Keycloak public key...")
+        if settings.debug:
+            print("Refreshing Keycloak public key...")
         self._load_public_key()
 
     def get_id_token(self, access_token: str) -> Optional[str]:
@@ -98,7 +105,8 @@ class KeycloakService:
             # For now, we'll use the access token as the ID token
             # In a production system, you might want to implement proper token exchange
             # or configure the client to request ID tokens explicitly
-            print(f"Using access token as ID token for agent authentication")
+            if settings.debug:
+                print(f"Using access token as ID token for agent authentication")
             return access_token
             
         except Exception as e:

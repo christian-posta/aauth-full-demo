@@ -2,6 +2,19 @@
 from dotenv import load_dotenv
 load_dotenv()
 
+import logging
+
+from app.config import settings
+
+# Suppress verbose third-party and app logging when DEBUG is off
+if not settings.debug:
+    logging.getLogger("aauth.signing").setLevel(logging.WARNING)
+    logging.getLogger("a2a").setLevel(logging.WARNING)
+    logging.getLogger("httpx").setLevel(logging.WARNING)
+    logging.getLogger("app.services.aauth_token_service").setLevel(logging.WARNING)
+    logging.getLogger("app.services.aauth_interceptor").setLevel(logging.WARNING)
+    logging.getLogger("app.tracing_config").setLevel(logging.WARNING)
+
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
@@ -17,11 +30,12 @@ jaeger_host = os.getenv("JAEGER_HOST", "localhost")  # Default to localhost for 
 jaeger_port = int(os.getenv("JAEGER_PORT", "4317"))
 enable_console_exporter = os.getenv("ENABLE_CONSOLE_EXPORTER", "true").lower() == "true"
 
-print(f"🔗 Initializing tracing with Jaeger at {jaeger_host}:{jaeger_port}")
-print(f"🔗 Environment variables loaded from .env file")
-print(f"🔗 JAEGER_HOST: {os.getenv('JAEGER_HOST', 'NOT SET')}")
-print(f"🔗 JAEGER_PORT: {os.getenv('JAEGER_PORT', 'NOT SET')}")
-print(f"🔗 ENABLE_CONSOLE_EXPORTER: {os.getenv('ENABLE_CONSOLE_EXPORTER', 'true')}")
+if settings.debug:
+    print(f"🔗 Initializing tracing with Jaeger at {jaeger_host}:{jaeger_port}")
+    print(f"🔗 Environment variables loaded from .env file")
+    print(f"🔗 JAEGER_HOST: {os.getenv('JAEGER_HOST', 'NOT SET')}")
+    print(f"🔗 JAEGER_PORT: {os.getenv('JAEGER_PORT', 'NOT SET')}")
+    print(f"🔗 ENABLE_CONSOLE_EXPORTER: {os.getenv('ENABLE_CONSOLE_EXPORTER', 'true')}")
 
 initialize_tracing(
     service_name="supply-chain-backend",

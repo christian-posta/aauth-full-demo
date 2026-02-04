@@ -13,7 +13,7 @@ from opentelemetry.exporter.otlp.proto.grpc.trace_exporter import OTLPSpanExport
 from opentelemetry.instrumentation.httpx import HTTPXClientInstrumentor
 from opentelemetry.instrumentation.fastapi import FastAPIInstrumentor
 from opentelemetry.trace.propagation.tracecontext import TraceContextTextMapPropagator
-from opentelemetry import trace
+from opentelemetry import trace, context
 from opentelemetry.trace import Status, StatusCode
 from opentelemetry.sdk.trace import ReadableSpan
 from opentelemetry.sdk.trace.export import SpanExporter, SpanExportResult
@@ -193,11 +193,11 @@ class TracingConfig:
         
         return self.tracer
     
-    def extract_context_from_headers(self, headers: Dict[str, str]) -> Optional[trace.SpanContext]:
-        """Extract trace context from HTTP headers."""
+    def extract_context_from_headers(self, headers: Dict[str, str]) -> Optional[Any]:
+        """Extract trace context from HTTP headers. Returns OpenTelemetry Context or None."""
         try:
-            context = self.propagator.extract(carrier=headers, context=trace.get_current_span().get_span_context())
-            return context
+            ctx = context.get_current()
+            return self.propagator.extract(carrier=headers, context=ctx)
         except Exception as e:
             logger.warning(f"Failed to extract trace context from headers: {e}")
             return None
@@ -205,7 +205,9 @@ class TracingConfig:
     def inject_context_to_headers(self, headers: Dict[str, str]) -> Dict[str, str]:
         """Inject trace context into HTTP headers."""
         try:
-            self.propagator.inject(carrier=headers, context=trace.get_current_span().get_span_context())
+            # Propagator expects OpenTelemetry Context, not SpanContext
+            ctx = context.get_current()
+            self.propagator.inject(carrier=headers, context=ctx)
             return headers
         except Exception as e:
             logger.warning(f"Failed to inject trace context to headers: {e}")
@@ -235,6 +237,11 @@ class TracingConfig:
         with tracer.start_as_current_span(name) as span:
             if attributes:
                 for key, value in attributes.items():
+                    # OpenTelemetry attributes must be primitives; skip None and dict
+                    if value is None:
+                        continue
+                    if isinstance(value, dict):
+                        continue
                     span.set_attribute(key, value)
             
             try:
@@ -302,6 +309,19 @@ class TracingConfig:
                     return None
             return DummySpan()
     
+    def _sanitize_attributes(self, attrs: Optional[Dict[str, Any]]) -> Dict[str, Any]:
+        """Filter attributes to only OpenTelemetry-compatible types (primitives)."""
+        if not attrs:
+            return {}
+        result = {}
+        for k, v in attrs.items():
+            if v is None:
+                continue
+            if isinstance(v, (dict, list)):
+                continue
+            result[k] = v
+        return result
+    
     def add_event(self, name: str, attributes: Optional[Dict[str, Any]] = None):
         """Add an event to the current span."""
         if not self._initialized:
@@ -309,11 +329,14 @@ class TracingConfig:
         
         current_span = trace.get_current_span()
         if current_span.is_recording():
-            current_span.add_event(name, attributes or {})
+            sanitized = self._sanitize_attributes(attributes)
+            current_span.add_event(name, sanitized)
     
     def set_attribute(self, key: str, value: Any):
         """Set an attribute on the current span."""
         if not self._initialized:
+            return
+        if value is None or isinstance(value, (dict, list)):
             return
         
         current_span = trace.get_current_span()
@@ -354,8 +377,8 @@ def span(name: str, attributes: Optional[Dict[str, Any]] = None,
     with tracing_config.span(name, attributes, parent_context) as span:
         yield span
 
-def extract_context_from_headers(headers: Dict[str, str]) -> Optional[trace.SpanContext]:
-    """Extract trace context from HTTP headers using the global tracing configuration."""
+def extract_context_from_headers(headers: Dict[str, str]) -> Optional[Any]:
+    """Extract trace context from HTTP headers. Returns OpenTelemetry Context or None."""
     return tracing_config.extract_context_from_headers(headers)
 
 def inject_context_to_headers(headers: Dict[str, str]) -> Dict[str, str]:

@@ -1,6 +1,8 @@
 import uuid
 from datetime import datetime, timedelta
 from typing import Dict, List, Optional, Any
+
+from app.config import settings
 from app.models import (
     OptimizationRequest, OptimizationProgress, OptimizationResults,
     OptimizationSummary, PurchaseRecommendation, OptimizationReasoning, OptimizationStatus
@@ -41,10 +43,11 @@ class OptimizationService:
                 "request_type": request.effective_optimization_type
             }) as span_obj:
                 
-                print(f"🔧 Creating optimization request for user: {user_id}")
-                print(f"📝 Request type: {request.optimization_type}")
-                print(f"📝 Request object: {request}")
-                print(f"📝 Request dict: {request.model_dump()}")
+                if settings.debug:
+                    print(f"🔧 Creating optimization request for user: {user_id}")
+                    print(f"📝 Request type: {request.optimization_type}")
+                    print(f"📝 Request object: {request}")
+                    print(f"📝 Request dict: {request.model_dump()}")
                 
                 request_id = str(uuid.uuid4())
                 
@@ -68,14 +71,17 @@ class OptimizationService:
                 set_attribute("optimization.request_id", request_id)
                 set_attribute("optimization.user_id", user_id)
                 
-                print(f"✅ Created optimization request: {request_id}")
+                if settings.debug:
+                    print(f"✅ Created optimization request: {request_id}")
                 return request_id
                 
         except Exception as e:
-            print(f"💥 Exception in create_optimization_request: {e}")
-            print(f"💥 Exception type: {type(e)}")
-            import traceback
-            traceback.print_exc()
+            if settings.debug:
+                print(f"💥 Exception in create_optimization_request: {e}")
+            if settings.debug:
+                print(f"💥 Exception type: {type(e)}")
+                import traceback
+                traceback.print_exc()
             raise
     
     def get_optimization_progress(self, request_id: str) -> Optional[OptimizationProgress]:
@@ -129,8 +135,9 @@ class OptimizationService:
             "activities_count": len(activities)
         }) as span_obj:
             
-            print(f"🎯 Completing optimization for request: {request_id}")
-            print(f"📋 Activities: {activities}")
+            if settings.debug:
+                print(f"🎯 Completing optimization for request: {request_id}")
+                print(f"📋 Activities: {activities}")
             
             add_event("completing_optimization", {
                 "request_id": request_id,
@@ -143,19 +150,23 @@ class OptimizationService:
                 self.optimizations[request_id].current_step = "Optimization completed"
                 self.optimizations[request_id].activities = activities
                 
-                print("📊 Progress updated to completed")
+                if settings.debug:
+                    print("📊 Progress updated to completed")
                 add_event("progress_updated_to_completed", {"request_id": request_id})
                 
                 # Generate results
-                print("🔧 Generating optimization results...")
+                if settings.debug:
+                    print("🔧 Generating optimization results...")
                 add_event("generating_results", {"request_id": request_id})
                 
                 results = self._generate_optimization_results(request_id, activities)
-                print(f"📋 Generated results: {results}")
+                if settings.debug:
+                    print(f"📋 Generated results: {results}")
                 
                 self.results[request_id] = results
-                print(f"💾 Results stored for request: {request_id}")
-                print(f"📊 Total results in storage: {len(self.results)}")
+                if settings.debug:
+                    print(f"💾 Results stored for request: {request_id}")
+                    print(f"📊 Total results in storage: {len(self.results)}")
                 
                 add_event("results_generated_and_stored", {
                     "request_id": request_id,
@@ -165,7 +176,8 @@ class OptimizationService:
                 set_attribute("optimization.results_generated", True)
                 set_attribute("optimization.total_results_count", len(self.results))
             else:
-                print(f"❌ Request ID {request_id} not found in optimizations")
+                if settings.debug:
+                    print(f"❌ Request ID {request_id} not found in optimizations")
                 add_event("completion_failed", {"request_id": request_id, "reason": "request_not_found"})
                 set_attribute("optimization.completion_failed", True)
     
@@ -290,9 +302,10 @@ class OptimizationService:
             "request_id": request_id
         }) as span_obj:
             
-            print(f"🔍 Looking for results for request: {request_id}")
-            print(f"📊 Available results keys: {list(self.results.keys())}")
-            print(f"📊 Available optimization keys: {list(self.optimizations.keys())}")
+            if settings.debug:
+                print(f"🔍 Looking for results for request: {request_id}")
+                print(f"📊 Available results keys: {list(self.results.keys())}")
+                print(f"📊 Available optimization keys: {list(self.optimizations.keys())}")
             
             add_event("looking_for_results", {
                 "request_id": request_id,
@@ -302,11 +315,13 @@ class OptimizationService:
             
             result = self.results.get(request_id)
             if result:
-                print(f"✅ Found results: {result}")
+                if settings.debug:
+                    print(f"✅ Found results: {result}")
                 add_event("results_found", {"request_id": request_id})
                 set_attribute("optimization.results_found", True)
             else:
-                print(f"❌ No results found for request: {request_id}")
+                if settings.debug:
+                    print(f"❌ No results found for request: {request_id}")
                 add_event("results_not_found", {"request_id": request_id})
                 set_attribute("optimization.results_found", False)
                 

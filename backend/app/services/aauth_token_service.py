@@ -28,6 +28,8 @@ from app.tracing_config import span, add_event, set_attribute
 
 # Configure logging
 logger = logging.getLogger(__name__)
+# Dedicated logger for token visibility - not suppressed by DEBUG; always shows auth/request tokens
+token_logger = logging.getLogger("aauth.tokens")
 
 # Check DEBUG mode from environment
 DEBUG = os.getenv("DEBUG", "false").lower() == "true"
@@ -93,7 +95,10 @@ class AAuthTokenService:
                     if DEBUG:
                         logger.debug(f"🔐 Metadata: {json.dumps(metadata, indent=2)}")
                     
-                    add_event("aauth_metadata_fetched", {"metadata": metadata})
+                    add_event("aauth_metadata_fetched", {
+                        "issuer": metadata.get("issuer", ""),
+                        "agent_token_endpoint": metadata.get("agent_token_endpoint", ""),
+                    })
                     set_attribute("aauth.metadata.issuer", metadata.get("issuer", ""))
                     set_attribute("aauth.metadata.agent_token_endpoint", metadata.get("agent_token_endpoint", ""))
                     
@@ -534,7 +539,7 @@ class AAuthTokenService:
 
                         # User-delegated flow (SPEC 9.4): Keycloak may return request_token when user consent is required
                         if request_token and not auth_token:
-                            logger.info(f"🔐 Keycloak returned request_token (user consent required)")
+                            token_logger.info(f"🔐 Received request_token from auth server (user consent required): {request_token}")
                             add_event("aauth_request_token_received", {
                                 "consent_required": True,
                                 "expires_in": expires_in
@@ -547,8 +552,7 @@ class AAuthTokenService:
                             }
 
                         logger.info(f"✅ Auth token received successfully")
-                        # Development: Log the actual token
-                        logger.info(f"🔐 AAuth Token: {auth_token}")
+                        token_logger.info(f"🔐 Received auth_token from auth server: {auth_token}")
                         if DEBUG:
                             logger.debug(f"🔐 Auth token length: {len(auth_token) if auth_token else 0}")
                             logger.debug(f"🔐 Expires in: {expires_in} seconds")
@@ -675,6 +679,7 @@ class AAuthTokenService:
                 expires_in = result.get("expires_in", 3600)
                 if not auth_token:
                     raise Exception("Code exchange did not return auth_token")
+                token_logger.info(f"🔐 Received auth_token from auth server (code exchange): {auth_token}")
                 add_event("aauth_code_exchange_success", {"expires_in": expires_in})
                 return {
                     "auth_token": auth_token,
@@ -807,6 +812,7 @@ class AAuthTokenService:
                         expires_in = result.get("expires_in", 3600)
                         
                         logger.info(f"✅ Auth token refreshed successfully")
+                        token_logger.info(f"🔐 Received auth_token from auth server (refresh): {auth_token}")
                         if DEBUG:
                             logger.debug(f"🔐 New auth token length: {len(auth_token) if auth_token else 0}")
                             logger.debug(f"🔐 Expires in: {expires_in} seconds")
@@ -871,8 +877,7 @@ class AAuthTokenService:
             if not self._is_token_expired(expires_at):
                 auth_token = cached.get("auth_token")
                 logger.info(f"✅ Using cached auth token (expires in {int(expires_at - time.time())} seconds)")
-                # Development: Log the actual token
-                logger.info(f"🔐 AAuth Token (cached): {auth_token}")
+                token_logger.info(f"🔐 Using cached auth_token: {auth_token}")
                 if DEBUG:
                     logger.debug(f"🔐 Cache key: {cache_key}")
                 return auth_token

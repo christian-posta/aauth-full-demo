@@ -58,9 +58,10 @@ async def run_optimization_workflow(
     }, parent_context=trace_context) as span_obj:
         
         try:
-            print(f"🔄 Starting optimization workflow for request: {request_id}")
-            print(f"👤 User ID: {user_id}")
-            print(f"📋 Request: {request}")
+            if settings.debug:
+                print(f"🔄 Starting optimization workflow for request: {request_id}")
+                print(f"👤 User ID: {user_id}")
+                print(f"📋 Request: {request}")
             
             add_event("optimization_workflow_started", {
                 "request_id": request_id,
@@ -101,7 +102,8 @@ async def run_optimization_workflow(
                 
                 # Update progress to completed
                 optimization_service.update_progress(request_id, 100.0, "Optimization completed by A2A agent")
-                print("📊 Progress updated: Optimization completed")
+                if settings.debug:
+                    print("📊 Progress updated: Optimization completed")
                 add_event("progress_updated", {"step": "Optimization completed", "percentage": 100.0})
                 
                 # Create activity from A2A agent response
@@ -115,26 +117,32 @@ async def run_optimization_workflow(
                     status=AgentStatus.COMPLETED,
                     details=response["agent_response"]
                 )
-                print(f"📝 Created activity: {activity}")
+                if settings.debug:
+                    print(f"📝 Created activity: {activity}")
                 add_event("agent_activity_created", {
                     "agent": "a2a-supply-chain-agent",
                     "action": "supply_chain_optimization",
                     "status": "COMPLETED"
                 })
                 
-                print("🎯 Calling complete_optimization...")
+                if settings.debug:
+                    print("🎯 Calling complete_optimization...")
                 optimization_service.complete_optimization(request_id, [activity])
-                print("🎯 Optimization marked as completed")
+                if settings.debug:
+                    print("🎯 Optimization marked as completed")
                 add_event("optimization_completed")
                 
                 # Verify results were created
-                print("🔍 Verifying results were created...")
+                if settings.debug:
+                    print("🔍 Verifying results were created...")
                 results = optimization_service.get_optimization_results(request_id)
                 if results:
-                    print(f"✅ Results found: {results}")
+                    if settings.debug:
+                        print(f"✅ Results found: {results}")
                     add_event("optimization_results_verified", {"results_found": True})
                 else:
-                    print("❌ No results found after completion")
+                    if settings.debug:
+                        print("❌ No results found after completion")
                     add_event("optimization_results_verified", {"results_found": False})
                 
             elif response["type"] == "error":
@@ -146,14 +154,16 @@ async def run_optimization_workflow(
                 optimization_service.update_progress(request_id, 0.0, f"Error: {response['message']}")
                 if request_id in optimization_service.optimizations:
                     optimization_service.optimizations[request_id].status = OptimizationStatus.FAILED
-                print("📊 Progress updated: Optimization failed")
+                if settings.debug:
+                    print("📊 Progress updated: Optimization failed")
                 add_event("progress_updated", {"step": "Optimization failed", "percentage": 0.0})
             
         except Exception as e:
-            print(f"💥 Exception in optimization workflow: {e}")
-            print(f"💥 Exception type: {type(e)}")
-            import traceback
-            traceback.print_exc()
+            if settings.debug:
+                print(f"💥 Exception in optimization workflow: {e}")
+                print(f"💥 Exception type: {type(e)}")
+                import traceback
+                traceback.print_exc()
             
             add_event("optimization_workflow_exception", {
                 "error": str(e),
@@ -165,7 +175,8 @@ async def run_optimization_workflow(
             # Mark as failed
             if request_id in optimization_service.optimizations:
                 optimization_service.optimizations[request_id].status = OptimizationStatus.FAILED
-            print("📊 Progress updated: Exception occurred")
+            if settings.debug:
+                print("📊 Progress updated: Exception occurred")
             add_event("progress_updated", {"step": "Exception occurred", "percentage": 0.0})
 
 @router.post("/start", response_model=dict)
@@ -183,28 +194,27 @@ async def start_optimization(
     
     try:
         # Debug: Log the raw request data
-        print("🔍 DEBUG: Raw request data received")
-        print(f"🔍 DEBUG: Request type: {type(request)}")
-        print(f"🔍 DEBUG: Request model: {request}")
-        print(f"🔍 DEBUG: Request fields: {request.model_dump()}")
-        
-        # Debug: Log the raw request body if available
-        if http_request:
-            try:
-                body = await http_request.body()
-                print(f"🔍 DEBUG: Raw request body: {body}")
-                if body:
-                    import json
-                    try:
-                        body_json = json.loads(body)
-                        print(f"🔍 DEBUG: Parsed request body: {body_json}")
-                    except json.JSONDecodeError as e:
-                        print(f"🔍 DEBUG: Failed to parse JSON body: {e}")
-            except Exception as e:
-                print(f"🔍 DEBUG: Could not read request body: {e}")
+        if settings.debug:
+            print("🔍 DEBUG: Raw request data received")
+            print(f"🔍 DEBUG: Request type: {type(request)}")
+            print(f"🔍 DEBUG: Request model: {request}")
+            print(f"🔍 DEBUG: Request fields: {request.model_dump()}")
+            if http_request:
+                try:
+                    body = await http_request.body()
+                    print(f"🔍 DEBUG: Raw request body: {body}")
+                    if body:
+                        import json
+                        try:
+                            body_json = json.loads(body)
+                            print(f"🔍 DEBUG: Parsed request body: {body_json}")
+                        except json.JSONDecodeError as e:
+                            print(f"🔍 DEBUG: Failed to parse JSON body: {e}")
+                except Exception as e:
+                    print(f"🔍 DEBUG: Could not read request body: {e}")
         
         with span("optimization_api.start_optimization", {
-            "user_id": current_user.get("sub"),
+            "user_id": current_user.get("payload", {}).get("sub") or "",
             "request_type": request.effective_optimization_type,
             "has_constraints": bool(request.effective_constraints)
         }) as span_obj:
@@ -224,10 +234,11 @@ async def start_optimization(
             # Pass None here - the A2A service will handle the AAuth flow automatically
             aauth_auth_token = None
             
-            print(f"🚀 Starting optimization for user: {current_user['payload'].get('sub')}")
-            print(f"📝 Request: {request}")
-            print(f"📝 Request type: {type(request)}")
-            print(f"📝 Request fields: {request.model_dump()}")
+            if settings.debug:
+                print(f"🚀 Starting optimization for user: {current_user['payload'].get('sub')}")
+                print(f"📝 Request: {request}")
+                print(f"📝 Request type: {type(request)}")
+                print(f"📝 Request fields: {request.model_dump()}")
             
             add_event("optimization_start_requested", {
                 "user_id": current_user['payload'].get("sub"),
@@ -236,7 +247,8 @@ async def start_optimization(
             
             # Create optimization request
             request_id = optimization_service.create_optimization_request(request, current_user['payload'].get("sub"))
-            print(f"✅ Created optimization request: {request_id}")
+            if settings.debug:
+                print(f"✅ Created optimization request: {request_id}")
             add_event("optimization_request_created", {"request_id": request_id})
 
             user_id = current_user['payload'].get("sub")
@@ -306,10 +318,11 @@ async def start_optimization(
             )
             
     except Exception as e:
-        print(f"💥 Exception starting optimization: {e}")
-        print(f"💥 Exception type: {type(e)}")
-        import traceback
-        traceback.print_exc()
+        if settings.debug:
+            print(f"💥 Exception starting optimization: {e}")
+            print(f"💥 Exception type: {type(e)}")
+            import traceback
+            traceback.print_exc()
         
         add_event("start_optimization_exception", {"error": str(e)})
         
@@ -332,7 +345,7 @@ async def get_optimization_progress(
     """Get progress of an optimization request with tracing support"""
     with span("optimization_api.get_progress", {
         "request_id": request_id,
-        "user_id": current_user["payload"].get("sub")
+        "user_id": current_user["payload"].get("sub") or ""
     }) as span_obj:
         
         try:
@@ -376,7 +389,7 @@ async def get_optimization_results(
     """Get results of a completed optimization with tracing support"""
     with span("optimization_api.get_results", {
         "request_id": request_id,
-        "user_id": current_user["payload"].get("sub")
+        "user_id": current_user["payload"].get("sub") or ""
     }) as span_obj:
         
         try:
@@ -388,23 +401,27 @@ async def get_optimization_results(
                     add_event("trace_context_extracted_from_headers")
                     set_attribute("tracing.context_extracted", True)
             
-            print(f"🔍 Results endpoint called for request: {request_id}")
-            print(f"👤 Current user: {current_user}")
+            if settings.debug:
+                print(f"🔍 Results endpoint called for request: {request_id}")
+                print(f"👤 Current user: {current_user}")
             
             add_event("results_requested", {"request_id": request_id, "user_id": current_user["payload"].get("sub")})
             
             results = optimization_service.get_optimization_results(request_id)
-            print(f"📋 Results returned from service: {results}")
+            if settings.debug:
+                print(f"📋 Results returned from service: {results}")
             
             if not results:
-                print(f"❌ No results found for request: {request_id}")
+                if settings.debug:
+                    print(f"❌ No results found for request: {request_id}")
                 add_event("results_not_found", {"request_id": request_id})
                 raise HTTPException(
                     status_code=404,
                     detail="Optimization results not found or optimization not completed"
                 )
             
-            print(f"✅ Returning results for request: {request_id}")
+            if settings.debug:
+                print(f"✅ Returning results for request: {request_id}")
             add_event("results_retrieved", {"request_id": request_id})
             return results
             
@@ -424,7 +441,7 @@ async def get_all_optimizations(
 ):
     """Get all optimization requests for the current user with tracing support"""
     with span("optimization_api.get_all_optimizations", {
-        "user_id": current_user["payload"].get("sub")
+        "user_id": current_user["payload"].get("sub") or ""
     }) as span_obj:
         
         try:
@@ -458,7 +475,7 @@ async def clear_optimizations(
 ):
     """Clear all optimizations for the current user with tracing support"""
     with span("optimization_api.clear_optimizations", {
-        "user_id": current_user["payload"].get("sub")
+        "user_id": current_user["payload"].get("sub") or ""
     }) as span_obj:
         
         try:
@@ -500,7 +517,8 @@ async def test_agent_sts_connection():
             return connection_status
             
         except Exception as e:
-            print(f"💥 Exception testing Agent STS connection: {e}")
+            if settings.debug:
+                print(f"💥 Exception testing Agent STS connection: {e}")
             add_event("agent_sts_connection_test_exception", {"error": str(e)})
             
             return JSONResponse(
@@ -519,7 +537,7 @@ async def test_a2a_connection(
 ):
     """Test connection to the A2A supply-chain agent with tracing support"""
     with span("optimization_api.test_a2a_connection", {
-        "user_id": current_user["payload"].get("sub")
+        "user_id": current_user["payload"].get("sub") or ""
     }) as span_obj:
         
         try:

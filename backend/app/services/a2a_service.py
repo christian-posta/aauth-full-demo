@@ -21,6 +21,7 @@ from app.services.aauth_token_service import aauth_token_service
 
 # Configure logging
 logger = logging.getLogger(__name__)
+token_logger = logging.getLogger("aauth.tokens")  # For token/challenge visibility - not suppressed
 
 
 class A2AService:
@@ -65,6 +66,8 @@ class A2AService:
             async def response_hook(response: httpx.Response):
                 """Hook to intercept HTTP responses and extract Agent-Auth header from 401."""
                 if response.status_code == 401:
+                    # Always log 401 response headers when calling supply-chain-agent
+                    token_logger.info(f"🔐 401 from supply-chain-agent (url={response.url}): headers={dict(response.headers)}")
                     agent_auth_header = response.headers.get("Agent-Auth")
                     if agent_auth_header:
                         # Store in service instance for later extraction
@@ -111,10 +114,11 @@ class A2AService:
             # Create AAuth signing interceptor
             # IMPORTANT: On first attempt, auth_token MUST be None to use JWKS and trigger 401 challenge
             # Only on retry after getting auth_token should we pass it here
-            if auth_token:
-                logger.info(f"🔐 Creating interceptor WITH auth_token (retry after challenge)")
-            else:
-                logger.info(f"🔐 Creating interceptor WITHOUT auth_token (first attempt - will use JWKS)")
+            if settings.debug:
+                if auth_token:
+                    logger.debug(f"🔐 Creating interceptor WITH auth_token (retry after challenge)")
+                else:
+                    logger.debug(f"🔐 Creating interceptor WITHOUT auth_token (first attempt - will use JWKS)")
             aauth_interceptor = AAuthSigningInterceptor(auth_token=auth_token)
             if settings.debug:
                 logger.debug("🔐 AAuth signing interceptor created")
@@ -166,13 +170,11 @@ class A2AService:
                 })
                 
                 # Create A2A client with tracing
-                # CRITICAL: auth_token MUST be None on first request to use JWKS and trigger 401 challenge
-                # Only on retry after getting auth_token should we pass it here
-                if auth_token:
-                    logger.warning(f"⚠️ WARNING: auth_token provided on first call! This should be None for first attempt!")
-                    logger.warning(f"⚠️ First attempt MUST use JWKS to trigger 401 challenge!")
-                else:
-                    logger.info(f"🔐 First attempt: auth_token=None, will use JWKS scheme")
+                # auth_token is provided in two valid cases:
+                # 1. Retry after 401 challenge (autonomous flow, same request)
+                # 2. User-delegated flow: callback runs workflow with auth_token from consent
+                if settings.debug:
+                    logger.debug(f"🔐 auth_token={'present' if auth_token else 'None'}, scheme={'jwt' if auth_token else 'JWKS'}")
                 if settings.debug:
                     logger.debug("🔧 Creating A2A client...")
                 client, httpx_client = await self._create_client(trace_context, auth_token)
@@ -264,7 +266,7 @@ class A2AService:
                         # Other HTTP error - re-raise
                         raise
                 except httpx.HTTPStatusError as e:
-                    # Check if this is a 401 with Agent-Auth header
+                    # Check if this is a 401 with Agent-Auth header (duplicate handler - second never runs)
                     if e.response.status_code == 401:
                         agent_auth_header = e.response.headers.get("Agent-Auth")
                         if agent_auth_header:
@@ -318,6 +320,7 @@ class A2AService:
                         auth_server = auth_server_match.group(1)
                     
                     if resource_token:
+                        token_logger.info(f"🔐 Received resource_token from 401 (supply-chain-agent): {resource_token}")
                         if settings.debug:
                             logger.debug(f"🔐 Extracted resource_token (length: {len(resource_token)})")
                             if auth_server:
@@ -385,17 +388,17 @@ class A2AService:
                                 )
                             
                             # Retry the request with auth_token
-                            logger.info(f"🔄 RETRY: Retrying request with auth_token (scheme=JWT)")
-                            logger.info(f"🔄 RETRY: Auth token length: {len(auth_token)}")
                             if settings.debug:
-                                logger.debug(f"🔄 Retrying request with auth_token")
+                                logger.debug(f"🔄 RETRY: Retrying request with auth_token (scheme=JWT)")
+                                logger.debug(f"🔄 RETRY: Auth token length: {len(auth_token)}")
                             add_event("retrying_request_with_auth_token")
                             
                             # Close old client
                             await httpx_client.aclose()
                             
                             # Create new client with auth_token
-                            logger.info(f"🔄 RETRY: Creating new client with auth_token for JWT scheme")
+                            if settings.debug:
+                                logger.debug(f"🔄 RETRY: Creating new client with auth_token for JWT scheme")
                             client, httpx_client = await self._create_client(trace_context, auth_token)
                             
                             # Retry sending the message

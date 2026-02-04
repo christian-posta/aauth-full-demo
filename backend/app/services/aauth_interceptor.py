@@ -66,12 +66,12 @@ class AAuthSigningInterceptor(ClientCallInterceptor):
         self.public_key = _PUBLIC_KEY
         self.auth_token = auth_token  # Store auth_token for this interceptor instance
         
-        # Log what we received
-        if auth_token:
-            logger.warning(f"⚠️ AAuthSigningInterceptor initialized WITH auth_token (length: {len(auth_token)})")
-            logger.warning(f"⚠️ This should only happen on retry after challenge!")
-        else:
-            logger.info(f"🔐 AAuthSigningInterceptor initialized WITHOUT auth_token (will use JWKS)")
+        # Log what we received (auth_token is valid for retry or user-delegated callback flow)
+        if settings.debug:
+            if auth_token:
+                logger.debug(f"🔐 AAuthSigningInterceptor initialized WITH auth_token (length: {len(auth_token)})")
+            else:
+                logger.debug(f"🔐 AAuthSigningInterceptor initialized WITHOUT auth_token (will use JWKS)")
     
     async def intercept(
         self,
@@ -196,19 +196,11 @@ class AAuthSigningInterceptor(ClientCallInterceptor):
                 # First attempt MUST use JWKS/HWK to trigger 401 and get resource_token
                 auth_token = self.auth_token  # Use instance-level auth_token if provided
                 
-                # Log what we have
-                logger.info(f"🔐 AAuth interceptor.intercept() - auth_token present: {auth_token is not None}")
                 if auth_token:
-                    logger.warning(f"⚠️ AUTH_TOKEN PROVIDED TO INTERCEPTOR! Length: {len(auth_token)}")
-                    logger.warning(f"⚠️ This should ONLY happen on retry after challenge!")
-                    logger.warning(f"⚠️ First attempt should have auth_token=None!")
-                
-                if auth_token:
-                    # Auth token provided explicitly (e.g., from retry after challenge)
-                    # This means we already went through the challenge flow
-                    # Switch to JWT scheme for the retry
+                    # Auth token provided (retry after challenge or user-delegated callback)
                     sig_scheme = "jwt"
-                    logger.info(f"🔐 AAuth: Using provided auth_token for scheme=jwt (retry after challenge)")
+                    if settings.debug:
+                        logger.debug(f"🔐 AAuth: Using auth_token for scheme=jwt")
                     if settings.debug:
                         logger.debug(f"🔐 AAuth: Auth token length: {len(auth_token)}")
                 else:
@@ -335,14 +327,18 @@ class AAuthSigningInterceptor(ClientCallInterceptor):
                     logger.debug(f"🔐 AAuth: Signature-Input: {sig_headers.get('Signature-Input', '')[:100]}...")
                     logger.debug(f"🔐 AAuth: Signature-Key: {sig_headers.get('Signature-Key', '')[:100]}...")
                 
-                add_event("aauth.request_signed", {
+                # Only include agent_id/kid in event if present (JWT scheme doesn't use them)
+                event_attrs = {
                     "method": method,
                     "url": str(url),
                     "scheme": sig_scheme,
                     "has_body": body is not None,
-                    "agent_id": agent_id if agent_id else None,
-                    "kid": kid if kid else None
-                })
+                }
+                if agent_id:
+                    event_attrs["agent_id"] = agent_id
+                if kid:
+                    event_attrs["kid"] = kid
+                add_event("aauth.request_signed", event_attrs)
                 set_attribute("aauth.signed", True)
                 set_attribute("aauth.scheme", sig_scheme)
                 
