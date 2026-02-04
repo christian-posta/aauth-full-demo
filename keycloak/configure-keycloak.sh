@@ -125,6 +125,8 @@ else
   USER_JSON=$(cat <<EOF
 {
   "username": "$TEST_USER",
+  "firstName": "mcp",
+  "lastName": "user",
   "email": "mcp@user.com",
   "emailVerified": true,
   "enabled": true
