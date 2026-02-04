@@ -28,6 +28,7 @@ config:
         token_audience: 'jwt.aud'
         aauth_scheme: 'aauth.scheme'
         aauth_agent_identity: 'aauth.agent'
+        sig_key: 'request.headers["signature-key"]'
 # CEL / authorization – You can use the same aauth fields in CEL, e.g.:
 # aauth.scheme == "Jwt"
 # aauth.agent == "https://agent.example.com"
@@ -42,7 +43,7 @@ binds:
     - policies:
         aauth:
           mode: optional
-          requiredScheme: jwks
+          requiredScheme: hwk
           timestampTolerance: 60    
         # Mark this route as a2a traffic
         a2a: {}

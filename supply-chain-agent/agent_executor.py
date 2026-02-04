@@ -1305,6 +1305,14 @@ class SupplyChainOptimizerExecutor(AgentExecutor):
                         logger.debug(f"🔐 Scheme: {scheme}, Has sig_key_header: {bool(sig_key_header)}")
                     auth_token_valid = False
             
+            # Per SPEC 3.1: HWK (pseudonymous) - accept without resource_token challenge.
+            # Only challenge with 401+resource_token for JWKS (identified agent) when auth is required.
+            if not auth_token_valid and scheme == "hwk":
+                logger.info(f"🔐 Accepting HWK (pseudonymous) request - no resource_token challenge per SPEC")
+                auth_token_valid = True
+                add_event("hwk_accepted_pseudonymous", {"scheme": "hwk"})
+                set_attribute("auth.hwk_accepted", True)
+            
             # If authorization is required but token is invalid/missing, issue resource_token and return 401
             if not auth_token_valid:
                 logger.info(f"🔐 Authorization required: auth_token missing or invalid")
