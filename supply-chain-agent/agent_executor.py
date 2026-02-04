@@ -1111,7 +1111,7 @@ class SupplyChainOptimizerExecutor(AgentExecutor):
         auth_token_agent_id = None
         auth_token_scope = None
         
-        if auth_scheme == "autonomous":
+        if auth_scheme in ("autonomous", "user-delegated"):
             # Require scheme=jwt with valid auth_token
             # First, check if this is an initial request (hwk/jwks) or a retry with auth_token (jwt)
             if scheme == "jwt" and sig_key_header:
@@ -1421,14 +1421,14 @@ class SupplyChainOptimizerExecutor(AgentExecutor):
                         keycloak_issuer_url = f"{keycloak_url}/realms/{keycloak_realm}"
                     
                     if agent_id and agent_jwk:
-                        # Build scope: base scope + additional scopes from config
+                        # Build scope: base scope + additional scopes (only when user-delegated)
                         base_scope = "supply-chain:optimize"
-                        additional_raw = os.getenv("AAUTH_RESOURCE_ADDITIONAL_SCOPES", "").strip()
-                        additional_list = [s.strip() for s in additional_raw.split() if s.strip()]
-                        # In user-delegated mode, auto-add "profile" if not already present (user consent flow)
                         auth_scheme = os.getenv("AAUTH_AUTHORIZATION_SCHEME", "autonomous").lower()
-                        if auth_scheme == "user-delegated" and "profile" not in additional_list:
-                            additional_list.append("profile")
+                        if auth_scheme == "user-delegated":
+                            additional_raw = os.getenv("AAUTH_RESOURCE_ADDITIONAL_SCOPES", "").strip()
+                            additional_list = [s.strip() for s in additional_raw.split() if s.strip()]
+                        else:
+                            additional_list = []
                         scope = f"{base_scope} {' '.join(additional_list)}".strip() if additional_list else base_scope
                         
                         resource_token = generate_resource_token(
