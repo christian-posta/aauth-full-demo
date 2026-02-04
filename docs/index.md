@@ -11,7 +11,7 @@ Documentation for the AAuth (Agent-to-Agent Authentication) full demo.
 
 1. [Overview of AAuth protocol](overview-aauth.md)
 2. [AAuth with Keycloak and Agentgateway](install-aauth-keycloak.md)
-3. [Pseudonymous Agent Authentication](pseudonymous-agent.md)
+3. [Pseudonymous Agent](pseudonymous-agent.md)
 4. [Agent Identity with JWKS](agent-identity-jwks.md)
 5. [Agent authorization (autonomous)](agent-authorization-autonomous.md)
 6. [Agent authorization (on behalf of)](agent-authorization-on-behalf-of.md)

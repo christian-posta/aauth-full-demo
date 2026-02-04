@@ -107,6 +107,10 @@ celerybeat.pid
 # mkdocs documentation
 /site
 
+# Jekyll
+docs/_site/
+docs/.sass-cache/
+
 # mypy
 .mypy_cache/
 .dmypy.json

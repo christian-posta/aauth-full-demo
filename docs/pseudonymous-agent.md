@@ -1,17 +1,18 @@
 ---
 layout: default
-title: Pseudonymous Agent Authentication
+title: Pseudonymous Agent
+description: No identity, but TOFU
 ---
 
-# Pseudonymous Agent Authentication
+# Pseudonymous Agent 
 
 [← Back to index](index.md)
 
 AAuth supports **progressive authentication** levels: pseudonymous, identified, and authorized. This document covers the **pseudonymous** level—the lightest form of agent authentication.
 
-## What is Pseudonymous Authentication?
+## What is Pseudonymous?
 
-With pseudonymous authentication, an agent proves it can sign requests cryptographically without revealing a persistent identity. The resource can verify that:
+With pseudonymous settings, an agent proves it can sign requests cryptographically without revealing a persistent identity. The resource can verify that:
 - The request was signed by someone who holds the private key
 - The signature is valid and the message has not been tampered with
 
@@ -70,19 +71,30 @@ Run each component in a separate terminal. From each directory:
   </div>
   <div class="tab-content" id="content-backend">
     <p>From the <code>backend</code> directory:</p>
-    <pre><code>uv run .</code></pre>
+    <pre><code>
+      > cp env.hwk .env
+      > uv run .
+    </code></pre>
   </div>
   <div class="tab-content" id="content-agentgateway">
     <p>From the <code>agentgateway</code> directory:</p>
-    <pre><code>uv run .</code></pre>
+    <pre><code>
+      > agentgateway -f agentgateway/config.yaml.hwk
+    </code></pre>
   </div>
   <div class="tab-content" id="content-supply-chain">
     <p>From the <code>supply-chain-agent</code> directory:</p>
-    <pre><code>uv run .</code></pre>
+    <pre><code>
+      > cp env.hwk .env
+      > uv run .
+    </code></pre>
   </div>
   <div class="tab-content" id="content-market-analysis">
     <p>From the <code>market-analysis-agent</code> directory:</p>
-    <pre><code>uv run .</code></pre>
+    <pre><code>
+      > cp env.hwk .env
+      > uv run .
+    </code></pre>
   </div>
 </div>
 
