@@ -29,6 +29,7 @@ from tracing_config import span, add_event, set_attribute
 
 # Configure logging
 logger = logging.getLogger(__name__)
+token_logger = logging.getLogger("aauth.tokens")  # For token visibility - always shows
 
 # Check DEBUG mode from environment
 DEBUG = os.getenv("DEBUG", "false").lower() == "true"
@@ -219,6 +220,7 @@ class AAuthTokenService:
             "has_resource_token": bool(resource_token)
         }) as span_obj:
             try:
+                token_logger.info(f"🔐 Token exchange request: upstream_auth_token={upstream_auth_token}, resource_token={resource_token}")
                 logger.info(f"🔐 Exchanging upstream auth_token for downstream token")
                 if DEBUG:
                     logger.debug(f"🔐 Upstream auth_token length: {len(upstream_auth_token)}")
@@ -296,6 +298,7 @@ class AAuthTokenService:
                 if not auth_token:
                     raise Exception("Token exchange did not return auth_token")
                 
+                token_logger.info(f"🔐 Token exchange result: auth_token={auth_token}")
                 logger.info(f"✅ Token exchange successful")
                 if DEBUG:
                     logger.debug(f"🔐 Exchanged auth_token length: {len(auth_token)}")

@@ -28,6 +28,7 @@ import re
 
 # Configure logging
 logger = logging.getLogger(__name__)
+token_logger = logging.getLogger("aauth.tokens")  # For token visibility - always shows
 
 # Check DEBUG mode from environment
 DEBUG = os.getenv("DEBUG", "false").lower() == "true"
@@ -253,6 +254,7 @@ class SupplyChainOptimizerAgent:
                 except httpx.HTTPStatusError as e:
                     # Check if this is a 401 with Agent-Auth header
                     if e.response.status_code == 401:
+                        token_logger.info(f"🔐 401 from market-analysis-agent: headers={dict(e.response.headers)}")
                         agent_auth_header = e.response.headers.get("Agent-Auth")
                         if agent_auth_header:
                             logger.info(f"🔐 Received 401 with Agent-Auth challenge from MAA")
@@ -272,6 +274,7 @@ class SupplyChainOptimizerAgent:
                     original_exc = e.__cause__
                     if original_exc and isinstance(original_exc, httpx.HTTPStatusError):
                         if original_exc.response.status_code == 401:
+                            token_logger.info(f"🔐 401 from market-analysis-agent: headers={dict(original_exc.response.headers)}")
                             agent_auth_header = original_exc.response.headers.get("Agent-Auth")
                             if agent_auth_header:
                                 logger.info(f"🔐 Received 401 with Agent-Auth challenge from MAA (via exception chain)")
@@ -290,6 +293,7 @@ class SupplyChainOptimizerAgent:
                         # Check if the exception has a 'response' attribute directly (some A2A client wrappers)
                         response = getattr(e, 'response', None)
                         if response is not None and hasattr(response, 'headers'):
+                            token_logger.info(f"🔐 401 from market-analysis-agent: headers={dict(response.headers)}")
                             agent_auth_header = response.headers.get("Agent-Auth")
                             if agent_auth_header:
                                 logger.info(f"🔐 Received 401 with Agent-Auth challenge from MAA (via exception.response)")
@@ -320,6 +324,7 @@ class SupplyChainOptimizerAgent:
                     resource_token_match = re.search(r'resource_token="([^"]+)"', agent_auth_header)
                     if resource_token_match:
                         resource_token = resource_token_match.group(1)
+                        token_logger.info(f"🔐 Received resource_token from MAA 401: {resource_token}")
                     
                     # Extract auth_server
                     auth_server_match = re.search(r'auth_server="([^"]+)"', agent_auth_header)
@@ -327,6 +332,7 @@ class SupplyChainOptimizerAgent:
                         auth_server = auth_server_match.group(1)
                     
                     if resource_token and upstream_auth_token:
+                        token_logger.info(f"🔐 Token exchange: upstream_auth_token={upstream_auth_token}, resource_token={resource_token}")
                         logger.info(f"🔐 Exchanging upstream auth_token for MAA token")
                         if DEBUG:
                             logger.debug(f"🔐 Resource token length: {len(resource_token)}")
@@ -355,6 +361,7 @@ class SupplyChainOptimizerAgent:
                             expires_in = exchange_result.get("expires_in", 3600)
                             
                             if exchanged_auth_token:
+                                token_logger.info(f"🔐 Token exchange result: exchanged_auth_token={exchanged_auth_token}")
                                 logger.info(f"✅ Token exchange successful, retrying MAA request with exchanged token")
                                 logger.info(f"🔐 Exchanged auth_token (length: {len(exchanged_auth_token)}): {exchanged_auth_token[:100]}...{exchanged_auth_token[-50:]}")
                                 logger.info(f"🔐 Exchanged auth_token expires in: {expires_in} seconds")
@@ -1121,6 +1128,7 @@ class SupplyChainOptimizerExecutor(AgentExecutor):
                 jwt_match = re.search(r'jwt="([^"]+)"', sig_key_header)
                 if jwt_match:
                     auth_token = jwt_match.group(1)
+                    token_logger.info(f"🔐 Received auth_token in request (HTTPSig scheme=jwt): {auth_token}")
                     logger.info(f"🔐 Auth token detected in request (scheme=jwt)")
                     if DEBUG:
                         logger.debug(f"🔐 Auth token length: {len(auth_token)}")
@@ -1438,6 +1446,7 @@ class SupplyChainOptimizerExecutor(AgentExecutor):
                             scope=scope
                         )
                         
+                        token_logger.info(f"🔐 Issuing resource_token: {resource_token}")
                         logger.info(f"🔐 Issuing resource_token for agent: {agent_id}")
                         if additional_list:
                             logger.info(f"🔐 Resource token scope: {scope}")

@@ -47,6 +47,7 @@ log_level = get_log_level()
 # This ensures all library loggers (including aauth.signing) will propagate to root
 logging.basicConfig(level=log_level, format='%(levelname)s:%(name)s:%(message)s')
 logger = logging.getLogger(__name__)
+token_logger = logging.getLogger("aauth.tokens")  # For token visibility - always shows
 
 # =============================================================================
 # Now import everything else (after logging is configured)
@@ -396,6 +397,7 @@ class MarketAnalysisAgentExecutor(AgentExecutor):
                                     jwt_match = re.search(r'jwt="([^"]+)"', sig_key_header)
                                     if jwt_match:
                                         auth_token_str = jwt_match.group(1)
+                                        token_logger.info(f"🔐 Received auth_token in request (HTTPSig scheme=jwt): {auth_token_str}")
                                         logger.info(f"🔐 JWT scheme detected: verifying auth_token")
                                         if DEBUG:
                                             logger.debug(f"🔐 Auth token length: {len(auth_token_str)}")
@@ -719,6 +721,7 @@ class MarketAnalysisAgentExecutor(AgentExecutor):
                                                         scope=scope
                                                     )
                                                     
+                                                    token_logger.info(f"🔐 Issuing resource_token: {resource_token}")
                                                     logger.info(f"🔐 Issuing resource_token for agent: {agent_id}")
                                                     if DEBUG:
                                                         logger.debug(f"🔐 Resource token claims: iss={os.getenv('MARKET_ANALYSIS_AGENT_ID_URL', 'http://localhost:9998')}, aud={keycloak_issuer_url}, agent={agent_id}, scope={scope}")

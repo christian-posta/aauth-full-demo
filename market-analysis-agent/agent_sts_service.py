@@ -1,9 +1,12 @@
+import logging
 import httpx
 from typing import Optional, Dict, Any
 from urllib.parse import urlencode
 import os
 
 from tracing_config import span, add_event, set_attribute
+
+token_logger = logging.getLogger("aauth.tokens")  # For token visibility - always shows
 
 
 class AgentSTSService:
@@ -46,6 +49,7 @@ class AgentSTSService:
                 print(f"🔄 Exchanging OBO token for MCP server OBO token...")
                 print(f"📋 Resource: {resource}")
                 print(f"👤 Actor: {actor_token}")
+                token_logger.info(f"🔐 OBO token exchange request: obo_token={obo_token}")
                 print(f"🔐 Input OBO token: {obo_token[:50]}...")
                 add_event("obo_token_exchange_started", {
                     "resource": resource,
@@ -94,6 +98,7 @@ class AgentSTSService:
                         new_obo_token = response_data.get("access_token")
                         
                         if new_obo_token:
+                            token_logger.info(f"🔐 OBO token exchange result: new_obo_token={new_obo_token}")
                             print(f"✅ OBO token exchange successful! New OBO token: {new_obo_token[:50]}...")
                             print(f"🔐 Full new OBO token: {new_obo_token}")
                             add_event("obo_token_exchange_successful", {
