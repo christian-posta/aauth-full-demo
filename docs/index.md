@@ -13,7 +13,7 @@ This set of resources will walk you through various flows with detailed Header/P
 
 1. [Header Web Key (HWK) for Pseudonymous Access](flow-01-hwk.md)
 2. [Json Web Keys (JWKS) for Identified Access / Agent Identity](flow-02-jwks.md)
-4. [Identified Access with Authorization](flow-03-authz.md)
+4. [Identified Agent Authorization](flow-03-authz.md)
 4. [User Consent with Identified Access with Authorization](flow-04-user.md)
 5. [Authorization Token Exchange](flow-05-token-ex.md)
 6. [Delegated Agent Identity](flow-06-delegated.md)

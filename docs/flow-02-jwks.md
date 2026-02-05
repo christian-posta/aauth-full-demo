@@ -248,6 +248,6 @@ server: uvicorn
 
 In this flow, we reviewed the identified access pattern with AAuth's JWKS scheme. Agents can now prove their identity cryptographically but they're still accessing resources without explicit authorization.
 
-For scenarios requiring explicit permission grants (OAuth-style token flows), we explore the **authorized** tier in the next section: [flow-03-tokens.md](./flow-03-tokens.md).
+For scenarios requiring explicit permission grants (OAuth-style token flows), we explore the **authorized** tier in the next section: [flow-03-tokens.md](./flow-03-authz.md).
 
 [← Back to index](index.md)
