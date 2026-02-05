@@ -4,8 +4,41 @@ title: Agent Authorization With User Consent
 description: No identity, but TOFU
 ---
 
+---
+layout: default
+title: Agent Authorization With User Consent
+---
+
+In the [previous post](./flow-03-authz.md), we saw how an agent can obtain authorization when policy permits direct token issuance. But what happens when the auth server determines that **user consent is required**? This post covers how AAuth handles interactive consent flows while maintaining cryptographic binding throughout.
+
 [← Back to index](index.md)
 
+## When Direct Authorization Isn't Enough
+
+In the previous section which focused on [identified agent authorization](./flow-03-authz.md), the auth server evaluated policy and immediately issued an auth token. This works for scenarios like:
+
+- Machine-to-machine authorization (no user in the loop)
+- Pre-approved agent-resource pairs
+- Low-sensitivity operations
+
+But many scenarios require explicit user consent:
+
+- Accessing personal data (email, calendar, files)
+- Acting on behalf of a user
+- First-time authorization for a new agent
+- High-sensitivity operations
+
+The auth server makes this determination, not the agent or resource. The agent simply presents the resource token; the auth server decides whether to issue a token directly or require consent.
+
+## The Consent Flow
+
+Here's how it differs from the direct flow:
+
+![](./images/demo4.png)
+
+### Steps 1-2: Same as Before
+
+The agent requests the protected resource and receives a 401 with a resource token:
 ```bash
 ================================================================================
 >>> AGENT REQUEST to https://important.resource.com/data-auth
@@ -16,28 +49,7 @@ Signature-Input: sig1=("@method" "@authority" "@path" "signature-key");created=1
 Signature-Key: sig1=(scheme=jwks id="https://agent.supply-chain.com" kid="key-1" well-known="aauth-agent")
 ================================================================================
 ```
-
-Resource sees:
-
 ```bash
-================================================================================
->>> RESOURCE REQUEST received
-================================================================================
-GET /data-auth HTTP/1.1
-Host: 127.0.0.1:8002
-accept: */*
-accept-encoding: gzip, deflate
-connection: keep-alive
-host: 127.0.0.1:8002
-signature: sig1=:yNg83RIDMM7dnCJXGig_LrBskrbHtlTFDzCpMBQgtn1oELS1c4QNhH30rboOuGpDLgjaFx6Ut14n2gzWyV26DA:
-signature-input: sig1=("@method" "@authority" "@path" "signature-key");created=1768786017
-signature-key: sig1=(scheme=jwks id="https://agent.supply-chain.com" kid="key-1" well-known="aauth-agent")
-user-agent: python-httpx/0.28.1
-================================================================================
-
-INFO:     127.0.0.1:58663 - "GET /.well-known/aauth-agent HTTP/1.1" 200 OK
-INFO:     127.0.0.1:58664 - "GET /jwks.json HTTP/1.1" 200 OK
-
 ================================================================================
 <<< RESOURCE RESPONSE
 ================================================================================
@@ -48,32 +60,13 @@ content-length: 22
 [Body (22 bytes)]
 Authorization required
 ================================================================================
-
-INFO:     127.0.0.1:58662 - "GET /data-auth HTTP/1.1" 401 Unauthorized
 ```
 
-Agent sees:
+### Step 3: Agent Requests Authorization (Same Request, Different Response)
+
+The agent presents the resource token to the auth server, exactly as in [identified agent authorization](./flow-03-authz.md):
 
 ```bash
-================================================================================
-<<< AGENT RESPONSE from https://important.resource.com/data-auth
-================================================================================
-HTTP/1.1 401 Unauthorized
-agent-auth: httpsig; auth-token; resource_token="eyJhbGciOiJFZERTQSIsImtpZCI6InJlc291cmNlLWtleS0xIiwidHlwIjoi...
-content-length: 22
-date: Mon, 19 Jan 2026 01:26:57 GMT
-server: uvicorn
-
-[Body (22 bytes)]
-Authorization required
-================================================================================
-```
-
-Agent calls auth server:
-
-```bash
-INFO:     127.0.0.1:58665 - "GET /.well-known/aauth-issuer HTTP/1.1" 200 OK
-
 ================================================================================
 >>> AGENT REQUEST to https://auth-server.com/agent/token
 ================================================================================
@@ -84,41 +77,13 @@ Signature: sig1=:ICv_zjE12EOoEOSKofQR9R3-IoRL7TM0DEc2Q8cJubwoRnbWvFNUDQQFiVizugL
 Signature-Input: sig1=("@method" "@authority" "@path" "content-type" "content-digest" "signature-key");created=176...
 Signature-Key: sig1=(scheme=jwks id="https://agent.supply-chain.com" kid="key-1" well-known="aauth-agent")
 
-[Body (510 bytes)]
-request_type=auth&resource_token=eyJhbGciOiJFZERTQSIsImtpZCI6InJlc291cmNlLWtleS0xIiwidHlwIjoicmVzb3VyY2Urand0In0.eyJpc3MiOiJodHRwOi8vMTI3LjAuMC4xOjgwMDIiLCJhdWQiOiJodHRwOi8vMTI3LjAuMC4xOjgwMDMiLCJhZ2VudCI6Imh0dHA6Ly8xMjcuMC4wLjE6ODAwMSIsImFnZW50X2prdCI6IjRSNHpUX1R1c0RBOEFKbjJ4TUQzdzk3YUpYTm5vQnVLRlhIQVdiT3ZvclkiLCJzY29wZSI6ImRhdGEucmVhZCBkYXRhLndyaXRlIiwiZXhwIjoxNzY4Nzg2NjE3fQ.xKqgqQ3C4P3y7qWcqeTgfJIIx_Jkp5qGbogN2r0mEOq8Nug4okRcfb1jWKlXm9HRveuky9xvdOrQCg-3nma-Ag&redirect_uri=https://agent.supply-chain.com/callback
+[Body]
+request_type=auth&resource_token=eyJhbGciOiJFZERTQSIsImtpZCI6InJlc291cmNlLWtleS0xIiwidHlwIjoicmVzb3VyY2Urand0In0...&redirect_uri=https://agent.supply-chain.com/callback
 ================================================================================
 ```
 
-Auth server sees: 
-
+But this time, the auth server evaluates policy and determines that user consent is required. Instead of an auth token, it returns a **request token**:
 ```bash
-================================================================================
->>> AUTH SERVER REQUEST received
-================================================================================
-POST /agent/token HTTP/1.1
-accept: */*
-accept-encoding: gzip, deflate
-connection: keep-alive
-content-digest: sha-256=:rMyTWCblP3KXnWkI2KGnDVqj91ETqvcEUuzSrXChi+c=:
-content-length: 510
-content-type: application/x-www-form-urlencoded
-host: 127.0.0.1:8003
-signature: sig1=:ICv_zjE12EOoEOSKofQR9R3-IoRL7TM0DEc2Q8cJubwoRnbWvFNUDQQFiVizugLFeTAmBQ4JqRGv2qLpQO8GBw:
-signature-input: sig1=("@method" "@authority" "@path" "content-type" "content-digest" "signature-key");created=176...
-signature-key: sig1=(scheme=jwks id="https://agent.supply-chain.com" kid="key-1" well-known="aauth-agent")
-user-agent: python-httpx/0.28.1
-
-[Body (510 bytes)]
-request_type=auth&resource_token=eyJhbGciOiJFZERTQSIsImtpZCI6InJlc291cmNlLWtleS0xIiwidHlwIjoicmVzb3VyY2Urand0In0.eyJpc3MiOiJodHRwOi8vMTI3LjAuMC4xOjgwMDIiLCJhdWQiOiJodHRwOi8vMTI3LjAuMC4xOjgwMDMiLCJhZ2VudCI6Imh0dHA6Ly8xMjcuMC4wLjE6ODAwMSIsImFnZW50X2prdCI6IjRSNHpUX1R1c0RBOEFKbjJ4TUQzdzk3YUpYTm5vQnVLRlhIQVdiT3ZvclkiLCJzY29wZSI6ImRhdGEucmVhZCBkYXRhLndyaXRlIiwiZXhwIjoxNzY4Nzg2NjE3fQ.xKqgqQ3C4P3y7qWcqeTgfJIIx_Jkp5qGbogN2r0mEOq8Nug4okRcfb1jWKlXm9HRveuky9xvdOrQCg-3nma-Ag&redirect_uri=https://agent.supply-chain.com/callback
-================================================================================
-
-INFO:     127.0.0.1:58667 - "GET /.well-known/aauth-agent HTTP/1.1" 200 OK
-INFO:     127.0.0.1:58668 - "GET /jwks.json HTTP/1.1" 200 OK
-INFO:     127.0.0.1:58669 - "GET /.well-known/aauth-agent HTTP/1.1" 200 OK
-INFO:     127.0.0.1:58670 - "GET /jwks.json HTTP/1.1" 200 OK
-INFO:     127.0.0.1:58671 - "GET /.well-known/aauth-resource HTTP/1.1" 200 OK
-INFO:     127.0.0.1:58672 - "GET /jwks.json HTTP/1.1" 200 OK
-
 ================================================================================
 <<< AUTH SERVER RESPONSE
 ================================================================================
@@ -131,87 +96,77 @@ Content-Type: application/json
   "expires_in": 600
 }
 ================================================================================
-
-INFO:     127.0.0.1:58666 - "POST /agent/token HTTP/1.1" 200 OK
 ```
 
-Note that the auth server is the one who decides that the user is needed for consent for this flow. It returns an request token similar to OAuth PAR. 
+## Request Tokens: OAuth PAR for Agents
 
-Agent sees:
+If you've worked with OAuth 2.0 Pushed Authorization Requests (PAR, RFC 9126), this pattern will look familiar. PAR lets clients push authorization parameters to the auth server and receive an opaque reference in return.
 
-```bash
-================================================================================
-<<< AGENT RESPONSE from https://auth-server.com/agent/token
-================================================================================
-HTTP/1.1 200 OK
-content-length: 80
-content-type: application/json
-date: Mon, 19 Jan 2026 01:26:57 GMT
-server: uvicorn
+AAuth's request token serves a similar purpose:
 
-[Body (80 bytes)]
-{"request_token":"kgJ04U2x_0tIBAddXd5I_LTnUMow6dWnMTjkEPuY1Y4","expires_in":600}
-================================================================================
+| OAuth PAR | AAuth Request Token |
+|-----------|---------------------|
+| Stores authorization request server-side | Stores authorization context server-side |
+| Returns `request_uri` | Returns `request_token` |
+| Used in authorization URL | Used in consent URL |
+| Short-lived (typically 60s) | Short-lived (600s in this example) |
 
-INFO:     127.0.0.1:58673 - "GET /.well-known/aauth-issuer HTTP/1.1" 200 OK
+But there's a key difference: the AAuth request token already contains cryptographically verified context from the resource token. The auth server has already validated:
+
+- The resource's identity and signature
+- The agent's identity and signature  
+- The cryptographic binding between them (`agent_jkt`)
+- The requested scopes / constraints
+
+This context is stored server-side, associated with the request token. The user will consent to a request that has already been cryptographically validated.
+
+## Step 4: User Consent
+
+The agent directs the user to the consent endpoint:
+```
+https://auth-server.com/agent/auth?request_token=kgJ04U2x_0tIBAddXd5I_LTnUMow6dWnMTjkEPuY1Y4&redirect_uri=https://agent.supply-chain.com/callback
 ```
 
-Agent puts user into consent flow:
+The auth server displays a consent screen to the user. Because the request token references validated context, the consent screen can show verified information:
 
-```bash
-================================================================================
-CONSENT REQUIRED
-================================================================================
+- ✓ Agent identity: `https://agent.supply-chain.com` (verified via JWKS)
+- ✓ Resource requesting access: `https://important.resource.com` (verified via signature)
+- ✓ Requested scopes: `data.read data.write`
 
-Please open the following URL in your browser:
+The user isn't consenting to claims made by the agent. They're consenting to cryptographically verified facts.
 
-  https://auth-server.com/agent/auth?request_token=kgJ04U2x_0tIBAddXd5I_LTnUMow6dWnMTjkEPuY1Y4&redirect_uri=https://agent.supply-chain.com/callback
+### After User Approval
 
-After granting consent, the agent will automatically exchange the code.
-Waiting for authorization code...
-================================================================================
-
-INFO:     127.0.0.1:58674 - "GET /agent/auth?request_token=kgJ04U2x_0tIBAddXd5I_LTnUMow6dWnMTjkEPuY1Y4&redirect_uri=https://agent.supply-chain.com/callback HTTP/1.1" 200 OK
-INFO:     127.0.0.1:58674 - "GET /favicon.ico HTTP/1.1" 404 Not Found
-INFO:     127.0.0.1:58675 - "POST /agent/auth HTTP/1.1" 303 See Other
-INFO:     127.0.0.1:58675 - "GET /agent/auth?request_token=kgJ04U2x_0tIBAddXd5I_LTnUMow6dWnMTjkEPuY1Y4&redirect_uri=https://agent.supply-chain.com/callback HTTP/1.1" 200 OK
-INFO:     127.0.0.1:58676 - "POST /agent/auth HTTP/1.1" 303 See Other
-INFO:     127.0.0.1:58678 - "GET /.well-known/aauth-issuer HTTP/1.1" 200 OK
+Once the user consents, the auth server redirects back to the agent with an authorization code:
+```
+https://agent.supply-chain.com/callback?code=3oyoQOpk9Mn1caCjVoJ-ibMfIpyRzBKwV2A5XPCuFGk
 ```
 
-Once approved by user, access_code gets sent to Auth server:
+## Step 5: Code Exchange
 
+The agent exchanges the code for an auth token. Note that this request is also signed: the agent continues to prove its identity:
 ```bash
 ================================================================================
->>> AUTH SERVER REQUEST received
+>>> AGENT REQUEST to https://auth-server.com/agent/token
 ================================================================================
-POST /agent/token HTTP/1.1
-accept: */*
-accept-encoding: gzip, deflate
-connection: keep-alive
-content-digest: sha-256=:iW1aTTCfubZKzu+4a8LoxYXIVEX0av0ii09u0ybxS1A=:
-content-length: 110
-content-type: application/x-www-form-urlencoded
-host: 127.0.0.1:8003
-signature: sig1=:qrlfQIgWSZtk5ret60dsdW-nIIjbM9S_nOO4dq8Mxs1hfnv0UZf-EZVOYB8E7QBD1J0QmQbwt-6CyJyzN8BoAg:
-signature-input: sig1=("@method" "@authority" "@path" "content-type" "content-digest" "signature-key");created=176...
-signature-key: sig1=(scheme=jwks id="https://agent.supply-chain.com" kid="key-1" well-known="aauth-agent")
-user-agent: python-httpx/0.28.1
+POST https://auth-server.com/agent/token HTTP/1.1
+Content-Digest: sha-256=:iW1aTTCfubZKzu+4a8LoxYXIVEX0av0ii09u0ybxS1A=:
+Content-Type: application/x-www-form-urlencoded
+Signature: sig1=:qrlfQIgWSZtk5ret60dsdW-nIIjbM9S_nOO4dq8Mxs1hfnv0UZf-EZVOYB8E7QBD1J0QmQbwt-6CyJyzN8BoAg:
+Signature-Input: sig1=("@method" "@authority" "@path" "content-type" "content-digest" "signature-key");created=176...
+Signature-Key: sig1=(scheme=jwks id="https://agent.supply-chain.com" kid="key-1" well-known="aauth-agent")
 
-[Body (110 bytes)]
+[Body]
 request_type=code&code=3oyoQOpk9Mn1caCjVoJ-ibMfIpyRzBKwV2A5XPCuFGk&redirect_uri=https://agent.supply-chain.com/callback
 ================================================================================
-
-INFO:     127.0.0.1:58680 - "GET /.well-known/aauth-agent HTTP/1.1" 200 OK
-INFO:     127.0.0.1:58681 - "GET /jwks.json HTTP/1.1" 200 OK
-INFO:     127.0.0.1:58682 - "GET /.well-known/aauth-agent HTTP/1.1" 200 OK
-INFO:     127.0.0.1:58683 - "GET /jwks.json HTTP/1.1" 200 OK
 ```
 
-Auth server approves request based on user consent and returns access token (and potentially refresh tokens)
+The auth server validates:
+1. The agent's signature matches the agent bound to the original request
+2. The authorization code is valid and unused
+3. The redirect URI matches the original request
 
-
-
+Then issues the auth token:
 ```bash
 ================================================================================
 <<< AUTH SERVER RESPONSE
@@ -221,118 +176,15 @@ Content-Type: application/json
 
 [Body]
 {
-  "auth_token": "eyJhbGciOiJFZERTQSIsImtpZCI6ImF1dGgta2V5LTEiLCJ0eXAiOiJhdXRoK2p3dCJ9.eyJpc3MiOiJodHRwOi8vMTI3LjAuMC4xOjgwMDMiLCJhdWQiOiJodHRwOi8vMTI3LjAuMC4xOjgwMDIiLCJjbmYiOnsiandrIjp7Imt0eSI6Ik9LUCIsImNydiI6IkVkMjU1MTkiLCJ4IjoiVXNSZF9lMExxOFdVNXVZRWtsb3d5cWVfRFNhRmZCOWZqbm5fX0R3V0Y2RSIsImtpZCI6ImtleS0xIn19LCJzY29wZSI6ImRhdGEucmVhZCBkYXRhLndyaXRlIiwiZXhwIjoxNzY4Nzg5NjQ1LCJhZ2VudCI6Imh0dHA6Ly8xMjcuMC4wLjE6ODAwMSIsInN1YiI6InRlc3R1c2VyIn0.EaktmXUYU6cW3chTfPnwNWRcF-kP0BlbMmCK6mOvSfERFeiGLgxtmJM8F9NmSh-_57kjmGQbJrV74QvlvEJgAw",
+  "auth_token": "eyJhbGciOiJFZERTQSIsImtpZCI6ImF1dGgta2V5LTEiLCJ0eXAiOiJhdXRoK2p3dCJ9...",
   "expires_in": 3600,
   "token_type": "Bearer"
 }
 ================================================================================
-
-INFO:     127.0.0.1:58679 - "POST /agent/token HTTP/1.1" 200 OK
-INFO:     127.0.0.1:58677 - "GET /callback?code=3oyoQOpk9Mn1caCjVoJ-ibMfIpyRzBKwV2A5XPCuFGk HTTP/1.1" 200 OK
 ```
 
-Agent can now take this JWT/access_token and call the resource again:
-
-
-```bash
-================================================================================
->>> AGENT REQUEST to https://important.resource.com/data-auth
-================================================================================
-GET https://important.resource.com/data-auth HTTP/1.1
-Signature: sig1=:yMTf_qgsX8ouHj7D5N-NGXVpq8UAPaz12MhkQoRJwAsPBwsHc1NcTRXuo2KkicCLG03fzv-HWJd0Zo0bci4aCg:
-Signature-Input: sig1=("@method" "@authority" "@path" "signature-key");created=1768786045
-Signature-Key: sig1=(scheme=jwt jwt="eyJhbGciOiJFZERTQSIsImtpZCI6ImF1dGgta2V5LTEiLCJ0eXAiOiJhdXRoK2p3dCJ9.eyJpc3...
-================================================================================
-```
-
-Resource now sees request that is identified and has proper authorization and consent from the user:
-
-```bash
-================================================================================
->>> RESOURCE REQUEST received
-================================================================================
-GET /data-auth HTTP/1.1
-Host: 127.0.0.1:8002
-accept: */*
-accept-encoding: gzip, deflate
-connection: keep-alive
-host: 127.0.0.1:8002
-signature: sig1=:yMTf_qgsX8ouHj7D5N-NGXVpq8UAPaz12MhkQoRJwAsPBwsHc1NcTRXuo2KkicCLG03fzv-HWJd0Zo0bci4aCg:
-signature-input: sig1=("@method" "@authority" "@path" "signature-key");created=1768786045
-signature-key: sig1=(scheme=jwt jwt="eyJhbGciOiJFZERTQSIsImtpZCI6ImF1dGgta2V5LTEiLCJ0eXAiOiJhdXRoK2p3dCJ9.eyJpc3...
-user-agent: python-httpx/0.28.1
-================================================================================
-
-INFO:     127.0.0.1:58685 - "GET /.well-known/aauth-issuer HTTP/1.1" 200 OK
-INFO:     127.0.0.1:58686 - "GET /jwks.json HTTP/1.1" 200 OK
-INFO:     127.0.0.1:58687 - "GET /.well-known/aauth-issuer HTTP/1.1" 200 OK
-INFO:     127.0.0.1:58688 - "GET /jwks.json HTTP/1.1" 200 OK
-
-================================================================================
-<<< RESOURCE RESPONSE
-================================================================================
-HTTP/1.1 200
-content-length: 212
-content-type: application/json
-
-[Body (212 bytes)]
-{"message":"Access granted","data":"This is protected data (authorized)","scheme":"jwt","token_type":"auth+jwt","method":"GET","agent":"https://agent.supply-chain.com","agent_delegate":null,"scope":"data.read data.write"}
-================================================================================
-
-INFO:     127.0.0.1:58684 - "GET /data-auth HTTP/1.1" 200 OK
-```
-
-```bash
-================================================================================
-<<< AGENT RESPONSE from https://important.resource.com/data-auth
-================================================================================
-HTTP/1.1 200 OK
-content-length: 212
-content-type: application/json
-date: Mon, 19 Jan 2026 01:27:25 GMT
-server: uvicorn
-
-[Body (212 bytes)]
-{"message":"Access granted","data":"This is protected data (authorized)","scheme":"jwt","token_type":"auth+jwt","method":"GET","agent":"https://agent.supply-chain.com","agent_delegate":null,"scope":"data.read data.write"}
-================================================================================
-```
-
-Inspecting the tokens (though, should do this maybe inline?)
-
-```bash
-================================================================================
-RESOURCE TOKEN (decoded)
-================================================================================
-Header:
-{
-  "alg": "EdDSA",
-  "kid": "resource-key-1",
-  "typ": "resource+jwt"
-}
-
-Payload:
-{
-  "iss": "https://important.resource.com",
-  "aud": "https://auth-server.com",
-  "agent": "https://agent.supply-chain.com",
-  "agent_jkt": "4R4zT_TusDA8AJn2xMD3w97aJXNnoBuKFXHAWbOvorY",
-  "scope": "data.read data.write",
-  "exp": 1768786617
-}
-================================================================================
-
-
-================================================================================
-AUTH TOKEN (decoded)
-================================================================================
-Header:
-{
-  "alg": "EdDSA",
-  "kid": "auth-key-1",
-  "typ": "auth+jwt"
-}
-
-Payload:
+The auth token now includes a `sub` claim identifying the user who consented:
+```json
 {
   "iss": "https://auth-server.com",
   "aud": "https://important.resource.com",
@@ -349,5 +201,74 @@ Payload:
   "agent": "https://agent.supply-chain.com",
   "sub": "testuser"
 }
+```
+
+## Step 6: Access the Resource
+
+From here, it's identical to [identified agent authorization](./flow-03-authz.md). The agent uses the auth token to access the resource:
+
+```bash
+================================================================================
+>>> AGENT REQUEST to https://important.resource.com/data-auth
+================================================================================
+GET https://important.resource.com/data-auth HTTP/1.1
+Signature: sig1=:yMTf_qgsX8ouHj7D5N-NGXVpq8UAPaz12MhkQoRJwAsPBwsHc1NcTRXuo2KkicCLG03fzv-HWJd0Zo0bci4aCg:
+Signature-Input: sig1=("@method" "@authority" "@path" "signature-key");created=1768786045
+Signature-Key: sig1=(scheme=jwt jwt="eyJhbGciOiJFZERTQSIsImtpZCI6ImF1dGgta2V5LTEiLCJ0eXAiOiJhdXRoK2p3dCJ9.eyJpc3...
 ================================================================================
 ```
+```bash
+================================================================================
+<<< RESOURCE RESPONSE
+================================================================================
+HTTP/1.1 200
+content-length: 212
+content-type: application/json
+
+[Body]
+{"message":"Access granted","data":"This is protected data (authorized)","scheme":"jwt","token_type":"auth+jwt","method":"GET","agent":"https://agent.supply-chain.com","agent_delegate":null,"scope":"data.read data.write"}
+================================================================================
+```
+
+## Policy Decides, Not the Agent
+
+A crucial aspect of this design: **the agent doesn't know in advance whether consent will be required**. It makes the same request to `/agent/token` regardless. The auth server's response tells the agent what happens next:
+
+| Response | Meaning |
+|----------|---------|
+| `auth_token` in response | Authorization granted directly |
+| `request_token` in response | User consent required |
+| 4xx error | Authorization denied |
+
+This keeps policy decisions centralized in the auth server. The auth server can consider:
+
+- Is this agent pre-approved for this resource?
+- Has the user previously consented to these scopes?
+- Does organizational policy allow direct issuance?
+- Are there risk signals that require user confirmation?
+
+
+## Comparison with OAuth
+
+| Aspect | OAuth Authorization Code | AAuth User Consent |
+|--------|--------------------------|-------------------|
+| Client authentication | Client secret or PKCE | HTTP message signatures |
+| Authorization request | Client constructs URL with scopes | Resource provides scope requirements |
+| Request binding | PKCE code verifier | Request token + agent signatures |
+| Token binding | Optional (DPoP) | Mandatory (cnf claim) |
+| Scope source | Client decides | Resource declares |
+
+The most significant philosophical difference: in OAuth, the client requests scopes it wants. In AAuth, the resource declares scopes it requires. The agent is responding to challenges, not making pre-commitments.
+
+
+## Where to Next
+
+We've now covered:
+- [Pseudonymous (HWK)](./flow-01-hwk.md): Cryptographic proof without identity
+- [Identified (JWKS)](./flow-02-jwks.md): Domain-bound agent identity
+- [Authorized (Direct)](./flow-03-authz.md): Runtime authorization without user interaction
+- **User Consent (this post)**: Interactive authorization with user approval
+
+[In the next post](./flow-05-token-ex.md), we'll explore **Token Exchange**, and what happens when one agent needs to act on behalf of another, creating chains of authorization.
+
+[← Back to index](index.md)

@@ -55,9 +55,9 @@ Description: Agent delegate requests agent token from agent server.
 📤 Delegate requesting agent token from agent server...
 
 ================================================================================
->>> DELEGATE REQUEST to http://127.0.0.1:8001/delegate/token
+>>> DELEGATE REQUEST to https://agent.supply-chain.com/delegate/token
 ================================================================================
-POST http://127.0.0.1:8001/delegate/token HTTP/1.1
+POST https://agent.supply-chain.com/delegate/token HTTP/1.1
 Content-Type: application/json
 
 [Body (143 bytes)]
@@ -95,7 +95,7 @@ Content-Type: application/json
 INFO:     127.0.0.1:58712 - "POST /delegate/token HTTP/1.1" 200 OK
 
 ================================================================================
-<<< DELEGATE RESPONSE from http://127.0.0.1:8001/delegate/token
+<<< DELEGATE RESPONSE from https://agent.supply-chain.com/delegate/token
 ================================================================================
 HTTP/1.1 200 OK
 content-length: 433
@@ -117,7 +117,7 @@ Verifying agent token claims:
   "typ": "agent+jwt"
 }
   Token payload: {
-  "iss": "http://127.0.0.1:8001",
+  "iss": "https://agent.supply-chain.com",
   "sub": "delegate-1",
   "exp": 1768789821,
   "cnf": {
@@ -130,7 +130,7 @@ Verifying agent token claims:
   }
 }
   ✓ typ claim correct: agent+jwt
-  ✓ iss claim correct: http://127.0.0.1:8001
+  ✓ iss claim correct: https://agent.supply-chain.com
   ✓ sub claim correct: delegate-1
   ✓ cnf.jwk claim present
 
@@ -145,9 +145,9 @@ Description: Agent delegate makes signed request to resource using agent token.
 📤 Delegate accessing resource with agent token...
 
 ================================================================================
->>> DELEGATE REQUEST to http://127.0.0.1:8002/data-jwks
+>>> DELEGATE REQUEST to https://important.resource.com/data-jwks
 ================================================================================
-GET http://127.0.0.1:8002/data-jwks HTTP/1.1
+GET https://important.resource.com/data-jwks HTTP/1.1
 Signature: sig1=:g1VmPaHtG7B1_vZ0FmmegnAtf804jio4EpC866wHyuPeQM07ikVZmAWxc5hjxR1SiveSq3ib9lgzDf7GwRL9AA:
 Signature-Input: sig1=("@method" "@authority" "@path" "signature-key");created=1768786221
 Signature-Key: sig1=(scheme=jwt jwt="eyJhbGciOiJFZERTQSIsImtpZCI6ImtleS0xIiwidHlwIjoiYWdlbnQrand0In0.eyJpc3MiOiJ...
@@ -180,13 +180,13 @@ content-length: 206
 content-type: application/json
 
 [Body (206 bytes)]
-{"message":"Access granted","data":"This is protected data (identified via agent token)","scheme":"jwt","token_type":"agent+jwt","method":"GET","agent":"http://127.0.0.1:8001","agent_delegate":"delegate-1"}
+{"message":"Access granted","data":"This is protected data (identified via agent token)","scheme":"jwt","token_type":"agent+jwt","method":"GET","agent":"https://agent.supply-chain.com","agent_delegate":"delegate-1"}
 ================================================================================
 
 INFO:     127.0.0.1:58713 - "GET /data-jwks HTTP/1.1" 200 OK
 
 ================================================================================
-<<< DELEGATE RESPONSE from http://127.0.0.1:8002/data-jwks
+<<< DELEGATE RESPONSE from https://important.resource.com/data-jwks
 ================================================================================
 HTTP/1.1 200 OK
 content-length: 206
@@ -195,7 +195,7 @@ date: Mon, 19 Jan 2026 01:30:21 GMT
 server: uvicorn
 
 [Body (206 bytes)]
-{"message":"Access granted","data":"This is protected data (identified via agent token)","scheme":"jwt","token_type":"agent+jwt","method":"GET","agent":"http://127.0.0.1:8001","agent_delegate":"delegate-1"}
+{"message":"Access granted","data":"This is protected data (identified via agent token)","scheme":"jwt","token_type":"agent+jwt","method":"GET","agent":"https://agent.supply-chain.com","agent_delegate":"delegate-1"}
 ================================================================================
 
 
@@ -206,7 +206,7 @@ server: uvicorn
   "scheme": "jwt",
   "token_type": "agent+jwt",
   "method": "GET",
-  "agent": "http://127.0.0.1:8001",
+  "agent": "https://agent.supply-chain.com",
   "agent_delegate": "delegate-1"
 }
   ✓ Resource recognized agent token
