@@ -15,6 +15,17 @@ cd market-analysis-agent
 uv run .
 ```
 
+**CLI options** (override env vars when using `uv run .`):
+```bash
+uv run . --signature-scheme jwks                    # Use JWKS scheme
+uv run . --signature-scheme hwk                     # Use HWK scheme
+uv run . --authorization-scheme signature-only      # Accept valid signatures only
+uv run . --authorization-scheme user-delegated      # Require user consent flow
+uv run . --authorization-scheme autonomous          # Autonomous auth
+uv run . --signature-scheme jwks --authorization-scheme signature-only
+uv run . --help                                     # Show all options
+```
+
 The agent will start on `http://localhost:9998` and serve its agent card at `/.well-known/agent-card.json`.
 
 ### 2. Test the Agent
@@ -25,16 +36,27 @@ uv run test_client.py
 
 ## Configuration
 
-The agent can be configured using environment variables. Copy `.env.example` to `.env` and modify as needed:
+The agent can be configured using environment variables. Copy `env.example` to `.env` and modify as needed:
 
 ```bash
 cp env.example .env
+```
+
+Preset env files for different AAuth configurations:
+- `env.hwk` – HWK signature scheme, signature-only authorization
+- `env.jwks` – JWKS signature scheme, signature-only authorization
+- `env.jwt-autonomous` – JWKS scheme, autonomous authorization
+- `env.user-delegated` – JWKS scheme, user-delegated authorization (Keycloak consent flow)
+
+```bash
+cp env.jwks .env   # Example: use JWKS + signature-only
 ```
 
 ### Environment Variables
 
 - **`MARKET_ANALYSIS_AGENT_URL`**: External URL for this agent (default: `http://localhost:9998/`)
 - **`AAUTH_SIGNATURE_SCHEME`**: AAuth signature scheme expected from callers - `"hwk"` (pseudonymous) or `"jwks"` (identified agent). Default: `hwk`
+- **`AAUTH_AUTHORIZATION_SCHEME`**: AAuth authorization scheme - `"autonomous"`, `"user-delegated"`, or `"signature-only"`. Default: `autonomous`
 - **`MARKET_ANALYSIS_AGENT_ID_URL`**: Agent identifier for JWKS scheme (HTTPS URL). Also used to derive canonical authority for signature verification (per SPEC 10.3.1). Canonical authority format: `host:port` (if port is non-default) or just `host` (if default port). Used if this agent needs to sign requests (currently not used as this is a leaf agent)
 - **`JAEGER_HOST`**: Jaeger collector host for distributed tracing (default: `localhost`)
 - **`JAEGER_PORT`**: Jaeger collector port (default: `4317`)
@@ -107,6 +129,12 @@ AAUTH_SIGNATURE_SCHEME=jwks
 MARKET_ANALYSIS_AGENT_ID_URL=http://market-analysis-agent.localhost:3000
 ```
 
+**CLI override**: When using `uv run .`, you can override both settings without editing `.env`:
+```bash
+uv run . --signature-scheme jwks --authorization-scheme signature-only
+```
+CLI options take precedence over environment variables.
+
 For **user-delegated AAuth** (resource tokens, JWT verification, Keycloak JWKS), see [docs/USER_DELEGATED_AAUTH.md](../docs/USER_DELEGATED_AAUTH.md) and [docs/AAUTH_CONFIGURATION.md](../docs/AAUTH_CONFIGURATION.md). Key variables: `AAUTH_AUTHORIZATION_SCHEME=user-delegated`, `KEYCLOAK_AAUTH_ISSUER_URL`.
 
 For **signature-only mode** (`AAUTH_AUTHORIZATION_SCHEME=signature-only`): accept requests with valid JWKS or HWK signatures without requiring auth_token or resource_token. Rejects requests with invalid signatures. Useful when using `AAUTH_SIGNATURE_SCHEME=jwks` and you only need proof-of-possession.
@@ -155,7 +183,7 @@ This middleware captures incoming HTTP headers and request information (method, 
 
 ### Signature Schemes
 
-The agent supports verification of two signature schemes:
+The agent supports verification of two signature schemes (configurable via `AAUTH_SIGNATURE_SCHEME` env or `--signature-scheme` CLI):
 
 1. **HWK (Header Web Key)** - Pseudonymous authentication
    - Public key embedded directly in `Signature-Key` header

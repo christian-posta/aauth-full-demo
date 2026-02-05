@@ -4,9 +4,34 @@ Market Analysis Agent - HTTP Server
 
 This module sets up the Market Analysis Agent as an HTTP server using the A2A framework.
 The agent provides market analysis capabilities for laptop demand forecasting and inventory optimization.
-"""
 
+CLI options (parsed before .env load; override env vars):
+  --signature-scheme {hwk,jwks}       Override AAUTH_SIGNATURE_SCHEME
+  --authorization-scheme {autonomous,user-delegated,signature-only}  Override AAUTH_AUTHORIZATION_SCHEME
+
+Example: uv run . --signature-scheme jwks --authorization-scheme signature-only
+"""
+import argparse
 import os
+
+# Parse CLI args before load_dotenv and any app imports
+parser = argparse.ArgumentParser(description="Market Analysis Agent")
+parser.add_argument(
+    "--signature-scheme",
+    choices=["hwk", "jwks"],
+    help="AAuth signature scheme (overrides AAUTH_SIGNATURE_SCHEME env)",
+)
+parser.add_argument(
+    "--authorization-scheme",
+    choices=["autonomous", "user-delegated", "signature-only"],
+    help="AAuth authorization scheme (overrides AAUTH_AUTHORIZATION_SCHEME env)",
+)
+args, _ = parser.parse_known_args()
+if args.signature_scheme:
+    os.environ["AAUTH_SIGNATURE_SCHEME"] = args.signature_scheme
+if args.authorization_scheme:
+    os.environ["AAUTH_AUTHORIZATION_SCHEME"] = args.authorization_scheme
+
 # Load environment variables FIRST, before any imports that read env vars
 # This is critical because http_headers_middleware reads MARKET_ANALYSIS_AGENT_ID_URL at module load time
 from dotenv import load_dotenv

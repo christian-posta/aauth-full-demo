@@ -8,15 +8,8 @@ description: No identity, but TOFU
 
 [← Back to index](index.md)
 
-AAuth supports **progressive authentication** levels: pseudonymous, identified, and authorized. This document covers the **pseudonymous** level—the lightest form of agent authentication.
 
-## What is Pseudonymous?
 
-With pseudonymous settings, an agent proves it can sign requests cryptographically without revealing a persistent identity. The resource can verify that:
-- The request was signed by someone who holds the private key
-- The signature is valid and the message has not been tampered with
-
-The agent does **not** prove a stable, verifiable identity (e.g., via a published JWKS URL). This is useful for rate limiting, abuse prevention, and progressive trust—without requiring full agent registration.
 
 ## HWK (Header Web Key) Scheme
 
@@ -72,8 +65,7 @@ Run each component in a separate terminal. From each directory:
   <div class="tab-content" id="content-backend">
     <p>From the <code>backend</code> directory:</p>
     <pre><code>
-      > cp env.hwk .env
-      > uv run .
+      > uv run . --signature-scheme hwk
     </code></pre>
   </div>
   <div class="tab-content" id="content-agentgateway">

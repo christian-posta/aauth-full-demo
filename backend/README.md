@@ -46,29 +46,49 @@ This is the Python FastAPI backend for the Supply Chain Agent system. This backe
    pip install uv
    ```
 
-2. **Run the server with uv**:
+2. **Environment configuration**:
+   Copy the example env file and customize as needed:
    ```bash
    cd backend
-   uv run run_server.py
+   cp env.example .env
+   ```
+   Edit `.env` to set Keycloak URLs, AAuth settings, etc. The app loads `.env` automatically at startup via `python-dotenv`.
+
+   Preset env files for different AAuth signature schemes:
+   - `env.hwk` – HWK (pseudonymous) scheme
+   - `env.jwks` – JWKS (identified agent) scheme
+   ```bash
+   cp env.jwks .env   # Use JWKS scheme
    ```
 
-   Or run the app module directly:
+3. **Run the server**:
    ```bash
-   uv run -m app.main
+   cd backend
+   uv run .
+   ```
+   This is the recommended way. It uses `__main__.py` and supports CLI options.
+
+   **CLI options** (when using `uv run .`):
+   ```bash
+   uv run . --signature-scheme jwks   # Use JWKS scheme (overrides .env)
+   uv run . --signature-scheme hwk    # Use HWK scheme (overrides .env)
+   uv run . --help                    # Show all options
    ```
 
-   Or with uvicorn directly:
+   Other ways to run:
    ```bash
+   uv run start                      # Via pyproject script (no CLI options)
+   uv run -m app.main                # Run app module directly
    uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
    ```
 
-3. **Access the API**:
+4. **Access the API**:
    - API: http://localhost:8000
    - Interactive docs: http://localhost:8000/docs
    - ReDoc: http://localhost:8000/redoc
 
-4. **Hostnames**
-   We use the hostname `backend.localhost:8000` to access this service. You can configure `/etc/hosts` for this.
+5. **Hostnames**:
+   The project uses `backend.localhost:8000` for this service. You can add entries to `/etc/hosts` if needed.
 
 ## Testing
 
@@ -138,7 +158,7 @@ AAuth uses HTTP Message Signatures (RFC 9421) to sign every request cryptographi
 
 ### Configuration
 
-Set these environment variables in your `.env` file:
+Set these environment variables in your `.env` file (or use preset `env.hwk` / `env.jwks`):
 
 ```bash
 # AAuth signature scheme: "hwk" (pseudonymous) or "jwks" (identified agent)
@@ -148,6 +168,13 @@ AAUTH_SIGNATURE_SCHEME=jwks
 # Used in Signature-Key header: scheme=jwks id="<BACKEND_AGENT_URL>" kid="..."
 BACKEND_AGENT_URL=http://backend.localhost:8000
 ```
+
+**CLI override**: When using `uv run .`, you can override the signature scheme without editing `.env`:
+```bash
+uv run . --signature-scheme jwks
+uv run . --signature-scheme hwk
+```
+The CLI option takes precedence over the environment variable.
 
 For **user-delegated AAuth** (consent flow, auth tokens, callback), see [docs/USER_DELEGATED_AAUTH.md](../docs/USER_DELEGATED_AAUTH.md) and [docs/AAUTH_CONFIGURATION.md](../docs/AAUTH_CONFIGURATION.md). Key backend variables: `AAUTH_CALLBACK_URL`, `AAUTH_FRONTEND_REDIRECT_URL`, `KEYCLOAK_AAUTH_ISSUER_URL`, `KEYCLOAK_AAUTH_AGENT_AUTH_ENDPOINT`.
 
@@ -216,7 +243,7 @@ These endpoints allow other agents to discover and fetch the backend's public ke
 
 ### Signature Schemes
 
-The backend supports two signature schemes (configurable via `AAUTH_SIGNATURE_SCHEME`):
+The backend supports two signature schemes (configurable via `AAUTH_SIGNATURE_SCHEME` env var or `--signature-scheme` CLI option):
 
 1. **HWK (Header Web Key)** - Pseudonymous authentication
    - Public key embedded directly in `Signature-Key` header
@@ -263,6 +290,7 @@ The backend uses:
 
 ```
 backend/
+├── __main__.py              # Entry point for `uv run .` (parses CLI options)
 ├── app/
 │   ├── __init__.py
 │   ├── main.py              # FastAPI application + AAuth JWKS endpoints
@@ -281,8 +309,12 @@ backend/
 │       ├── aauth_interceptor.py  # AAuth signing interceptor (OUTGOING)
 │       ├── a2a_service.py  # A2A client service
 │       └── keycloak_service.py # Keycloak integration
-├── requirements.txt
-├── run_server.py            # Startup script
+├── env.example              # Example env file (copy to .env)
+├── env.hwk                  # Preset for HWK signature scheme
+├── env.jwks                 # Preset for JWKS signature scheme
+├── pyproject.toml           # Dependencies and project config
+├── run_server.py            # Alternative entry (no CLI options)
+├── uv.lock                  # Locked dependencies
 └── README.md
 ```
 

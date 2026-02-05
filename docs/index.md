@@ -1,13 +1,27 @@
 ---
 layout: default
-title: Exploring AAuth for Agent Identity
+title: Exploring AAuth for Agent Identity and Access Management
 ---
 
-# Exploring AAuth for Agent Identity
+# Exploring AAuth for Agent Identity and Access Management
 
-Documentation for the AAuth (Agent-to-Agent Authentication) full demo.
+Digging into Agent Auth (AAuth).
 
-## Documentation
+## AAuth Flows
+
+This set of resources will walk you through various flows with detailed Header/Payload examples so the sequence diagrams from the AAuth exploratory draft are illustrated concretely. 
+
+1. [Header Web Key (HWK) for Pseudonymous Access](flow-01-hwk.md)
+2. [Json Web Keys (JWKS) for Identified Access / Agent Identity](flow-02-jwks.md)
+4. [Identified Access with Authorization](flow-03-authz.md)
+4. [User Consent with Identified Access with Authorization](flow-04-user.md)
+5. [Authorization Token Exchange](flow-05-token-ex.md)
+6. [Delegated Agent Identity](flow-06-delegated.md)
+
+
+## Full Demo
+
+This set of resources walks you through set up and evaluation of AAuth with a real Identity Provider (Keycloak), Agentgateway, and libraries to support AAuth in multiple languages (Java, Python, Rust). 
 
 1. [Overview of AAuth protocol](overview-aauth.md)
 2. [AAuth with Keycloak and Agentgateway](install-aauth-keycloak.md)
@@ -16,3 +30,9 @@ Documentation for the AAuth (Agent-to-Agent Authentication) full demo.
 5. [Agent authorization (autonomous)](agent-authorization-autonomous.md)
 6. [Agent authorization (on behalf of)](agent-authorization-on-behalf-of.md)
 7. [Apply policy with AgentGateway](apply-policy-agentgateway.md)
+
+## AAuth Libraries
+
+1. [Java Library]()
+2. [Python Library]()
+3. [Rust Library]()
