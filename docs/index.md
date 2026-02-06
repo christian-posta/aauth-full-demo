@@ -5,7 +5,7 @@ title: Exploring AAuth for Agent Identity and Access Management (IAM)
 
 # Exploring AAuth for Agent IAM
 
-Agent Auth (AAuth -- pronounced "AY-awth") is an [exploratory spec for agent identity and access management](https://github.com/dickhardt/agent-auth) from [Dick Hardt](https://github.com/dickhardt) who [authored OAuth 2.0](https://datatracker.ietf.org/doc/html/rfc6749) and co-author of [OAuth 2.1](https://github.com/oauth-wg/oauth-v2-1/blob/main/draft-ietf-oauth-v2-1.md). 
+[Agent Auth](https://github.com/dickhardt/agent-auth) (AAuth -- pronounced "AY-awth") is an exploratory spec for agent identity and access management from [Dick Hardt](https://github.com/dickhardt) who [authored OAuth 2.0](https://datatracker.ietf.org/doc/html/rfc6749) and co-author of [OAuth 2.1](https://github.com/oauth-wg/oauth-v2-1/blob/main/draft-ietf-oauth-v2-1.md). 
 
 ## Intro: Digging in to AAuth Flows
 
@@ -25,7 +25,7 @@ The source code for this section can be found on GitHub: [https://github.com/chr
 
 ## Full Working Demo with Keycloak and Agentgateway
 
-This set of resources walks you through set up and evaluation of AAuth with a real Identity Provider (Keycloak), Agentgateway, and libraries to support AAuth in multiple languages (Java, Python, Rust). 
+This set of resources walks you through set up and evaluation of a realistic AAuth implementation with Identity Provider (Keycloak), Agentgateway, and libraries to support AAuth in multiple languages (Java, Python, Rust). 
 
 The source code for this section can be found in GitHub: [https://github.com/christian-posta/aauth-full-demo](https://github.com/christian-posta/aauth-full-demo)
 
