@@ -26,7 +26,7 @@ This section walks through various flows with detailed Header/Payload examples s
 This set of resources walks you through set up and evaluation of AAuth with a real Identity Provider (Keycloak), Agentgateway, and libraries to support AAuth in multiple languages (Java, Python, Rust). 
 
 1. [AAuth with Keycloak and Agentgateway](install-aauth-keycloak.md)
-2. [Agent Identity (agent server) with JWKS](agent-identity-jwks.md)
+2. [Agent Identity with JWKS](agent-identity-jwks.md)
 3. [Agent authorization (autonomous flow)](agent-authorization-autonomous.md)
 4. [Agent authorization (user consent)](agent-authorization-on-behalf-of.md)
 5. [Apply policy with AgentGateway](apply-policy-agentgateway.md)

@@ -166,5 +166,6 @@ The Agentgateway (and the agents in this demo) is configured to send tracing spa
 ```
 
 
-At this point we can proceed with the demo. 
+At this point we can [proceed with the demo](./agent-identity-jwks.md). 
 
+[← Back to index](index.md)
