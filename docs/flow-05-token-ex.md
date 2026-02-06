@@ -4,17 +4,13 @@ title: Token Exchange for Cross Identity Trust Domain and On Behalf Of
 ---
 
 
-In the previous posts, we covered how agents obtain authorization through [direct issuance](./flow-03-authz.md) or [user consent](./flow-04-user-consent.md). But what happens when a resource needs to call *another* resource to fulfill a request? This post covers how [AAuth](https://github.com/dickhardt/agent-auth) enables multi-hop authorization through **token exchange** while maintaining cryptographic proof of the delegation chain.
+In the previous posts, we covered how agents obtain authorization through [direct issuance](./flow-03-authz.md) or [user consent](./flow-04-user-consent.md). But what happens when a resource needs to call *another* resource to fulfill a request? The resource could be in its same trust domain, or in a different one. This post covers how [AAuth](https://github.com/dickhardt/agent-auth) enables multi-hop authorization through **token exchange** while maintaining cryptographic proof of the delegation chain.
 
 [← Back to index](index.md)
 
 ## When Resources Become Agents
 
-In traditional OAuth, resources are endpoints—they receive tokens and serve data. But real-world systems are rarely that simple. A resource often needs to call other services:
-
-- A market data aggregator calls multiple exchange APIs
-- A document service fetches from storage and runs through a summarization service  
-- A supply chain portal queries inventory, shipping, and pricing systems
+In traditional OAuth, resources are endpoints. They receive tokens and serve data. But real-world systems are rarely that simple. A resource often needs to call other services. For example a company's supply chain portal may need to query other systems such as inventory, shipping, or pricing systems.
 
 When a resource needs to access a downstream resource on behalf of an agent, it must prove:
 
@@ -22,7 +18,7 @@ When a resource needs to access a downstream resource on behalf of an agent, it 
 2. **The authorization chain** (this request ultimately traces back to an authorized agent)
 3. **The delegated authority** (the resource is acting within the bounds of the original authorization)
 
-AAuth handles this through **token exchange**—a mechanism for resources to obtain new auth tokens bound to their own keys while preserving the delegation chain.
+AAuth handles this through **token exchange** which is a mechanism for resources to obtain new auth tokens bound to their own keys while preserving the delegation chain.
 
 ## The Token Exchange Flow
 
@@ -138,15 +134,15 @@ Two critical elements in this request:
 
 2. **`Signature-Key: sig1=(scheme=jwt jwt="...")`**: Resource `important.resource.com` presents the *upstream* auth token (the one it received from Agent `agent.supply-chain.com`) as proof of its authority to make this exchange
 
-The upstream token is carried in the `Signature-Key` header itself. Resource `important.resource.com` signs the exchange request with the key bound in that upstream token—proving it's the legitimate holder of the upstream authorization.
+The upstream token is carried in the `Signature-Key` header itself. Resource `important.resource.com` signs the exchange request with the key bound in that upstream token, proving it's the legitimate holder of the upstream authorization.
 
 ### Phase 5: Auth Server `second-auth-server.com` Validates and Issues
 
 Auth Server `second-auth-server.com` performs multiple validations:
 
-1. **Validate the request signature**: Verify the HTTPSig using the key from the upstream auth token's `aud` claim. It will prove the target agent for this auth token is the one sending it. 
-2. **Validate the resource token**: Verify the signature using Resource `second.resource.com`'s published JWKS
-3. **Validate the upstream auth token**: Verify it was issued by Auth Server `auth-server.com` (which Auth Server `second-auth-server.com` must trust)
+1. **Validate the request signature**: Verify the HTTPSig using the key from the upstream auth token's `aud` claim. The claim will contain the intended resource/agent and we can use the normal JWKS key discovery based on that. Once we see the agent's JWKS we can validate the signature. 
+2. **Validate the upstream auth token**: Verify it was issued by Auth Server `auth-server.com` (which Auth Server `second-auth-server.com` must trust)
+3. **Validate the resource token**: Verify the signature using Resource `second.resource.com`'s published JWKS
 4. **Verify the chain**: Confirm the upstream token's `aud` matches the requester (Resource `important.resource.com`)
 5. **Authorize the exchange**: Evaluate whether this exchange is permitted given the upstream authorization
 

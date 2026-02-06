@@ -44,19 +44,21 @@ Agent delegation involves two roles:
 - **Agent server**: The authoritative identity holder at `https://agent.supply-chain.com`
   - Publishes JWKS at `/.well-known/aauth-agent`
   - Issues agent tokens to delegates
-  - Can also make signed requests directly (no agent token needed)
+  - Can also make signed requests directly (which is what we've seen so far in this series of posts)
+  - Basically acts as a "CA"
 
 - **Agent delegate**: An execution instance that receives an agent token
   - Server workloads (containers, serverless functions, microservices)
   - Mobile app installations (each with unique installation ID)
   - Desktop applications, CLI tools, edge devices
   - Each has its own signing key pair
+  - Still needs to authenticate itself to the agent server to get an agent token
 
 The delegation flow has three phases:
 
 ### Phase 1: Delegate Obtains Agent Token
 
-The delegate authenticates to the agent server and receives an agent token binding its key to the agent identity. **How the delegate authenticates is out-of-scope for the AAuth specification** - different deployments use different mechanisms:
+The delegate authenticates to the agent server and receives an agent token binding its ephemeral key to the agent identity. **How the delegate authenticates is out-of-scope for the AAuth specification** - but different deployments may use different mechanisms:
 
 - **Server workloads**: mTLS with SPIFFE certificates, cloud provider instance identity, Kubernetes service account tokens
 - **Mobile apps**: Platform attestation (iOS App Attest, Android Play Integrity)
@@ -88,7 +90,7 @@ The delegate provides:
 - **`sub`**: Delegate identifier (persists across key rotations)
 - **`cnf_jwk`**: The delegate's public key
 
-*Note: In production, this request would include authentication credentials (mTLS, bearer token, etc.) - the simple test omits this for clarity.*
+*Note: In production, this request would include authentication credentials (mTLS, bearer token, etc.) - this example flow omits this for clarity.*
 
 The agent server issues an agent token:
 
@@ -112,6 +114,11 @@ Content-Type: application/json
 The agent token is a JWT with these claims:
 
 ```json
+{
+  "alg": "EdDSA",
+  "kid": "key-1",
+  "typ": "agent+jwt"
+}
 {
   "iss": "https://agent.supply-chain.com",
   "sub": "delegate-1",
@@ -138,7 +145,7 @@ The delegate now has cryptographic proof: "I am delegate-1 of agent https://agen
 
 ### Phase 2: Delegate Accesses Resources
 
-The delegate can now access resources using the agent token, presenting it via the `Signature-Key` header:
+The delegate can now access resources using the agent token to fulfill the Signature-Key / Signature with the jwt scheme, Basically the agent signs with its epheeral key and then presents the agent token to the receiver to verify the signature. Presenting it via the `Signature-Key` header:
 
 ```bash
 ================================================================================
