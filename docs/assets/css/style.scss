@@ -67,7 +67,15 @@
     }
   }
 
-  // Log output blocks: wrap long lines instead of horizontal scroll, with subtle highlight
+  // Callout: subtle highlight for commands, important snippets, etc.
+  .callout {
+    pre {
+      background-color: #f0f7ff;
+      border-left: 4px solid #0366d6;
+    }
+  }
+
+  // Log output: same as callout + wrap long lines instead of horizontal scroll
   .log-output {
     pre, pre code {
       white-space: pre-wrap;

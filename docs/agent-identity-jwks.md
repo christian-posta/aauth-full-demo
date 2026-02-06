@@ -20,6 +20,7 @@ We will run the Supply-Chain UI with the following:
 > cp env.example .env
 > npm start
 ```
+{: .callout}
 
 The supply-chain-ui is secured with OIDC and Keycloak. AAuth CAN replace OIDC in our demo, but I wanted to be more realistic in an enterprise setting. That is, most applications will be secured with SSO/OIDC but within our agent calls, we can use AAuth. 
 
