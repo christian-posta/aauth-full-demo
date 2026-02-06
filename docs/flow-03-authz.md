@@ -3,7 +3,7 @@ layout: default
 title: Identified Agent Authorization
 ---
 
-In the previous posts, we covered [pseudonymous access](./flow-01-hwk.md) and [identified access](./flow-02-jwks.md). An agent can now prove *who it is*, but that doesn't mean it's *authorized* to access protected resources. This post covers how AAuth handles authorization and how it helps with some of the previous assumptions around OAuth that no longer hold.
+In the previous posts, we covered [pseudonymous access](./flow-01-hwk.md) and [identified access](./flow-02-jwks.md). An agent can now prove *who it is*, but that doesn't mean it's *authorized* to access protected resources. This post covers how [AAuth](https://github.com/dickhardt/agent-auth) handles authorization and how it helps with some of the previous assumptions around OAuth that no longer hold.
 
 [← Back to index](index.md)
 

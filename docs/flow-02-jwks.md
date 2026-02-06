@@ -3,7 +3,7 @@ layout: default
 title: Agent Identity via JWKS
 ---
 
-AAuth supports **progressive authentication** levels: pseudonymous, identified, and authorized. This document covers the **identified** level where agents prove a stable, verifiable identity backed by cryptographic, discoverable keys.
+[AAuth](https://github.com/dickhardt/agent-auth) supports **progressive authentication** levels: pseudonymous, identified, and authorized. This document covers the **identified** level where agents prove a stable, verifiable identity backed by cryptographic, discoverable keys.
 
 [← Back to index](index.md)
 

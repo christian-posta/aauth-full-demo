@@ -3,7 +3,7 @@ layout: default
 title: Pseudonymous Bot Access
 ---
 
-AAuth supports **progressive authentication** levels: pseudonymous, identified, and authorized. This document covers the **pseudonymous** level—the lightest form of agent authentication.
+[AAuth](https://github.com/dickhardt/agent-auth) supports **progressive authentication** levels: pseudonymous, identified, and authorized. This document covers the **pseudonymous** level—the lightest form of agent authentication.
 
 [← Back to index](index.md)
 

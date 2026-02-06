@@ -1,15 +1,9 @@
 ---
 layout: default
 title: Agent Authorization With User Consent
-description: No identity, but TOFU
 ---
 
----
-layout: default
-title: Agent Authorization With User Consent
----
-
-In the [previous post](./flow-03-authz.md), we saw how an agent can obtain authorization when policy permits direct token issuance. But what happens when the auth server determines that **user consent is required**? This post covers how AAuth handles interactive consent flows while maintaining cryptographic binding throughout.
+In the [previous post](./flow-03-authz.md), we saw how an agent can obtain authorization when policy permits direct token issuance. But what happens when the auth server determines that **user consent is required**? This post covers how [AAuth](https://github.com/dickhardt/agent-auth) handles interactive consent flows while maintaining cryptographic binding throughout.
 
 [← Back to index](index.md)
 
