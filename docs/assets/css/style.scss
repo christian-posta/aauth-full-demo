@@ -67,6 +67,21 @@
     }
   }
 
+  // Log output blocks: wrap long lines instead of horizontal scroll, with subtle highlight
+  .log-output {
+    pre, pre code {
+      white-space: pre-wrap;
+      word-wrap: break-word;
+      overflow-wrap: break-word;
+      word-break: break-word;
+    }
+
+    pre {
+      background-color: #f0f7ff;
+      border-left: 4px solid #0366d6;
+    }
+  }
+
   table {
     th, td {
       padding: 0.75rem 1rem;

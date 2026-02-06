@@ -1,0 +1,13 @@
+<!-- Mermaid.js for rendering diagrams from markdown code blocks -->
+<script type="module">
+  import mermaid from 'https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.esm.min.mjs';
+  mermaid.initialize({ startOnLoad: false });
+  // Convert markdown ```mermaid code blocks (rendered as pre>code.language-mermaid) to Mermaid diagrams
+  document.querySelectorAll('pre > code.language-mermaid').forEach((codeBlock) => {
+    const wrapper = document.createElement('div');
+    wrapper.className = 'mermaid';
+    wrapper.textContent = codeBlock.textContent;
+    codeBlock.closest('pre').replaceWith(wrapper);
+  });
+  mermaid.run();
+</script>
