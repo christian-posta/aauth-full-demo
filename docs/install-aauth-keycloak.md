@@ -138,14 +138,14 @@ To get started with Agentgateway for this AAuth demo, you can [download the rele
 
 ```bash
 # Download Agentgateway binary (for macOS amd64) and rename to 'agentgateway'
-curl -L -o agentgateway https://github.com/christian-posta/agentgateway/releases/download/v0.11.3/agentgateway-darwin-amd64
-chmod +x agentgateway
+curl -L -o agw https://github.com/christian-posta/agentgateway/releases/download/v0.11.3/agentgateway-darwin-amd64
+chmod +x agw
 ```
 
 Now you can run agentgateway with configurations for this demo:
 
 ```bash
-./agentgateway -f ./agentgateway/config.yaml
+./agw -f ./agentgateway/config.yaml
 ```
 
 This configuration will rely on local routing by hostname. You can add this to your /etc/hosts:

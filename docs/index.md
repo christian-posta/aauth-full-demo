@@ -1,6 +1,6 @@
 ---
 layout: default
-title: Exploring AAuth for Agent Identity and Access Management
+title: Exploring AAuth for Agent Identity and Access Management (IAM)
 ---
 
 # Exploring AAuth for Agent IAM
@@ -25,16 +25,14 @@ This section walks through various flows with detailed Header/Payload examples s
 
 This set of resources walks you through set up and evaluation of AAuth with a real Identity Provider (Keycloak), Agentgateway, and libraries to support AAuth in multiple languages (Java, Python, Rust). 
 
-1. [Overview of AAuth protocol](overview-aauth.md)
-2. [AAuth with Keycloak and Agentgateway](install-aauth-keycloak.md)
-3. [Pseudonymous Agent](pseudonymous-agent.md)
-4. [Agent Identity with JWKS](agent-identity-jwks.md)
-5. [Agent authorization (autonomous)](agent-authorization-autonomous.md)
-6. [Agent authorization (on behalf of)](agent-authorization-on-behalf-of.md)
-7. [Apply policy with AgentGateway](apply-policy-agentgateway.md)
+1. [AAuth with Keycloak and Agentgateway](install-aauth-keycloak.md)
+2. [Agent Identity (agent server) with JWKS](agent-identity-jwks.md)
+3. [Agent authorization (autonomous flow)](agent-authorization-autonomous.md)
+4. [Agent authorization (user consent)](agent-authorization-on-behalf-of.md)
+5. [Apply policy with AgentGateway](apply-policy-agentgateway.md)
 
 ## AAuth Libraries
 
-1. [Java Library]()
-2. [Python Library]()
-3. [Rust Library]()
+1. [Java Library](https://github.com/christian-posta/keycloak/tree/ceposta-aauth/services/src/main/java/org/keycloak/protocol/aauth/signing)
+2. [Python Library](https://github.com/christian-posta/aauth-implementation/tree/main/aauth)
+3. [Rust Library](https://github.com/christian-posta/agentgateway/tree/ceposta-aauth-rust/crates/aauth)
