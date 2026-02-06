@@ -1,9 +1,9 @@
 ---
 layout: default
-title: Agent authorization (autonomous)
+title: Agent Authorization (Autonomous)
 ---
 
-# Agent Authorization (autonomous)
+# Agent Authorization (Autonomous)
 
 In this demo, we'll use Agent Identity Authorization provided by Keycloak [as described in details in this flow](./flow-03-authz.md). For the draft of [AAuth please visit the GitHub repo](https://github.com/dickhardt/agent-auth). 
 
@@ -23,35 +23,16 @@ If you have not started Jaeger [from the pre-requisites](./install-aauth-keycloa
 > ./run-jaeger.sh
 ```
 
-This will run Jaeger in a docker container. You should restart the `agentgateway`, `backend`, `supply-chain-agent` and `market-analysis-agent`. 
+This will run Jaeger in a docker container and exposed to the host on port `16686`. You should restart the `agentgateway`, `backend`, `supply-chain-agent` and `market-analysis-agent`. 
 
 
 ### Restart Some Components
 
 We will restart the `supply-chain-agent` and `market-analysis-agent` with new parameters to trigger the authorization challenge and flow. 
 
-<style>
-.run-tabs { margin: 1.5em 0; border: 1px solid #eaecef; border-radius: 6px; overflow: hidden; }
-.run-tabs input { display: none; }
-.run-tabs .tab-labels { display: flex; flex-wrap: wrap; background: #f6f8fa; border-bottom: 1px solid #eaecef; }
-.run-tabs .tab-labels label { padding: 0.5em 1em; cursor: pointer; font-size: 0.9em; margin: 0; }
-.run-tabs .tab-labels label:hover { background: #eaecef; }
-.run-tabs input:nth-of-type(1):checked ~ .tab-labels label:nth-of-type(1),
-.run-tabs input:nth-of-type(2):checked ~ .tab-labels label:nth-of-type(2),
-.run-tabs input:nth-of-type(3):checked ~ .tab-labels label:nth-of-type(3),
-.run-tabs input:nth-of-type(4):checked ~ .tab-labels label:nth-of-type(4) { background: #fff; border-bottom: 1px solid #fff; margin-bottom: -1px; font-weight: 600; }
-.run-tabs .tab-content { display: none; padding: 1em; background: #fff; }
-.run-tabs #tab-backend:checked ~ #content-backend,
-.run-tabs #tab-agentgateway:checked ~ #content-agentgateway,
-.run-tabs #tab-supply-chain:checked ~ #content-supply-chain,
-.run-tabs #tab-market-analysis:checked ~ #content-market-analysis { display: block; }
-.run-tabs .tab-content pre { margin: 0; }
-</style>
-
 <div class="run-tabs">
-  <input type="radio" name="run-tabs" id="tab-backend" checked>
-  <input type="radio" name="run-tabs" id="tab-agentgateway">
-  <input type="radio" name="run-tabs" id="tab-supply-chain">
+  
+  <input type="radio" name="run-tabs" id="tab-supply-chain" checked>
   <input type="radio" name="run-tabs" id="tab-market-analysis">
   <div class="tab-labels">
     <label for="tab-supply-chain">Supply-chain-agent</label>
@@ -60,12 +41,14 @@ We will restart the `supply-chain-agent` and `market-analysis-agent` with new pa
   <div class="tab-content" id="content-supply-chain">
     <p>From the <code>supply-chain-agent</code> directory:</p>
     <pre><code>
+      > cd supply-chain-agent
       > uv run . --signature-scheme jwks --authorization-scheme autonomous
     </code></pre>
   </div>
   <div class="tab-content" id="content-market-analysis">
     <p>From the <code>market-analysis-agent</code> directory:</p>
     <pre><code>
+      > cd market-analysis-agent
       > uv run . --signature-scheme jwks --authorization-scheme autonomous
     </code></pre>
   </div>

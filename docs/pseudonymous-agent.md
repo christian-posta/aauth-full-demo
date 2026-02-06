@@ -33,24 +33,6 @@ See [Agent Identity with JWKS](agent-identity-jwks.md) for the identified agent 
 
 Run each component in a separate terminal. From each directory:
 
-<style>
-.run-tabs { margin: 1.5em 0; border: 1px solid #eaecef; border-radius: 6px; overflow: hidden; }
-.run-tabs input { display: none; }
-.run-tabs .tab-labels { display: flex; flex-wrap: wrap; background: #f6f8fa; border-bottom: 1px solid #eaecef; }
-.run-tabs .tab-labels label { padding: 0.5em 1em; cursor: pointer; font-size: 0.9em; margin: 0; }
-.run-tabs .tab-labels label:hover { background: #eaecef; }
-.run-tabs input:nth-of-type(1):checked ~ .tab-labels label:nth-of-type(1),
-.run-tabs input:nth-of-type(2):checked ~ .tab-labels label:nth-of-type(2),
-.run-tabs input:nth-of-type(3):checked ~ .tab-labels label:nth-of-type(3),
-.run-tabs input:nth-of-type(4):checked ~ .tab-labels label:nth-of-type(4) { background: #fff; border-bottom: 1px solid #fff; margin-bottom: -1px; font-weight: 600; }
-.run-tabs .tab-content { display: none; padding: 1em; background: #fff; }
-.run-tabs #tab-backend:checked ~ #content-backend,
-.run-tabs #tab-agentgateway:checked ~ #content-agentgateway,
-.run-tabs #tab-supply-chain:checked ~ #content-supply-chain,
-.run-tabs #tab-market-analysis:checked ~ #content-market-analysis { display: block; }
-.run-tabs .tab-content pre { margin: 0; }
-</style>
-
 <div class="run-tabs">
   <input type="radio" name="run-tabs" id="tab-backend" checked>
   <input type="radio" name="run-tabs" id="tab-agentgateway">
