@@ -171,6 +171,20 @@ We can see that agentgateway also verified the agent's identity and added some o
 
 This flow from the UI (just clicking the button) doesn't trigger the `market-analysis-agent` but if we type "perform market analysis" in the UI prompt text box it will. And since all of the components are configured for AAuth JWKS agent identity, you should see the `supply-chain-agent` call the `market-analysis-agent` in that flow. Check the logs to verify. 
 
+
+## Summary: End-to-End Flow Diagram
+
+The following diagram summarizes the complete Agent Identity with JWKS flow described above:
+
+```mermaid
+flowchart LR
+    UI[UI] --> BE[Backend] --> AGW[Agentgateway] --> SCA[Supply-Chain Agent]
+    SCA -.->|fetch JWKS to verify| BE
+```
+
+**Key:** Backend signs with JWKS → Agentgateway verifies → Supply-Chain Agent fetches Backend's JWKS to verify identity.
+
+
 [In the next post](./agent-authorization-autonomous.md), we'll look at how the [AAuth authorization flow works](./flow-03-authz.md) in this demo!
 
 [← Back to index](index.md)

@@ -13,18 +13,6 @@ In this demo, we'll use Agent Identity Authorization provided by Keycloak [as de
 
 To run this demo, [please set up the prerequisites](./install-aauth-keycloak.md) (Keycloak, Agentgateway, Jaeger). 
 
-We will build on the [previous post](./agent-identity-jwks.md) which starts the demo components. We'll add Jaeger tracing for this demo. 
-
-### Running Jaeger Tracing
-
-If you have not started Jaeger [from the pre-requisites](./install-aauth-keycloak.md), go to the `./agentgateway` folder of [this source code](https://github.com/christian-posta/aauth-full-demo) and run the following:
-
-```bash
-> ./run-jaeger.sh
-```
-
-This will run Jaeger in a docker container and exposed to the host on port `16686`. You should restart the `agentgateway`, `backend`, `supply-chain-agent` and `market-analysis-agent`. 
-
 
 ### Restart Some Components
 
@@ -197,6 +185,19 @@ If you scroll farther down, you'll see the call eventually succeeds with a valid
 
 ![](./images/jaeger-4.png)
 
+
+## Summary: Authorization Flow Diagram
+
+```mermaid
+flowchart LR
+    BE[Backend] -->|1. Signed request| AGW[Agentgateway] --> SCA[Supply-Chain Agent]
+    SCA -->|2. 401 + resource_token| BE
+    BE -->|3. Exchange for auth_token| KC[Keycloak]
+    KC -->|4. auth_token| BE
+    BE -->|5. Retry with auth_token| AGW --> SCA
+```
+
+**Key:** Supply-Chain Agent challenges with resource_token → Backend exchanges it at Keycloak for auth_token → Retry succeeds with JWT authorization.
 
 [In the next post](./agent-authorization-on-behalf-of.md), we'll look at how [AAuth authorization works when it requires User consent](./flow-04-authz.md) in this demo! Specifically, how do we tie the OIDC login to a user-consent needed by the AAuth protocol? [Head to the next section](./agent-authorization-on-behalf-of.md)
 
