@@ -3,14 +3,17 @@ layout: default
 title: Agent authorization (on behalf of)
 ---
 
-# Agent authorization (on behalf of)
+# Agent authorization (with User Consent)
+
+In this demo, we'll explore how Agent Identity Authorization works when user consent is required. This builds on the [autonomous authorization flow](./agent-authorization-autonomous.md) but adds a critical dimension: user delegation. When an agent needs to act on behalf of a user, the authorization server (Keycloak) ensures the user explicitly grants permission.
 
 [← Back to index](index.md)
 
-things we need to do:
+## Set up Keycloak to Require Consent
 
-make sure to set up the consent scopes with the script
-- with keycloak running, we need to do:
+First, we need to tell Keycloak which scopes require user consent. With Keycloak running, execute the consent configuration script:
+
+
 ```bash
 ./keycloak/set_aauth_consent_attributes.sh 
 
@@ -34,9 +37,10 @@ What would you like to do?
 
 Choice [1-7]: 
 ```
-Choose `1` and then for the scope we need user consent for, add `supply-chain:optimize`
 
-It should look like this:
+
+Choose `1` for scopes only, then configure `supply-chain:optimize` as a scope requiring user consent:
+
 
 ```bash
 Choice [1-7]: 1
@@ -70,46 +74,95 @@ Non-interactive usage:
   ./keycloak/set_aauth_consent_attributes.sh http://localhost:8080 aauth-test admin admin
 ```
 
+Now restart the `supply-chain-agent` with user-delegated authorization:
+
+<div class="run-tabs">
+  
+  <input type="radio" name="run-tabs" id="tab-supply-chain" checked>
+  <input type="radio" name="run-tabs" id="tab-market-analysis">
+  <div class="tab-labels">
+    <label for="tab-supply-chain">Supply-chain-agent</label>
+    <label for="tab-market-analysis">Market-analysis</label>
+  </div>
+  <div class="tab-content" id="content-supply-chain">
+    <p>From the <code>supply-chain-agent</code> directory:</p>
+    <pre><code>
+      > cd supply-chain-agent
+      > uv run . --signature-scheme jwks --authorization-scheme user-delegated
+    </code></pre>
+  </div>
+  <div class="tab-content" id="content-market-analysis">
+    <p>From the <code>market-analysis-agent</code> directory:</p>
+    <pre><code>
+      > cd market-analysis-agent
+      > uv run . --signature-scheme jwks --authorization-scheme autonomous
+    </code></pre>
+  </div>
+</div>
 
 
+Navigate to the UI and click "Optimize Laptop Supply Chain". The flow now includes an additional step for user consent:
 
-restart the servers with user-consent
-SCA:
+```mermaid
+sequenceDiagram
+  participant UI as UI
+  participant BE as Backend
+  participant KC as Keycloak
+  participant SCA as Supply-Chain Agent
 
-```bash
-uv run . --signature-scheme jwks --authorization-scheme user-delegated
+  UI->>BE: 1. User clicks "Optimize Laptop Supply Chain"
+  BE->>SCA: 2. POST /optimize (signed request)
+  SCA-->>BE: 3. 401 + resource_token
+  BE->>KC: 4. Exchange resource_token
+  KC-->>BE: 5. request_token (consent required)
+  BE-->>UI: 6. Return request_token
+  UI->>KC: 7. User consent flow
+  KC-->>UI: 8. consent_token
+  UI->>BE: 9. Submit consent_token
+  BE->>KC: 10. Exchange consent_token for auth_token
+  KC-->>BE: 11. auth_token (with sub + agent)
+  BE->>SCA: 12. Retry with auth_token
+  SCA-->>BE: 13. Success
 ```
 
 
-Go back to UI (login/refresh if needed) and hit the Button "Optimize Laptop Supply Chain":
+## Step By Step
 
+### 1. Initial Request Fails (401)
 
+When the `backend` calls the `supply-chain-agent`, it receives a 401 with a resource token (same as autonomous flow):
 
-
-explain the relationship to OIDC
-
-show JWTs with sub / agent 
-
-
-Backend gets the 401, starts the auth flow, and Keycloak detects this is asking for scopes that require user cosnent, so send back the request token which triggers user consent flow in the Agent/UI:
 
 ```bash
 INFO:aauth.tokens:🔐 401 from supply-chain-agent (url=http://supply-chain-agent.localhost:3000): headers={'date': 'Sat, 07 Feb 2026 16:56:35 GMT', 'server': 'uvicorn', 'agent-auth': 'httpsig; auth-token; resource_token="eyJhbGciOiJFZERTQSIsImtpZCI6InN1cHBseS1jaGFpbi1hZ2VudC1lcGhlbWVyYWwtMSIsInR5cCI6InJlc291cmNlK2p3dCJ9.eyJpc3MiOiJodHRwOi8vc3VwcGx5LWNoYWluLWFnZW50LmxvY2FsaG9zdDozMDAwIiwiYXVkIjoiaHR0cDovL2xvY2FsaG9zdDo4MDgwL3JlYWxtcy9hYXV0aC10ZXN0IiwiYWdlbnQiOiJodHRwOi8vYmFja2VuZC5sb2NhbGhvc3Q6ODAwMCIsImFnZW50X2prdCI6IlVDaWE5dEpNV3lEMWZPMGlhV1YxV2NzQmRaQzIwb0E5MVZYLS1VY2NXM0UiLCJleHAiOjE3NzA0ODM2OTYsInNjb3BlIjoic3VwcGx5LWNoYWluOm9wdGltaXplIG1hcmtldC1hbmFseXNpczphbmFseXplIn0.jHesCOn3qIXke_aAe3VrIzS7RbLhW9_rMRfLNqVeMDC9YZl16a1RvOEELHiy0wXA-Cy7y3CUzW7t5N_FbxgiCA"; auth_server="http://localhost:8080/realms/aauth-test"', 'content-length': '22', 'content-type': 'text/plain; charset=utf-8'}
-INFO:aauth.tokens:🔐 Received resource_token from 401 (supply-chain-agent): eyJhbGciOiJFZERTQSIsImtpZCI6InN1cHBseS1jaGFpbi1hZ2VudC1lcGhlbWVyYWwtMSIsInR5cCI6InJlc291cmNlK2p3dCJ9.eyJpc3MiOiJodHRwOi8vc3VwcGx5LWNoYWluLWFnZW50LmxvY2FsaG9zdDozMDAwIiwiYXVkIjoiaHR0cDovL2xvY2FsaG9zdDo4MDgwL3JlYWxtcy9hYXV0aC10ZXN0IiwiYWdlbnQiOiJodHRwOi8vYmFja2VuZC5sb2NhbGhvc3Q6ODAwMCIsImFnZW50X2prdCI6IlVDaWE5dEpNV3lEMWZPMGlhV1YxV2NzQmRaQzIwb0E5MVZYLS1VY2NXM0UiLCJleHAiOjE3NzA0ODM2OTYsInNjb3BlIjoic3VwcGx5LWNoYWluOm9wdGltaXplIG1hcmtldC1hbmFseXNpczphbmFseXplIn0.jHesCOn3qIXke_aAe3VrIzS7RbLhW9_rMRfLNqVeMDC9YZl16a1RvOEELHiy0wXA-Cy7y3CUzW7t5N_FbxgiCA
-INFO:     127.0.0.1:53276 - "GET /.well-known/aauth-agent HTTP/1.1" 200 OK
-INFO:     127.0.0.1:53276 - "GET /jwks.json HTTP/1.1" 200 OK
-INFO:aauth.tokens:🔐 Received request_token from auth server (user consent required): 6cd2d825-158b-4efb-93da-f4e73a499d8a.1770483396.NmNkMmQ4MjUtMTU4Yi00ZWZiLTkzZGEtZjRlNzNhNDk5ZDhhOjE3NzA0ODMzOTY6aHR0cDovL2JhY2tlbmQubG9jYWxob3N0OjgwMDA
-INFO:     127.0.0.1:53268 - "POST /optimization/start HTTP/1.1" 200 OK
-INFO:     127.0.0.1:53302 - "GET /.well-known/aauth-agent HTTP/1.1" 200 OK
-INFO:     127.0.0.1:53302 - "GET /jwks.json HTTP/1.1" 200 OK
 ```
+{: .log-output}
 
-User is directed to review scope:
+### 2. Keycloak Detects Consent Required
+
+The backend exchanges the resource token at Keycloak. But this time, Keycloak recognizes that supply-chain:optimize requires user consent and returns a request_token instead of an auth_token:
+
+```bash
+INFO:aauth.tokens:🔐 Received request_token from auth server (user consent required): 6cd2d825-158b-4efb-93da-f4e73a499d8a.1770483396.NmNkMmQ4MjUtMTU4Yi00ZWZiLTkzZGEtZjRlNzNhNDk5ZDhhOjE3NzA0ODMzOTY6aHR0cDovL2JhY2tlbmQubG9jYWxob3N0OjgwMDA
+```
+{: .log-output}
+
+### 3. User Consent Screen
+
+The UI presents the consent screen to the user:
 
 ![](./images/user-consent.png)
 
+The user sees:
 
-supply chain ends up with this:
+* Which agent is requesting access (backend)
+* What scopes are being requested (supply-chain:optimize)
+* The ability to approve or deny
+
+
+### 4. Authorization Token with User Identity
+
+After the user approves, the backend exchanges the consent token for an auth_token. The supply-chain-agent receives:
 
 ```bash
 INFO:agent_executor:✅ AAuth signature verification successful
@@ -118,13 +171,10 @@ INFO:agent_executor:🔐 Auth token detected in request (scheme=jwt)
 INFO:httpx:HTTP Request: GET http://localhost:8080/realms/aauth-test/protocol/openid-connect/certs "HTTP/1.1 200 OK"
 INFO:agent_executor:✅ Auth token verified successfully
 INFO:agent_executor:✅ Authorization successful: auth_token verified for agent: http://backend.localhost:8000
-INFO:agent_executor:🔐 Extracted upstream auth_token for token exchange (length: 1037)
-INFO:agent_executor:🔐 Using AAuth JWKS signing for downstream agent calls
-INFO:agent_executor:🔐 Upstream auth_token available for token exchange if needed
-INFO:     127.0.0.1:53306 - "POST / HTTP/1.1" 200 OK
 ```
+{: .log-output}
 
-This is the token:
+If we decode the token:
 
 ```json
 {
@@ -147,8 +197,37 @@ This is the token:
 }
 ```
 
+## Compare to Autonomous Scheme
+
+Compare this to the [autonomous auth flow token](./agent-authorization-autonomous.md#walking-through-the-demo-flow):
+
+| Claim | Autonomous | User-Delegated | Meaning |
+|-------|-----------|----------------|---------|
+| **sub** | ❌ Not present | ✅ `"00b519e8..."` | **User identity** - who authorized this action |
+| **agent** | ✅ `"http://backend..."` | ✅ `"http://backend..."` | **Agent identity** - which agent is acting |
+| **cnf** | ✅ Bound to agent's key | ✅ Bound to agent's key | **Proof-of-possession** - only this agent can use the token |
 
 
-we should explain the token exchange step (or do this in another page?)
-show JWTs with sub / agent / act
+## How This Relates to OIDC
 
+If you're familiar with OAuth 2.0 and OpenID Connect, this pattern should feel familiar:
+
+- **OIDC login** establishes the user's identity (`sub` claim in ID token)
+- **User consent** grants the agent permission to act with specific scopes
+- **Auth token** carries both user identity (`sub`) and agent identity (`agent`)
+
+The key innovation of AAuth is **dual identity**:
+- Traditional OAuth: tokens represent either the user OR the application
+- AAuth: tokens represent the user AND the agent simultaneously
+
+This enables fine-grained audit trails: "User Alice authorized Backend Agent to optimize the supply chain at 4:56 PM on February 7th, 2026."
+
+## Summary
+
+Use autonomous mode when: Agents are acting on their own authority (background jobs, system tasks, agent-to-agent coordination).
+
+Use user-delegated mode when: Agents must act on behalf of a specific user (accessing user data, making decisions with user accountability, compliance requirements).
+
+In the next post, we'll explore token exchange and delegation chains - how agents can delegate to other agents while preserving the user's identity and consent.
+
+[← Back to index](index.md)
