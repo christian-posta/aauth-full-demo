@@ -48,7 +48,23 @@ At this point you're ready to return to the UI to review the demo flow:
 
 From the main UI page, if you click the `"Optimize Laptop Supply Chain"` button, it should kick off the flow for the backend components. You may need to refresh the page (some time the OIDC token / User session expires). 
 
-Let's take a look at what the `backend` logs look like:
+The flow we see will look like this:
+
+```mermaid
+sequenceDiagram
+  participant UI as UI
+  participant BE as Backend
+  participant SCA as Supply-Chain Agent
+
+  UI->>BE: 1. User clicks "Optimize Laptop Supply Chain"
+  BE->>SCA: 2. POST /optimize (with agent identity JWT/JWS)
+  SCA-->>BE: 3. 401 Unauthorized, returns Resource Token
+  BE->>SCA: 4. Retry POST /optimize with Resource Token (auth_token)
+  SCA-->>BE: 5. Response: Optimization in progress/result
+  BE-->>UI: 6. Return progress/result to user
+```
+
+When backend makes a call to supply-chain-agent, it will see a 401 and an "agent-auth" header. This header will have the resource token which binds the needed scopes (as determined by the resource) to the agent who's calling (backend in this case). Let's take a look at what the `backend` logs look like:
 
 ```bash
 INFO:aauth.tokens:🔐 401 from supply-chain-agent (url=http://supply-chain-agent.localhost:3000): headers={'date': 'Fri, 06 Feb 2026 22:12:49 GMT', 'server': 'uvicorn', 'agent-auth': 'httpsig; auth-token; resource_token="eyJhbGciOiJFZERTQSIsImtpZCI6InN1cHBseS1jaGFpbi1hZ2VudC1lcGhlbWVyYWwtMSIsInR5cCI6InJlc291cmNlK2p3dCJ9.eyJpc3MiOiJodHRwOi8vc3VwcGx5LWNoYWluLWFnZW50LmxvY2FsaG9zdDozMDAwIiwiYXVkIjoiaHR0cDovL2xvY2FsaG9zdDo4MDgwL3JlYWxtcy9hYXV0aC10ZXN0IiwiYWdlbnQiOiJodHRwOi8vYmFja2VuZC5sb2NhbGhvc3Q6ODAwMCIsImFnZW50X2prdCI6Il9YUHA3YmZNdDV1Z25yUnFBU1VuS2JaRW5rd2JrRmpwb01GQS1lemVYS3ciLCJleHAiOjE3NzA0MTYyNzAsInNjb3BlIjoic3VwcGx5LWNoYWluOm9wdGltaXplIn0.ZAUQNnQz76zSbp4XGRyST_K5b0wVavVys5sYIUKJwLWe6LnJqN6By-37jdXDuup5c9nGak3iXw1MlaqAIdkgDQ"; auth_server="http://localhost:8080/realms/aauth-test"', 'content-length': '22', 'content-type': 'text/plain; charset=utf-8'}
@@ -71,8 +87,6 @@ Here we can see that we got a `401` when `backend` tried to call `supply-chain-a
 ```
 
 Please see the [Authorization flow](./flow-03-authz.md) to understand these claims in more detail. To keep it short, this token proves that `backend` was trying to call `supply-chain-agent` and the scopes necessary to make this call. The `aud` for this is the Authorization Server (Keycloak in our demo) that the Agent trusts. 
-
-
 
 
 If we look at the logs for the `supply-chain-agent`, we can see JWKS was used to verify the agent's identity:

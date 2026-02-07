@@ -40,3 +40,4 @@ The source code for this section can be found in GitHub: [https://github.com/chr
 1. [Java Library](https://github.com/christian-posta/keycloak/tree/ceposta-aauth/services/src/main/java/org/keycloak/protocol/aauth/signing)
 2. [Python Library](https://github.com/christian-posta/aauth-implementation/tree/main/aauth)
 3. [Rust Library](https://github.com/christian-posta/agentgateway/tree/ceposta-aauth-rust/crates/aauth)
+4. [Keycloak AAuth SPI](https://github.com/christian-posta/keycloak-aauth-extension)
