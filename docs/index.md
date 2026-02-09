@@ -9,7 +9,7 @@ title: Exploring AAuth for Agent Identity and Access Management (IAM)
 
 ## Intro: Digging in to AAuth Flows
 
-This set of resources is intended to help you understand the AAuth protocol in concrete detail. 
+This set of resources is intended to help you understand the AAuth protocol in concrete detail. It is not a specification (see [AAuth](https://github.com/dickhardt/agent-auth) for the evolution of that). This is specificatlly a more detailed review of the spec with examples (as a result of me implementing this). 
 
 This section walks through various flows with detailed Header/Payload examples so the sequence diagrams from the AAuth exploratory draft are illustrated concretely. 
 
