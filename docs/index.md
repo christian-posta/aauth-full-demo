@@ -23,21 +23,28 @@ The source code for this section can be found on GitHub: [https://github.com/chr
 6. [Delegated Agent Identity](flow-06-delegated.md)
 
 
-## Full Working Demo with Keycloak and Agentgateway
+## Full Working Demo with Keycloak and Agentgateway (WIP)
+
+> 🚧 **Work in Progress**
+> This demo section is under active development and will be available in the next few days.
 
 This set of resources walks you through set up and evaluation of a realistic AAuth implementation with Identity Provider (Keycloak), Agentgateway, and libraries to support AAuth in multiple languages (Java, Python, Rust). 
 
 The source code for this section can be found in GitHub: [https://github.com/christian-posta/aauth-full-demo](https://github.com/christian-posta/aauth-full-demo)
 
-1. [AAuth with Keycloak and Agentgateway](install-aauth-keycloak.md)
-2. [Agent Identity with JWKS](agent-identity-jwks.md)
-3. [Agent authorization (autonomous flow)](agent-authorization-autonomous.md)
-4. [Agent authorization (user consent)](agent-authorization-on-behalf-of.md)
-5. [Apply policy with AgentGateway](apply-policy-agentgateway.md)
+1. AAuth with Keycloak and Agentgateway
+2. Agent Identity with JWKS
+3. Agent authorization (autonomous flow)
+4. Agent authorization (user consent)
+5. Token Exchange for Auth propagation (OBO)
+6. Apply policy with AgentGateway
 
-## AAuth Libraries
+
+## AAuth Implementation Resources
 
 1. [Java Library](https://github.com/christian-posta/keycloak/tree/ceposta-aauth/services/src/main/java/org/keycloak/protocol/aauth/signing)
 2. [Python Library](https://github.com/christian-posta/aauth-implementation/tree/main/aauth)
 3. [Rust Library](https://github.com/christian-posta/agentgateway/tree/ceposta-aauth-rust/crates/aauth)
 4. [Keycloak AAuth SPI](https://github.com/christian-posta/keycloak-aauth-extension)
+5. [Agentgateway AAuth Impl](https://github.com/christian-posta/agentgateway/tree/ceposta-aauth-rust)
+6. [Agentgateway AAuth Release](https://github.com/christian-posta/agentgateway/releases/tag/v0.11.3)
