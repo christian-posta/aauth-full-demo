@@ -1,8 +1,9 @@
 title: AAuth Demo Documentation
 description: User-delegated AAuth flow, configuration, and multi-hop token exchange
-# For project pages: baseurl = "/repo-name", url = "https://username.github.io"
+# For project pages: baseurl = "/repo-name"
+# Use custom domain for canonical URLs in sitemap (blog.christianposta.com)
 baseurl: "/aauth-full-demo"
-url: "https://christian-posta.github.io"
+url: "https://blog.christianposta.com"
 
 theme: jekyll-theme-cayman
 show_downloads: false
@@ -20,6 +21,8 @@ kramdown:
 
 plugins:
   - jekyll-relative-links
+  - jekyll-sitemap
+  - jekyll-seo-tag
 relative_links:
   enabled: true
   collections: true
