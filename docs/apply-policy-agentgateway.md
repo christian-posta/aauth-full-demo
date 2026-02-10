@@ -35,15 +35,30 @@ sequenceDiagram
     AGW-->>Client: 6. Response
 ```
 
-## AAuth Policy Configuration
-
-Let's examine the key sections of the Agentgateway configuration for AAuth policy enforcement. You can see the [full configuration](https://github.com/christian-posta/aauth-full-demo/blob/main/agentgateway/config-policy.yaml) in the source code of this documentation. 
+## Running with Policy Enforcement
 
 If you've [followed the pre-requisites](./install-aauth-keycloak.md) for this demo, you can change the `Agentgateway` command to the following:
 
 ```bash
-./agw -f ./agentgateway/config-policy.yaml
+> cd Agentgateway
+> ./agw -f config-policy.yaml
 ```
+
+Watch the Agentgateway logs to see policy enforcement:
+
+```bash
+info request aauth.scheme=Jwt aauth.agent=http://supply-chain-agent.localhost:3000
+     jwt_act={agent:http://backend.localhost:8000,sub:00b519e8-f409...}
+     authenticated=true user_id=mcp-user http.status=200
+```
+{: .log-output}
+
+Let's take a look at the configuration:
+
+## AAuth Policy Configuration
+
+Let's examine the key sections of the Agentgateway configuration for AAuth policy enforcement. You can see the [full configuration](https://github.com/christian-posta/aauth-full-demo/blob/main/agentgateway/config-policy.yaml) in the source code of this documentation. 
+
 
 ### 1. Observability: Logging and Tracing
 
@@ -246,29 +261,7 @@ binds:
       - host: localhost:9999
 ```
 
-## Running with Policy Enforcement
 
-To see policy enforcement in action, restart Agentgateway with the policy configuration:
-
-```bash
-> cd Agentgateway
-> ./agw -f config-policy.yaml
-```
-
-Then run the demo flows from previous posts:
-1. [Agent Identity with JWKS](./agent-identity-jwks.md) - See signature verification
-2. [Autonomous Authorization](./agent-authorization-autonomous.md) - See scope checking
-3. [User-Delegated Authorization](./agent-authorization-on-behalf-of.md) - See user identity in logs
-4. [Token Exchange](./agent-token-exchange.md) - See `act` claim validation
-
-Watch the Agentgateway logs to see policy enforcement:
-
-```bash
-info request aauth.scheme=Jwt aauth.agent=http://supply-chain-agent.localhost:3000
-     jwt_act={agent:http://backend.localhost:8000,sub:00b519e8-f409...}
-     authenticated=true user_id=mcp-user http.status=200
-```
-{: .log-output}
 
 ## Testing Policy Violations
 
