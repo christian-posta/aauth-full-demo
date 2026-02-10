@@ -1,0 +1,110 @@
+# yaml-language-server: $schema=../../schema/local.json
+config:
+  tracing:
+    otlpEndpoint: http://localhost:4317
+    randomSampling: true
+    fields:
+      add:
+        # Add JWT actor claim
+        authenticated: 'jwt.sub != null'
+        jwt_act: 'jwt.act'
+        user_id: 'jwt.name'
+        token_issuer: 'jwt.iss'
+        token_audience: 'jwt.aud'
+        aauth_scheme: 'aauth.scheme'
+        aauth_agent_identity: 'aauth.agent'
+        aauth_jwt_claims: 'aauth.jwt_claims'
+        response_headers: 'response.headers'
+        request_headers: 'request.headers'
+
+  logging:
+    fields:
+      add:
+        # Add JWT actor claim
+        authenticated: 'jwt.sub != null'
+        jwt_act: "jwt.act"
+        user_id: 'jwt.name'
+        token_issuer: 'jwt.iss'
+        token_audience: 'jwt.aud'
+        aauth_scheme: 'aauth.scheme'
+        aauth_agent_identity: 'aauth.agent'
+        sig_key: 'request.headers["signature-key"]'
+# CEL / authorization – You can use the same aauth fields in CEL, e.g.:
+# aauth.scheme == "Jwt"
+# aauth.agent == "https://agent.example.com"
+# aauth.agent_delegate (user/sub for auth+jwt)
+# aauth.jwt_claims (full JWT claims when scheme is JWT).        
+
+binds:
+- port: 3000
+  listeners:
+  - hostname: "supply-chain-agent.localhost"
+    routes:
+    - policies:
+        aauth:
+          mode: optional
+          requiredScheme: jwks
+          timestampTolerance: 60    
+        authorization:
+          rules:
+          - "aauth.agent == 'http://backend.localhost:8000' && (!has(aauth.jwt_claims) || (has(aauth.jwt_claims.aud) && aauth.jwt_claims.aud == 'http://supply-chain-agent.localhost:3000' && aauth.jwt_claims.scope.contains('supply-chain:optimize')))"
+          - "request.path.startsWith('/.well-known/')"
+          - "request.path.startsWith('/jwks.json')"
+
+        a2a: {}
+        backendAuth:
+          passthrough: {}
+        cors:
+          allowOrigins:
+            - "*"
+          allowHeaders:
+            - "*"
+      backends:
+      - host: localhost:9999
+
+  - hostname: "market-analysis-agent.localhost"
+    routes:
+    - policies:
+        # Mark this route as a2a traffic
+        aauth:
+          mode: optional
+          requiredScheme: jwks
+          timestampTolerance: 60            
+        a2a: {}
+        backendAuth:
+          passthrough: {}             
+        cors:
+          allowOrigins:
+            - "*"
+          allowHeaders:
+            - "*"
+      backends:
+      - host: localhost:9998      
+
+  - routes:
+    - name: general-mcp
+      matches:
+      - path:
+          pathPrefix: /general/mcp
+      policies:
+        cors:
+          allowOrigins:
+            - "*"
+          allowHeaders:
+            - "*"
+      backends:
+      - mcp:
+          targets:
+          - name: time
+            stdio:
+              cmd: uvx
+              args: ["mcp-server-time"]
+          - name: everything
+            stdio:
+              cmd: npx
+              args: ["@modelcontextprotocol/server-everything"]
+          - name: mcp-sequential-thinking
+            stdio:
+              cmd: npx
+              args: ["@modelcontextprotocol/server-sequential-thinking"]              
+    
