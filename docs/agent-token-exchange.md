@@ -9,6 +9,12 @@ In this demo, we'll explore how Agent Identity orks when user consent is require
 
 [← Back to index](index.md)
 
+## Watch the demo
+
+<div style="position: relative; padding-bottom: 56.25%; height: 0; overflow: hidden; max-width: 100%; margin: 1em 0;">
+  <iframe style="position: absolute; top: 0; left: 0; width: 100%; height: 100%;" src="https://www.youtube.com/embed/5CNeJZyeL_A" title="Agent Token Exchange Demo" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" allowfullscreen></iframe>
+</div>
+
 ## Token Exchange: Supply Chain Agent Calls Market Analysis Agent
 
 When the `supply-chain-agent` (SCA) receives the request from `backend`, it needs to call the `market-analysis-agent` (MAA) to get market data. But SCA is now acting as both a **resource** (receiving the backend's request) and an **agent** (making its own request to MAA). To do this, it must be authorized to act on behalf of the user so it will need to request a token exchange:

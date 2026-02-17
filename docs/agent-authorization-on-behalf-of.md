@@ -9,6 +9,12 @@ In this demo, we'll explore how Agent Identity Authorization works when user con
 
 [← Back to index](index.md)
 
+## Watch the demo
+
+<div style="position: relative; padding-bottom: 56.25%; height: 0; overflow: hidden; max-width: 100%; margin: 1em 0;">
+  <iframe style="position: absolute; top: 0; left: 0; width: 100%; height: 100%;" src="https://www.youtube.com/embed/J96tIVf8dVI" title="Agent authorization (on behalf of) Demo" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" allowfullscreen></iframe>
+</div>
+
 ## Set up Keycloak to Require Consent
 
 First, we need to tell Keycloak which scopes require user consent. With Keycloak running, execute the consent configuration script:
