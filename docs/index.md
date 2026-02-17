@@ -27,6 +27,8 @@ The source code for this section can be found on GitHub: [https://github.com/chr
 
 This set of resources walks you through set up and evaluation of a realistic AAuth implementation with Identity Provider (Keycloak), Agentgateway, and libraries to support AAuth in multiple languages (Java, Python, Rust). 
 
+![](./images/demo-flow.png)
+
 The source code for this section can be found in GitHub: [https://github.com/christian-posta/aauth-full-demo](https://github.com/christian-posta/aauth-full-demo)
 
 1. [AAuth with Keycloak and Agentgateway](install-aauth-keycloak.md)
