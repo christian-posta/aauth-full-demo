@@ -12,6 +12,9 @@ class AgentStatus(str, Enum):
 
 class OptimizationStatus(str, Enum):
     PENDING = "pending"
+    INTERACTION_REQUIRED = "interaction_required"
+    APPROVAL_PENDING = "approval_pending"
+    AUTHORIZING = "authorizing"
     RUNNING = "running"
     COMPLETED = "completed"
     FAILED = "failed"

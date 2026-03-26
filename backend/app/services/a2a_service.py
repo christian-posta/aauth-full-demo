@@ -2,7 +2,6 @@ import asyncio
 import json
 import uuid
 import os
-import re
 import logging
 from typing import AsyncGenerator, Dict, Any, Optional
 import httpx
@@ -17,6 +16,7 @@ from app.config import settings
 from app.models import OptimizationRequest, OptimizationProgress, OptimizationResults
 from app.tracing_config import span, add_event, set_attribute, extract_context_from_headers
 from app.services.aauth_interceptor import AAuthSigningInterceptor
+from app.services.aauth_protocol import parse_aauth_header
 from app.services.aauth_token_service import aauth_token_service
 
 # Configure logging
@@ -35,7 +35,7 @@ class A2AService:
             write=30.0,        # 30 seconds to write request
             pool=30.0          # 30 seconds for connection pool
         )
-        self._last_401_response = None  # Store last 401 response for Agent-Auth extraction
+        self._last_401_response = None
     
     async def _create_client(self, trace_context: Any = None, auth_token: str = None) -> tuple[Any, httpx.AsyncClient]:
         """Create A2A client and HTTP client with AAuth signing.
@@ -64,16 +64,12 @@ class A2AService:
             # Create httpx client with event hook to intercept 401 responses
             service_instance = self  # Capture self for use in closure
             async def response_hook(response: httpx.Response):
-                """Hook to intercept HTTP responses and extract Agent-Auth header from 401."""
+                """Hook to intercept HTTP responses and extract AAuth header from 401."""
                 if response.status_code == 401:
-                    # Always log 401 response headers when calling supply-chain-agent
                     token_logger.info(f"🔐 401 from supply-chain-agent (url={response.url}): headers={dict(response.headers)}")
-                    agent_auth_header = response.headers.get("Agent-Auth")
+                    agent_auth_header = response.headers.get("AAuth")
                     if agent_auth_header:
-                        # Store in service instance for later extraction
                         service_instance._last_401_response = response
-                        if settings.debug:
-                            logger.debug(f"🔐 Intercepted 401 with Agent-Auth header")
                         add_event("agent_auth_challenge_received", {
                             "has_agent_auth": bool(agent_auth_header)
                         })
@@ -145,9 +141,8 @@ class A2AService:
         Note: auth_token parameter is for AAuth auth_token (obtained from Keycloak AAuth endpoint),
         NOT the OIDC token. The OIDC token should NOT be passed here.
         
-        When in user-delegated mode and Keycloak returns request_token (consent required),
-        returns {type: "consent_required", consent_url, request_id} instead of retrying.
-        request_id is used as state in the consent URL and must be passed by the caller in that flow.
+        Returns direct success, or an interaction/approval pending state when the
+        auth server defers token issuance.
         """
         
         with span("a2a_service.optimize_supply_chain", {
@@ -250,168 +245,95 @@ class A2AService:
                         # Just get the first response for now
                         break
                 except httpx.HTTPStatusError as e:
-                    # Check if this is a 401 with Agent-Auth header
                     if e.response.status_code == 401:
-                        agent_auth_header = e.response.headers.get("Agent-Auth")
+                        agent_auth_header = e.response.headers.get("AAuth")
                         if agent_auth_header:
-                            if settings.debug:
-                                logger.debug(f"🔐 Received 401 with Agent-Auth challenge")
                             add_event("agent_auth_challenge_received", {
                                 "has_agent_auth": True
                             })
                         else:
-                            # 401 without Agent-Auth - re-raise
-                            raise
-                    else:
-                        # Other HTTP error - re-raise
-                        raise
-                except httpx.HTTPStatusError as e:
-                    # Check if this is a 401 with Agent-Auth header (duplicate handler - second never runs)
-                    if e.response.status_code == 401:
-                        agent_auth_header = e.response.headers.get("Agent-Auth")
-                        if agent_auth_header:
-                            if settings.debug:
-                                logger.debug(f"🔐 Detected 401 with Agent-Auth challenge from HTTPStatusError")
-                            add_event("agent_auth_challenge_detected", {
-                                "has_agent_auth": True
-                            })
-                        else:
-                            # 401 without Agent-Auth - re-raise
+                            # 401 without AAuth - re-raise
                             raise
                     else:
                         # Other HTTP error - re-raise
                         raise
                 except Exception as e:
-                    # Check if we stored a 401 response from the event hook
                     if self._last_401_response:
-                        agent_auth_header = self._last_401_response.headers.get("Agent-Auth")
+                        agent_auth_header = self._last_401_response.headers.get("AAuth")
                         if agent_auth_header:
-                            if settings.debug:
-                                logger.debug(f"🔐 Detected 401 with Agent-Auth challenge from stored response")
                             add_event("agent_auth_challenge_detected", {
                                 "has_agent_auth": True
                             })
-                            # Clear the stored response
                             self._last_401_response = None
                         else:
                             raise
                     else:
                         raise
                 
-                # Handle Agent-Auth challenge if present
                 if agent_auth_header:
-                    if settings.debug:
-                        logger.debug(f"🔐 Processing Agent-Auth challenge")
                     add_event("processing_agent_auth_challenge")
-                    
-                    # Parse Agent-Auth header to extract resource_token and auth_server
-                    # Format: httpsig; auth-token; resource_token="<jwt>"; auth_server="<url>"
-                    resource_token = None
-                    auth_server = None
-                    
-                    # Extract resource_token
-                    resource_token_match = re.search(r'resource_token="([^"]+)"', agent_auth_header)
-                    if resource_token_match:
-                        resource_token = resource_token_match.group(1)
-                    
-                    # Extract auth_server
-                    auth_server_match = re.search(r'auth_server="([^"]+)"', agent_auth_header)
-                    if auth_server_match:
-                        auth_server = auth_server_match.group(1)
-                    
+                    parsed_header = parse_aauth_header(agent_auth_header)
+                    resource_token = parsed_header.resource_token
+                    auth_server = parsed_header.auth_server
+
                     if resource_token:
-                        token_logger.info(f"🔐 Received resource_token from 401 (supply-chain-agent): {resource_token}")
-                        if settings.debug:
-                            logger.debug(f"🔐 Extracted resource_token (length: {len(resource_token)})")
-                            if auth_server:
-                                logger.debug(f"🔐 Auth server: {auth_server}")
-                        
                         add_event("resource_token_extracted", {
                             "has_resource_token": bool(resource_token),
                             "has_auth_server": bool(auth_server)
                         })
-                        
-                        # Request auth_token from Keycloak
-                        # redirect_uri must match backend callback (user-delegated) or is required by spec (autonomous)
-                        backend_agent_url = os.getenv("BACKEND_AGENT_URL", f"http://{settings.host}:{settings.port}")
-                        redirect_uri = f"{backend_agent_url.rstrip('/')}/auth/aauth/callback"
-                        
+
                         try:
                             token_result = await aauth_token_service.request_auth_token(
                                 resource_token=resource_token,
-                                redirect_uri=redirect_uri,
-                                state=request_id
+                                purpose=request.custom_prompt or request.effective_optimization_type,
                             )
-                            
-                            # User-delegated flow (SPEC 9.4): Keycloak may return request_token when consent is required
-                            if token_result.get("consent_required") and token_result.get("request_token"):
-                                consent_url = await aauth_token_service.get_consent_url(
-                                    request_token=token_result["request_token"],
-                                    redirect_uri=redirect_uri,
-                                    state=request_id,
-                                )
-                                if settings.debug:
-                                    logger.debug(f"🔐 Returning consent_required (do not retry)")
-                                add_event("consent_required_returned", {
-                                    "has_request_id": bool(request_id),
-                                })
+
+                            if token_result.get("status") == "interaction_required":
+                                await httpx_client.aclose()
                                 return {
-                                    "type": "consent_required",
-                                    "consent_required": True,
-                                    "consent_url": consent_url,
+                                    "type": "interaction_required",
                                     "request_id": request_id,
+                                    "pending_url": token_result.get("pending_url"),
+                                    "interaction_code": token_result.get("interaction_code"),
+                                    "interaction_endpoint": token_result.get("interaction_endpoint"),
+                                    "retry_after": token_result.get("retry_after", 0),
                                 }
-                            
+
+                            if token_result.get("status") == "approval_pending":
+                                await httpx_client.aclose()
+                                return {
+                                    "type": "approval_pending",
+                                    "request_id": request_id,
+                                    "pending_url": token_result.get("pending_url"),
+                                    "retry_after": token_result.get("retry_after", 0),
+                                }
+
                             auth_token = token_result.get("auth_token")
-                            refresh_token = token_result.get("refresh_token")
                             expires_in = token_result.get("expires_in", 3600)
-                            
+
                             if auth_token:
-                                if settings.debug:
-                                    logger.debug(f"✅ Received auth_token from Keycloak (expires in {expires_in}s)")
-                                    # Development: Log the actual token
-                                    logger.debug(f"🔐 AAuth Token: {auth_token}")
                                 add_event("auth_token_received", {
                                     "has_auth_token": True,
                                     "expires_in": expires_in
                                 })
-                                
-                                # Cache the token for future use
                                 agent_id = os.getenv("BACKEND_AGENT_URL", f"http://{settings.host}:{settings.port}")
                                 scope = "supply-chain:optimize"
-                                aauth_token_service._cache_token(
+                                aauth_token_service.cache_token(
                                     agent_id=agent_id,
                                     scope=scope,
                                     auth_token=auth_token,
-                                    refresh_token=refresh_token or "",
                                     expires_in=expires_in
                                 )
-                            
-                            # Retry the request with auth_token
-                            if settings.debug:
-                                logger.debug(f"🔄 RETRY: Retrying request with auth_token (scheme=JWT)")
-                                logger.debug(f"🔄 RETRY: Auth token length: {len(auth_token)}")
+
                             add_event("retrying_request_with_auth_token")
-                            
-                            # Close old client
                             await httpx_client.aclose()
-                            
-                            # Create new client with auth_token
-                            if settings.debug:
-                                logger.debug(f"🔄 RETRY: Creating new client with auth_token for JWT scheme")
                             client, httpx_client = await self._create_client(trace_context, auth_token)
-                            
-                            # Retry sending the message
+
                             async for event in client.send_message(message):
                                 response_count += 1
-                                if settings.debug:
-                                    logger.debug(f"📨 Received event #{response_count} (retry): {event}")
-                                
                                 add_event("agent_response_received_retry", {
                                     "event_number": response_count
                                 })
-                                
-                                # Get the response content
                                 if hasattr(event, 'content') and event.content:
                                     if isinstance(event.content, str):
                                         response_content = event.content
@@ -427,15 +349,11 @@ class A2AService:
                                 
                                 break
                         except Exception as token_error:
-                            if settings.debug:
-                                logger.debug(f"❌ Failed to get auth_token: {token_error}")
                             add_event("auth_token_request_failed", {"error": str(token_error)})
                             raise Exception(f"Failed to get auth_token: {token_error}")
                     else:
-                        if settings.debug:
-                            logger.debug(f"❌ Agent-Auth header missing resource_token")
                         add_event("agent_auth_missing_resource_token")
-                        raise Exception("Agent-Auth header missing resource_token")
+                        raise Exception("AAuth header missing resource-token")
                 
                 if response_content:
                     if settings.debug:

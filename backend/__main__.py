@@ -4,10 +4,10 @@ Entry point for running the backend with 'uv run .'
 This file allows the current directory to be executed as a Python package.
 
 CLI options (must be parsed before app imports):
-  --signature-scheme {hwk,jwks}  Override AAUTH_SIGNATURE_SCHEME (default: env or hwk)
+  --signature-scheme {hwk,jwks_uri}  Override AAUTH_SIGNATURE_SCHEME (default: env or hwk)
 
 Example:
-  uv run . --signature-scheme jwks
+  uv run . --signature-scheme jwks_uri
 """
 import argparse
 import os
@@ -16,7 +16,7 @@ import os
 parser = argparse.ArgumentParser(description="Supply Chain Backend")
 parser.add_argument(
     "--signature-scheme",
-    choices=["hwk", "jwks"],
+    choices=["hwk", "jwks_uri"],
     help="AAuth signature scheme (overrides AAUTH_SIGNATURE_SCHEME env; default: hwk)",
 )
 args, _ = parser.parse_known_args()

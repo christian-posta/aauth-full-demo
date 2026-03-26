@@ -58,7 +58,7 @@ This is the Python FastAPI backend for the Supply Chain Agent system. This backe
    - `env.hwk` – HWK (pseudonymous) scheme
    - `env.jwks` – JWKS (identified agent) scheme
    ```bash
-   cp env.jwks .env   # Use JWKS scheme
+   cp env.jwks .env   # Use JWKS_URI scheme
    ```
 
 3. **Run the server**:
@@ -70,7 +70,7 @@ This is the Python FastAPI backend for the Supply Chain Agent system. This backe
 
    **CLI options** (when using `uv run .`):
    ```bash
-   uv run . --signature-scheme jwks   # Use JWKS scheme (overrides .env)
+   uv run . --signature-scheme jwks_uri   # Use JWKS_URI scheme (overrides .env)
    uv run . --signature-scheme hwk    # Use HWK scheme (overrides .env)
    uv run . --help                    # Show all options
    ```
@@ -121,7 +121,7 @@ curl -X POST "http://localhost:8000/optimization/start" \
 
 ```bash
 # Get agent metadata
-curl http://localhost:8000/.well-known/aauth-agent
+curl http://localhost:8000/.well-known/aauth-agent.json
 
 {
   "agent": "http://backend.localhost:8000",
@@ -151,7 +151,7 @@ This backend implements AAuth signature-based authentication for agent-to-agent 
 
 ### How AAuth Works
 
-AAuth uses HTTP Message Signatures (RFC 9421) to sign every request cryptographically. When using the JWKS scheme:
+AAuth uses HTTP Message Signatures (RFC 9421) to sign every request cryptographically. When using the JWKS_URI scheme:
 
 1. **Signing (Outgoing Requests)**: The backend signs requests to downstream agents (like supply-chain-agent) with its identity
 2. **Verification (Incoming Requests)**: Downstream agents verify signatures by fetching the backend's JWKS and validating the signature
@@ -161,17 +161,17 @@ AAuth uses HTTP Message Signatures (RFC 9421) to sign every request cryptographi
 Set these environment variables in your `.env` file (or use preset `env.hwk` / `env.jwks`):
 
 ```bash
-# AAuth signature scheme: "hwk" (pseudonymous) or "jwks" (identified agent)
-AAUTH_SIGNATURE_SCHEME=jwks
+# AAuth signature scheme: "hwk" (pseudonymous) or "jwks_uri" (identified agent)
+AAUTH_SIGNATURE_SCHEME=jwks_uri
 
-# Agent identifier for JWKS scheme (HTTPS URL)
-# Used in Signature-Key header: scheme=jwks id="<BACKEND_AGENT_URL>" kid="..."
+# Agent identifier for JWKS_URI scheme (HTTPS URL)
+# Used in Signature-Key header: scheme=jwks_uri id="<BACKEND_AGENT_URL>" kid="..."
 BACKEND_AGENT_URL=http://backend.localhost:8000
 ```
 
 **CLI override**: When using `uv run .`, you can override the signature scheme without editing `.env`:
 ```bash
-uv run . --signature-scheme jwks
+uv run . --signature-scheme jwks_uri
 uv run . --signature-scheme hwk
 ```
 The CLI option takes precedence over the environment variable.
@@ -200,7 +200,7 @@ This is where outgoing requests to agents are signed. The `AAuthSigningIntercept
 - `public_key_to_jwk()` - Converts public key to JWK format with key ID
 - `sign_request()` - Signs HTTP requests with HTTP Message Signatures
 
-**Example for JWKS scheme**:
+**Example for JWKS_URI scheme**:
 ```python
 sig_headers = sign_request(
     method=method,
@@ -208,7 +208,7 @@ sig_headers = sign_request(
     headers=headers,
     body=body,
     private_key=self.private_key,
-    sig_scheme="jwks",
+    sig_scheme="jwks_uri",
     id=agent_id,  # Agent identifier URL
     kid=kid      # Key identifier
 )
@@ -220,14 +220,14 @@ sig_headers = sign_request(
 
 These endpoints allow other agents to discover and fetch the backend's public keys:
 
-- **Lines 89-100**: `/.well-known/aauth-agent` - Returns agent metadata with `agent` identifier and `jwks_uri`
+- **Lines 89-100**: `/.well-known/aauth-agent.json` - Returns agent metadata with `agent` identifier and `jwks_uri`
 - **Lines 102-110**: `/jwks.json` - Returns the JSON Web Key Set containing public signing keys
 
 **AAuth Library Functions Used**:
 - `generate_jwks()` - Generates JWKS document from list of JWKs
 
 **How it works**:
-1. When another agent receives a request signed with `scheme=jwks`, it extracts the `id` parameter from the `Signature-Key` header
+1. When another agent receives a request signed with `scheme=jwks_uri`, it extracts the `id` parameter from the `Signature-Key` header
 2. It fetches `{id}/.well-known/aauth-agent` to get metadata
 3. It extracts `jwks_uri` from the metadata
 4. It fetches the JWKS from `jwks_uri`
@@ -272,7 +272,7 @@ The project uses the `aauth` Python library. Key functions:
 - `generate_ed25519_keypair()` - Generate Ed25519 signing keypair
 - `public_key_to_jwk(public_key, kid)` - Convert public key to JWK format
 - `sign_request(method, target_uri, headers, body, private_key, sig_scheme, **kwargs)` - Sign HTTP request
-  - For JWKS: pass `sig_scheme="jwks"`, `id=agent_url`, `kid=key_id`
+  - For JWKS: pass `sig_scheme="jwks_uri"`, `id=agent_url`, `kid=key_id`
   - For HWK: pass `sig_scheme="hwk"` (no additional kwargs)
 - `generate_jwks([jwk1, jwk2, ...])` - Generate JWKS document from JWK list
 - `verify_signature(...)` - Verify HTTP Message Signature (used by receiving agents)
@@ -321,7 +321,7 @@ backend/
 ### Key Files for AAuth
 
 - **`app/services/aauth_interceptor.py`** - Signs outgoing requests to agents
-- **`app/main.py`** - Exposes JWKS endpoints (`/.well-known/aauth-agent`, `/jwks.json`)
+- **`app/main.py`** - Exposes JWKS endpoints (`/.well-known/aauth-agent.json`, `/jwks.json`)
 - **`app/services/a2a_service.py`** - Uses `AAuthSigningInterceptor` for agent calls
 
 
@@ -351,7 +351,7 @@ curl localhost:8080/realms/aauth-test/.well-known/aauth-issuer | jq
 
 
 ```bash
-curl http://supply-chain-agent.localhost:3000/.well-known/aauth-agent | jq
+curl http://supply-chain-agent.localhost:3000/.well-known/aauth-agent.json | jq
 
 {
   "agent": "http://supply-chain-agent.localhost:3000",

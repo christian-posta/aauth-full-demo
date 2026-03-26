@@ -3,10 +3,10 @@
 Supply Chain Agent - A2A HTTP Server
 
 CLI options (parsed before .env load; override env vars):
-  --signature-scheme {hwk,jwks}       Override AAUTH_SIGNATURE_SCHEME
+  --signature-scheme {hwk,jwks_uri}       Override AAUTH_SIGNATURE_SCHEME
   --authorization-scheme {autonomous,user-delegated,signature-only}  Override AAUTH_AUTHORIZATION_SCHEME
 
-Example: uv run . --signature-scheme jwks --authorization-scheme signature-only
+Example: uv run . --signature-scheme jwks_uri --authorization-scheme signature-only
 """
 import argparse
 import os
@@ -15,7 +15,7 @@ import os
 parser = argparse.ArgumentParser(description="Supply Chain Agent")
 parser.add_argument(
     "--signature-scheme",
-    choices=["hwk", "jwks"],
+    choices=["hwk", "jwks_uri"],
     help="AAuth signature scheme (overrides AAUTH_SIGNATURE_SCHEME env)",
 )
 parser.add_argument(
@@ -51,7 +51,7 @@ from agent_executor import (
     SupplyChainOptimizerExecutor,  # type: ignore[import-untyped]
 )
 from aauth_interceptor import get_signing_keypair
-from aauth import generate_jwks
+from aauth import generate_jwks, generate_agent_metadata, generate_resource_metadata
 from starlette.responses import JSONResponse
 
 # Initialize OpenTelemetry tracing
@@ -190,34 +190,30 @@ if __name__ == '__main__':
     print(f"🔐 Added HTTPHeadersCaptureMiddleware for AAuth header capture")
     
     # Add JWKS endpoints for AAuth signature verification
-    @app.route("/.well-known/aauth-agent", methods=["GET"])
+    @app.route("/.well-known/aauth-agent.json", methods=["GET"])
     async def aauth_agent_metadata(request):
-        """AAuth agent metadata endpoint per SPEC Section 8.1.
-        
-        Returns agent identifier and JWKS URI for JWKS signature scheme discovery.
-        This is used when the entity acts as an AGENT (making signed requests).
-        """
         agent_id_url = os.getenv("SUPPLY_CHAIN_AGENT_ID_URL", agent_url.rstrip('/'))
         jwks_uri = f"{agent_id_url.rstrip('/')}/jwks.json"
-        return JSONResponse({
-            "agent": agent_id_url,
-            "jwks_uri": jwks_uri
-        })
+        return JSONResponse(
+            generate_agent_metadata(
+                agent_id=agent_id_url,
+                jwks_uri=jwks_uri,
+                client_name="Supply Chain Optimizer Agent",
+            )
+        )
     
-    @app.route("/.well-known/aauth-resource", methods=["GET"])
+    @app.route("/.well-known/aauth-resource.json", methods=["GET"])
     async def aauth_resource_metadata(request):
-        """AAuth resource metadata endpoint per SPEC Section 8.2.
-        
-        Returns resource identifier and JWKS URI for resource token validation.
-        This is used when the entity acts as a RESOURCE (issuing resource tokens).
-        Keycloak fetches this to validate resource tokens issued by this agent.
-        """
         resource_id_url = os.getenv("SUPPLY_CHAIN_AGENT_ID_URL", agent_url.rstrip('/'))
         jwks_uri = f"{resource_id_url.rstrip('/')}/jwks.json"
-        return JSONResponse({
-            "resource": resource_id_url,
-            "jwks_uri": jwks_uri
-        })
+        return JSONResponse(
+            generate_resource_metadata(
+                resource_id=resource_id_url,
+                jwks_uri=jwks_uri,
+                client_name="Supply Chain Optimizer Agent",
+                additional_signature_components=["content-type", "content-digest"],
+            )
+        )
     
     @app.route("/jwks.json", methods=["GET"])
     async def jwks_endpoint(request):
@@ -230,6 +226,6 @@ if __name__ == '__main__':
         jwks = generate_jwks([public_jwk])
         return JSONResponse(jwks)
     
-    print(f"🔐 Added JWKS endpoints: /.well-known/aauth-agent, /.well-known/aauth-resource, and /jwks.json")
+    print(f"🔐 Added JWKS endpoints: /.well-known/aauth-agent.json, /.well-known/aauth-resource.json, and /jwks.json")
     
     uvicorn.run(app, host='0.0.0.0', port=port)

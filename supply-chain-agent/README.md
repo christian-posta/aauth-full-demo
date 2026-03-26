@@ -23,8 +23,8 @@ cp env.example .env
 Preset env files for different AAuth configurations:
 - `env.hwk` – HWK signature scheme, signature-only authorization
 - `env.jwks` – JWKS signature scheme, signature-only authorization
-- `env.jwt-autonomous` – JWKS scheme, autonomous authorization
-- `env.user-delegated` – JWKS scheme, user-delegated authorization (Keycloak consent flow)
+- `env.jwt-autonomous` – JWKS_URI scheme, autonomous authorization
+- `env.user-delegated` – JWKS_URI scheme, user-delegated authorization (Keycloak consent flow)
 
 ```bash
 cp env.jwks .env   # Example: use JWKS + signature-only
@@ -37,7 +37,7 @@ cp env.jwks .env   # Example: use JWKS + signature-only
 - **`SUPPLY_CHAIN_AGENT_URL`**: External URL for this agent (default: `http://localhost:{port}/`)
 - **`AAUTH_SIGNATURE_SCHEME`**: AAuth signature scheme - `"hwk"` (pseudonymous) or `"jwks"` (identified agent). Default: `hwk`
 - **`AAUTH_AUTHORIZATION_SCHEME`**: AAuth authorization scheme - `"autonomous"`, `"user-delegated"`, or `"signature-only"`. Default: `autonomous`
-- **`SUPPLY_CHAIN_AGENT_ID_URL`**: Agent identifier for JWKS scheme (HTTPS URL). Used in Signature-Key header when signing outgoing requests. Also used to derive canonical authority for signature verification (per SPEC 10.3.1). Canonical authority format: `host:port` (if port is non-default) or just `host` (if default port). If not set, derived from `SUPPLY_CHAIN_AGENT_URL` or `agent_card.url`
+- **`SUPPLY_CHAIN_AGENT_ID_URL`**: Agent identifier for JWKS_URI scheme (HTTPS URL). Used in Signature-Key header when signing outgoing requests. Also used to derive canonical authority for signature verification (per SPEC 10.3.1). Canonical authority format: `host:port` (if port is non-default) or just `host` (if default port). If not set, derived from `SUPPLY_CHAIN_AGENT_URL` or `agent_card.url`
 
 ### Tracing Configuration
 
@@ -64,8 +64,8 @@ SUPPLY_CHAIN_AGENT_PORT=9999
 SUPPLY_CHAIN_AGENT_URL=http://supply-chain-agent.localhost:3000/
 
 # AAuth Configuration
-AAUTH_SIGNATURE_SCHEME=jwks
-# Agent identifier for JWKS scheme (HTTPS URL)
+AAUTH_SIGNATURE_SCHEME=jwks_uri
+# Agent identifier for JWKS_URI scheme (HTTPS URL)
 # Used in Signature-Key header when signing requests to market-analysis-agent
 # Also used to derive canonical authority for signature verification (per SPEC 10.3.1)
 # Canonical authority format: host:port (if port is non-default) or just host (if default port)
@@ -82,19 +82,19 @@ uv run .
 
 **CLI options** (override env vars when using `uv run .`):
 ```bash
-uv run . --signature-scheme jwks                    # Use JWKS scheme
+uv run . --signature-scheme jwks_uri                    # Use JWKS_URI scheme
 uv run . --signature-scheme hwk                     # Use HWK scheme
 uv run . --authorization-scheme signature-only       # Accept valid signatures only
 uv run . --authorization-scheme user-delegated       # Require user consent flow
 uv run . --authorization-scheme autonomous           # Autonomous auth
-uv run . --signature-scheme jwks --authorization-scheme signature-only
+uv run . --signature-scheme jwks_uri --authorization-scheme signature-only
 uv run . --help                                     # Show all options
 ```
 
 The agent will start on `http://localhost:9999` and serve:
 - Agent card at `/.well-known/agent-card.json`
-- AAuth metadata at `/.well-known/aauth-agent` (for JWKS scheme)
-- JWKS endpoint at `/jwks.json` (for JWKS scheme)
+- AAuth metadata at `/.well-known/aauth-agent.json` (for JWKS_URI scheme)
+- JWKS endpoint at `/jwks.json` (for JWKS_URI scheme)
 
 ### 2. Test the Agent
 
@@ -121,11 +121,11 @@ This will run a comprehensive test suite that:
 - Delegated authentication with JWT tokens
 - Scoped permissions for different operations
 - Support for authenticated extended agent cards
-- **AAuth signature-based authentication** for agent-to-agent communication (HWK and JWKS schemes)
+- **AAuth signature-based authentication** for agent-to-agent communication (HWK and JWKS_URI schemes)
 
 ## AAuth (Agent-to-Agent Authentication) Implementation
 
-This agent implements AAuth signature-based authentication for agent-to-agent communication. It can both **sign outgoing requests** (to market-analysis-agent) and **verify incoming requests** (from backend) using either HWK (pseudonymous) or JWKS (identified agent) schemes per the [AAuth specification](../SPEC.md).
+This agent implements AAuth signature-based authentication for agent-to-agent communication. It can both **sign outgoing requests** (to market-analysis-agent) and **verify incoming requests** (from backend) using either HWK (pseudonymous) or JWKS_URI (identified agent) schemes per the [AAuth specification](../SPEC.md).
 
 ### How AAuth Works in This Agent
 
@@ -139,10 +139,10 @@ This agent acts as both a **signer** (when calling market-analysis-agent) and a 
 Set these environment variables in your `.env` file:
 
 ```bash
-# AAuth signature scheme: "hwk" (pseudonymous) or "jwks" (identified agent)
-AAUTH_SIGNATURE_SCHEME=jwks
+# AAuth signature scheme: "hwk" (pseudonymous) or "jwks_uri" (identified agent)
+AAUTH_SIGNATURE_SCHEME=jwks_uri
 
-# Agent identifier for JWKS scheme (HTTPS URL)
+# Agent identifier for JWKS_URI scheme (HTTPS URL)
 # Used in Signature-Key header when signing requests to market-analysis-agent
 # Also used to derive canonical authority for signature verification (per SPEC 10.3.1)
 # Canonical authority format: host:port (if port is non-default) or just host (if default port)
@@ -151,13 +151,13 @@ SUPPLY_CHAIN_AGENT_ID_URL=http://supply-chain-agent.localhost:3000
 
 **CLI override**: When using `uv run .`, you can override both settings without editing `.env`:
 ```bash
-uv run . --signature-scheme jwks --authorization-scheme signature-only
+uv run . --signature-scheme jwks_uri --authorization-scheme signature-only
 ```
 CLI options take precedence over environment variables.
 
 For **user-delegated AAuth** (resource tokens, JWT verification, token exchange to Market Analysis Agent), see [docs/USER_DELEGATED_AAUTH.md](../docs/USER_DELEGATED_AAUTH.md) and [docs/AAUTH_CONFIGURATION.md](../docs/AAUTH_CONFIGURATION.md). Key variables: `AAUTH_AUTHORIZATION_SCHEME`, `KEYCLOAK_AAUTH_ISSUER_URL`.
 
-For **signature-only mode** (`AAUTH_AUTHORIZATION_SCHEME=signature-only`): accept requests with valid JWKS or HWK signatures without requiring auth_token or resource_token. Useful when using `AAUTH_SIGNATURE_SCHEME=jwks` and you only need proof-of-possession, not full authorization.
+For **signature-only mode** (`AAUTH_AUTHORIZATION_SCHEME=signature-only`): accept requests with valid JWKS_URI or HWK signatures without requiring auth_token or resource_token. Useful when using `AAUTH_SIGNATURE_SCHEME=jwks_uri` and you only need proof-of-possession, not full authorization.
 
 ### Code Locations
 
@@ -181,7 +181,7 @@ This is where outgoing requests to market-analysis-agent are signed. The `AAuthS
 - `public_key_to_jwk()` - Converts public key to JWK format with key ID
 - `sign_request()` - Signs HTTP requests with HTTP Message Signatures
 
-**Example for JWKS scheme**:
+**Example for JWKS_URI scheme**:
 ```python
 sig_headers = sign_request(
     method=method,
@@ -189,7 +189,7 @@ sig_headers = sign_request(
     headers=headers,
     body=body,
     private_key=self.private_key,
-    sig_scheme="jwks",
+    sig_scheme="jwks_uri",
     id=agent_id,  # Agent identifier URL
     kid=kid      # Key identifier
 )
@@ -231,14 +231,14 @@ This is where incoming requests from backend are verified. The `SupplyChainOptim
 
 These endpoints allow other agents to discover and fetch this agent's public keys:
 
-- **Lines 163-174**: `/.well-known/aauth-agent` - Returns agent metadata with `agent` identifier and `jwks_uri`
+- **Lines 163-174**: `/.well-known/aauth-agent.json` - Returns agent metadata with `agent` identifier and `jwks_uri`
 - **Lines 176-184**: `/jwks.json` - Returns the JSON Web Key Set containing public signing keys
 
 **AAuth Library Functions Used**:
 - `generate_jwks()` - Generates JWKS document from list of JWKs
 
 **How it works**:
-1. When another agent receives a request signed with `scheme=jwks`, it extracts the `id` parameter from the `Signature-Key` header
+1. When another agent receives a request signed with `scheme=jwks_uri`, it extracts the `id` parameter from the `Signature-Key` header
 2. It fetches `{id}/.well-known/aauth-agent` to get metadata
 3. It extracts `jwks_uri` from the metadata
 4. It fetches the JWKS from `jwks_uri`
@@ -293,7 +293,7 @@ The project uses the `aauth` Python library. Key functions:
 - `generate_ed25519_keypair()` - Generate Ed25519 signing keypair
 - `public_key_to_jwk(public_key, kid)` - Convert public key to JWK format
 - `sign_request(method, target_uri, headers, body, private_key, sig_scheme, **kwargs)` - Sign HTTP request
-  - For JWKS: pass `sig_scheme="jwks"`, `id=agent_url`, `kid=key_id`
+  - For JWKS: pass `sig_scheme="jwks_uri"`, `id=agent_url`, `kid=key_id`
   - For HWK: pass `sig_scheme="hwk"` (no additional kwargs)
 - `generate_jwks([jwk1, jwk2, ...])` - Generate JWKS document from JWK list
 - `verify_signature(method, target_uri, headers, body, signature_input_header, signature_header, signature_key_header, public_key=None, jwks_fetcher=None)` - Verify HTTP Message Signature
@@ -304,7 +304,7 @@ The project uses the `aauth` Python library. Key functions:
 
 ```bash
 # Get agent metadata
-curl http://localhost:9999/.well-known/aauth-agent
+curl http://localhost:9999/.well-known/aauth-agent.json
 
 {
   "agent": "http://supply-chain-agent.localhost:3000",
@@ -345,7 +345,7 @@ supply-chain-agent/
 
 - **`aauth_interceptor.py`** - Signs outgoing requests to market-analysis-agent
 - **`agent_executor.py`** - Verifies incoming requests from backend (lines 480-760)
-- **`__main__.py`** - Exposes JWKS endpoints (`/.well-known/aauth-agent`, `/jwks.json`)
+- **`__main__.py`** - Exposes JWKS endpoints (`/.well-known/aauth-agent.json`, `/jwks.json`)
 - **`http_headers_middleware.py`** - Captures HTTP headers for signature verification
 
 ### Adding New Policies

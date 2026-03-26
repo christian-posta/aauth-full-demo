@@ -22,7 +22,7 @@ from app.api import auth, agents, optimization
 from app.tracing_config import initialize_tracing
 from app.config import settings
 from app.services.aauth_interceptor import get_signing_keypair
-from aauth import generate_jwks
+from aauth import generate_jwks, generate_agent_metadata
 import os
 
 # Initialize tracing before creating the FastAPI app
@@ -100,18 +100,18 @@ async def root():
 async def health_check():
     return {"status": "healthy", "service": "supply-chain-api"}
 
-@app.get("/.well-known/aauth-agent")
+@app.get("/.well-known/aauth-agent.json")
 async def aauth_agent_metadata():
-    """AAuth agent metadata endpoint per SPEC Section 8.1.
-    
-    Returns agent identifier and JWKS URI for JWKS signature scheme discovery.
-    """
     agent_url = os.getenv("BACKEND_AGENT_URL", f"http://{settings.host}:{settings.port}")
     jwks_uri = f"{agent_url}/jwks.json"
-    return {
-        "agent": agent_url,
-        "jwks_uri": jwks_uri
-    }
+    return generate_agent_metadata(
+        agent_id=agent_url,
+        jwks_uri=jwks_uri,
+        client_name="Supply Chain Backend",
+        callback_endpoint=f"{agent_url.rstrip('/')}/auth/aauth/callback",
+        localhost_callback_allowed=True,
+        clarification_supported=False,
+    )
 
 @app.get("/jwks.json")
 async def jwks_endpoint():

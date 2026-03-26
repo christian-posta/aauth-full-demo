@@ -9,6 +9,7 @@ tokens with the required claims and signs them with the resource's private key.
 import logging
 import os
 import time
+import uuid
 from typing import Dict, Any, Optional
 from urllib.parse import urlparse
 import json
@@ -177,8 +178,10 @@ def generate_resource_token(
     payload = {
         "iss": resource_id,
         "aud": auth_server_url,
+        "jti": str(uuid.uuid4()),
         "agent": agent_id,
         "agent_jkt": agent_jkt,
+        "iat": int(time.time()),
         "exp": int(time.time()) + expires_in,
         "scope": scope
     }

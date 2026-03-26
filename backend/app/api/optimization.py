@@ -70,6 +70,8 @@ async def run_optimization_workflow(
             })
             
             # Update progress to running
+            if request_id in optimization_service.optimizations:
+                optimization_service.optimizations[request_id].status = OptimizationStatus.RUNNING
             optimization_service.update_progress(request_id, 0.0, "Connecting to A2A supply-chain agent")
             if settings.debug:
                 logger.debug("📊 Progress updated: Connecting to A2A agent")
@@ -183,7 +185,8 @@ async def run_optimization_workflow(
 async def start_optimization(
     request: OptimizationRequest,
     current_user: dict = Depends(get_current_user),
-    http_request: Request = None
+    http_request: Request = None,
+    background_tasks: BackgroundTasks = None,
 ):
     """Start a new optimization request with tracing support.
     
@@ -253,29 +256,62 @@ async def start_optimization(
 
             user_id = current_user['payload'].get("sub")
 
-            # Always do a synchronous A2A call first to determine if user consent is required.
-            # Keycloak's response (auth_token vs request_token) determines the flow:
-            # - If request_token: Keycloak requires user consent, return consent_url to frontend
-            # - If auth_token: Direct grant, proceed with optimization workflow
             add_event("a2a_sync_call_start", {"request_id": request_id})
             result = await a2a_service.optimize_supply_chain(
                 request, user_id, trace_context, aauth_auth_token, request_id=request_id
             )
             
-            if result.get("type") == "consent_required":
-                # Keycloak returned request_token - user consent required
-                optimization_service.set_pending_aauth_request(
-                    request_id, user_id, request, trace_context
+            if result.get("type") == "interaction_required":
+                callback_url = (
+                    f"{(os.getenv('BACKEND_AGENT_URL') or f'http://{settings.host}:{settings.port}').rstrip('/')}"
+                    f"/auth/aauth/callback?request_id={request_id}"
                 )
+                optimization_service.set_pending_aauth_request(
+                    request_id,
+                    user_id,
+                    request,
+                    trace_context,
+                    pending_url=result.get("pending_url"),
+                    interaction_code=result.get("interaction_code"),
+                    interaction_endpoint=result.get("interaction_endpoint"),
+                    callback_url=callback_url,
+                    requirement="interaction",
+                )
+                optimization_service.optimizations[request_id].status = OptimizationStatus.INTERACTION_REQUIRED
+                optimization_service.update_progress(request_id, 0.0, "User interaction required for AAuth")
                 add_event("consent_required_returned_to_api", {"request_id": request_id})
                 return {
-                    "consent_required": True,
-                    "consent_url": result.get("consent_url", ""),
+                    "status": "interaction_required",
+                    "interaction_required": True,
+                    "interaction_endpoint": result.get("interaction_endpoint", ""),
+                    "interaction_code": result.get("interaction_code", ""),
+                    "callback_url": callback_url,
+                    "request_id": request_id,
+                }
+
+            if result.get("type") == "approval_pending":
+                optimization_service.set_pending_aauth_request(
+                    request_id,
+                    user_id,
+                    request,
+                    trace_context,
+                    pending_url=result.get("pending_url"),
+                    requirement="approval",
+                    polling_started=True,
+                )
+                optimization_service.optimizations[request_id].status = OptimizationStatus.APPROVAL_PENDING
+                optimization_service.update_progress(request_id, 5.0, "Waiting for approval from AAuth server")
+                if background_tasks:
+                    from app.api.auth import _resume_pending_request
+
+                    background_tasks.add_task(_resume_pending_request, request_id)
+                return {
+                    "status": "approval_pending",
+                    "approval_pending": True,
                     "request_id": request_id,
                 }
             
             if result.get("type") == "success":
-                # Keycloak returned auth_token - direct grant, proceed with workflow
                 await run_optimization_workflow(
                     request_id, user_id, request, trace_context,
                     aauth_auth_token, precomputed_response=result

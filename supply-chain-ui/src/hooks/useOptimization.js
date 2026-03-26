@@ -55,13 +55,10 @@ export const useOptimization = () => {
       setRequestId(response.request_id);
       console.log('Optimization started:', response);
 
-      // If backend requires user consent (Keycloak returned request_token), redirect to consent URL
-      if (response.consent_required && response.consent_url) {
+      if (response.interaction_required && response.interaction_endpoint && response.interaction_code && response.callback_url) {
         setIsRunning(false);
-        console.log('User consent required for agent, redirecting to consent page', response.consent_url);
+        console.log('User interaction required for agent authorization');
         
-        // Persist current state before redirect so we can restore it when returning
-        // Use activitiesRef.current to get the latest activities (avoid stale closure)
         const stateToPreserve = {
           activities: activitiesRef.current,
           promptText: customPrompt,
@@ -70,8 +67,16 @@ export const useOptimization = () => {
         sessionStorage.setItem('aauth_preserved_state', JSON.stringify(stateToPreserve));
         console.log('💾 Saved UI state before consent redirect:', stateToPreserve);
         console.log('💾 Activities count:', activitiesRef.current.length);
-        
-        window.location.href = response.consent_url;
+
+        const redirectUrl = new URL(response.interaction_endpoint);
+        redirectUrl.searchParams.set('code', response.interaction_code);
+        redirectUrl.searchParams.set('callback', response.callback_url);
+        window.location.href = redirectUrl.toString();
+        return;
+      }
+
+      if (response.approval_pending) {
+        console.log('Approval pending at auth server; staying on page and polling progress');
         return;
       }
 
@@ -291,12 +296,6 @@ export const useOptimization = () => {
     setError(null);
   }, []);
 
-  // When returning from AAuth consent, URL has ?aauth_authorized=1&request_id=...
-  // (or request_id was persisted in sessionStorage by index.js if Keycloak stripped the URL)
-  // Backend has already started the optimization; start polling for that request_id.
-  //
-  // IMPORTANT: Dashboard unmounts/remounts during Keycloak state transitions.
-  // We use module-level state to survive these unmounts and keep polling running.
   useEffect(() => {
     console.log('[useOptimization] 🔄 Post-consent useEffect running');
     console.log('[useOptimization] Module polling state:', JSON.stringify({
@@ -340,7 +339,6 @@ export const useOptimization = () => {
       modulePollingState.hasRestoredOnce = true;
     }
 
-    // Check for AAuth error (backend redirected here after consent failed)
     const params = new URLSearchParams(window.location.search);
     const urlError = params.get('aauth_error');
     const storedError = sessionStorage.getItem('aauth_error');
@@ -364,7 +362,6 @@ export const useOptimization = () => {
       return;
     }
     
-    // If module-level polling is already in progress, just reconnect state updates
     if (modulePollingState.isPolling) {
       console.log('[useOptimization] 🔗 Reconnecting to existing polling session');
       // Update the callback to use current component's setState functions
@@ -405,7 +402,6 @@ export const useOptimization = () => {
       return;
     }
     
-    // Get the request_id - first from URL, then from sessionStorage
     const urlAuthorized = params.get('aauth_authorized');
     const urlRequestId = params.get('request_id');
     

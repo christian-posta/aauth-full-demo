@@ -76,9 +76,10 @@ from tracing_config import (
     inject_context_to_headers, initialize_tracing
 )
 from http_headers_middleware import get_current_request_headers, get_current_request_info
+from aauth_protocol import format_auth_token_required
 
 # Import aauth AFTER logging is configured so its internal loggers propagate correctly
-from aauth import verify_signature
+from aauth import verify_signature, build_error_response, ERROR_INVALID_AUTH_TOKEN, ERROR_INVALID_SIGNATURE
 from aauth.errors import SignatureError
 from resource_token_service import generate_resource_token
 from starlette.exceptions import HTTPException
@@ -327,10 +328,10 @@ class MarketAnalysisAgentExecutor(AgentExecutor):
                         scheme = "hwk"
                         logger.info(f"🔐 AAuth scheme: {scheme} (Header Web Key) - pseudonymous authentication")
                         set_attribute("auth.aauth.scheme", "hwk")
-                    elif 'scheme=jwks' in sig_key_value.lower():
-                        scheme = "jwks"
+                    elif 'scheme=jwks_uri' in sig_key_value.lower():
+                        scheme = "jwks_uri"
                         logger.info(f"🔐 AAuth scheme: JWKS - identified agent")
-                        set_attribute("auth.aauth.scheme", "jwks")
+                        set_attribute("auth.aauth.scheme", "jwks_uri")
                     elif 'scheme=jwt' in sig_key_value.lower():
                         scheme = "jwt"
                         logger.info(f"🔐 AAuth scheme: JWT - authorized agent")
@@ -505,9 +506,9 @@ class MarketAnalysisAgentExecutor(AgentExecutor):
                                     else:
                                         logger.error(f"❌ Failed to extract auth_token from Signature-Key header for JWT scheme")
                                         is_valid = False
-                                elif scheme == "jwks":
+                                elif scheme == "jwks_uri":
                                     # Extract agent_id and kid from Signature-Key header
-                                    # Format: sig1=(scheme=jwks id="https://agent.example" kid="key-1")
+                                    # Format: sig1=(scheme=jwks_uri id="https://agent.example" kid="key-1")
                                     agent_id = None
                                     kid = None
                                     
@@ -530,7 +531,7 @@ class MarketAnalysisAgentExecutor(AgentExecutor):
                                             """Fetch JWKS for agent using metadata discovery."""
                                             try:
                                                 base = (agent_id_param or "").rstrip("/")
-                                                metadata_url = f"{base}/.well-known/aauth-agent"
+                                                metadata_url = f"{base}/.well-known/aauth-agent.json"
                                                 if DEBUG:
                                                     logger.debug(f"🔐 Fetching metadata from {metadata_url}")
                                                 metadata_response = httpx.get(metadata_url, timeout=10.0)
@@ -665,7 +666,7 @@ class MarketAnalysisAgentExecutor(AgentExecutor):
                                             agent_id = None
                                             agent_jwk = None
                                             
-                                            if scheme == "jwks":
+                                            if scheme == "jwks_uri":
                                                 id_match = re.search(r'id="([^"]+)"', sig_key_header)
                                                 kid_match = re.search(r'kid="([^"]+)"', sig_key_header)
                                                 if id_match:
@@ -673,7 +674,7 @@ class MarketAnalysisAgentExecutor(AgentExecutor):
                                                     # Fetch agent JWKS to get public key
                                                     import httpx
                                                     try:
-                                                        metadata_url = f"{agent_id}/.well-known/aauth-agent"
+                                                        metadata_url = f"{agent_id}/.well-known/aauth-agent.json"
                                                         metadata_response = httpx.get(metadata_url, timeout=10.0)
                                                         if metadata_response.status_code == 200:
                                                             metadata = metadata_response.json()
@@ -726,10 +727,9 @@ class MarketAnalysisAgentExecutor(AgentExecutor):
                                                     if DEBUG:
                                                         logger.debug(f"🔐 Resource token claims: iss={os.getenv('MARKET_ANALYSIS_AGENT_ID_URL', 'http://localhost:9998')}, aud={keycloak_issuer_url}, agent={agent_id}, scope={scope}")
                                                     
-                                                    # Return 401 with Agent-Auth header
-                                                    agent_auth_header_value = f'httpsig; auth-token; resource_token="{resource_token}"; auth_server="{keycloak_issuer_url}"'
+                                                    agent_auth_header_value = format_auth_token_required(resource_token, keycloak_issuer_url)
                                                     
-                                                    logger.info(f"🔐 Returning 401 with Agent-Auth header")
+                                                    logger.info(f"🔐 Returning 401 with AAuth header")
                                                     add_event("resource_token_issued", {
                                                         "agent_id": agent_id,
                                                         "auth_server": keycloak_issuer_url
@@ -739,8 +739,11 @@ class MarketAnalysisAgentExecutor(AgentExecutor):
                                                     # Raise HTTPException to return 401
                                                     raise HTTPException(
                                                         status_code=401,
-                                                        detail="Authorization required",
-                                                        headers={"Agent-Auth": agent_auth_header_value}
+                                                        detail=json.dumps(build_error_response(
+                                                            ERROR_INVALID_AUTH_TOKEN,
+                                                            "Authorization required",
+                                                        )),
+                                                        headers={"AAuth": agent_auth_header_value}
                                                     )
                                                 except HTTPException:
                                                     raise
@@ -751,13 +754,19 @@ class MarketAnalysisAgentExecutor(AgentExecutor):
                                                         logger.debug(traceback.format_exc())
                                                     raise HTTPException(
                                                         status_code=401,
-                                                        detail="Authorization required"
+                                                        detail=json.dumps(build_error_response(
+                                                            ERROR_INVALID_AUTH_TOKEN,
+                                                            "Authorization required",
+                                                        ))
                                                     )
                                             else:
                                                 logger.warning(f"⚠️ Cannot generate resource_token: agent_id or agent_jwk not available")
                                                 raise HTTPException(
                                                     status_code=401,
-                                                    detail="Authorization required"
+                                                    detail=json.dumps(build_error_response(
+                                                        ERROR_INVALID_AUTH_TOKEN,
+                                                        "Authorization required",
+                                                    ))
                                                 )
                                         else:
                                             # Authorization not required or already satisfied (autonomous, or user-delegated with jwt)
@@ -778,7 +787,13 @@ class MarketAnalysisAgentExecutor(AgentExecutor):
                                         # signature-only mode requires valid signature; reject on failure
                                         if os.getenv("AAUTH_AUTHORIZATION_SCHEME", "autonomous").lower() == "signature-only":
                                             logger.warning(f"⚠️ Signature-only mode: rejecting request with invalid signature")
-                                            raise HTTPException(status_code=401, detail="Valid AAuth signature required")
+                                            raise HTTPException(
+                                                status_code=401,
+                                                detail=json.dumps(build_error_response(
+                                                    ERROR_INVALID_SIGNATURE,
+                                                    "Valid AAuth signature required",
+                                                ))
+                                            )
                                 except Exception as verify_ex:
                                     # If the verification step raised an HTTPException (e.g. we raised
                                     # HTTPException(status_code=401, ... ) to indicate Agent-Auth is required),

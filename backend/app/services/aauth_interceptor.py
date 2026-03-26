@@ -205,7 +205,7 @@ class AAuthSigningInterceptor(ClientCallInterceptor):
                         logger.debug(f"🔐 AAuth: Auth token length: {len(auth_token)}")
                 else:
                     # No auth_token provided - MUST use signature scheme (JWKS/HWK) for first attempt
-                    # This will trigger a 401 challenge with Agent-Auth header containing resource_token
+                    # This will trigger a 401 challenge with AAuth header containing resource-token
                     logger.info(f"🔐 AAuth: First attempt - using signature scheme: {sig_scheme.upper()} (will trigger 401 challenge)")
                     if settings.debug:
                         logger.debug(f"🔐 AAuth: Will trigger challenge to obtain auth_token")
@@ -241,7 +241,7 @@ class AAuthSigningInterceptor(ClientCallInterceptor):
                         logger.warning(f"⚠️ AAuth: JWT scheme requested but no auth_token available, falling back to {sig_scheme}")
                         sig_scheme = os.getenv("AAUTH_SIGNATURE_SCHEME", "hwk").lower()
                 
-                if sig_scheme == "jwks":
+                if sig_scheme == "jwks_uri":
                     # For JWKS scheme, need agent identifier and key ID
                     agent_id = os.getenv("BACKEND_AGENT_URL", f"http://{settings.host}:{settings.port}")
                     # Extract kid from the public JWK
@@ -250,7 +250,7 @@ class AAuthSigningInterceptor(ClientCallInterceptor):
                         "id": agent_id,
                         "kid": kid
                     }
-                    logger.info(f"🔐 AAuth: Signing with JWKS scheme (agent: {agent_id}, kid: {kid})")
+                    logger.info(f"🔐 AAuth: Signing with JWKS_URI scheme (agent: {agent_id}, kid: {kid})")
                     if settings.debug:
                         logger.debug(f"🔐 AAuth: Agent ID: {agent_id}, Kid: {kid}")
                 elif sig_scheme == "hwk":

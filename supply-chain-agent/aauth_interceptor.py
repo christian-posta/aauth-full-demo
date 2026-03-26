@@ -46,13 +46,13 @@ class AAuthSigningInterceptor(ClientCallInterceptor):
     This interceptor adds HTTP Message Signature headers to all outgoing
     requests. Supports multiple signature schemes:
     - HWK: Pseudonymous authentication (default)
-    - JWKS: Identified agent authentication
+    - JWKS_URI: Identified agent authentication
     - JWT: User-delegated authentication (requires auth_token)
     
     Per AAuth SPEC.md Section 10, the following headers are added:
     - Signature-Input: Describes which components are covered by the signature
     - Signature: The actual cryptographic signature
-    - Signature-Key: Contains the public key (scheme=hwk/jwks) or auth token (scheme=jwt)
+    - Signature-Key: Contains the public key (scheme=hwk/jwks_uri) or auth token (scheme=jwt)
     """
     
     def __init__(self, trace_headers: Optional[Dict[str, str]] = None, auth_token: Optional[str] = None):
@@ -189,7 +189,7 @@ class AAuthSigningInterceptor(ClientCallInterceptor):
                     logger.info(f"🔐 AAuth: Signing request to {url} with JWT scheme (auth_token present)")
                     if DEBUG:
                         logger.debug(f"🔐 AAuth: Auth token length: {len(self.auth_token)}")
-                elif sig_scheme == "jwks":
+                elif sig_scheme == "jwks_uri":
                     # For JWKS scheme, need agent identifier and key ID
                     # Try SUPPLY_CHAIN_AGENT_ID_URL first, then SUPPLY_CHAIN_AGENT_URL, then agent_card.url
                     agent_id = os.getenv("SUPPLY_CHAIN_AGENT_ID_URL")

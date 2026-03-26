@@ -17,12 +17,12 @@ uv run .
 
 **CLI options** (override env vars when using `uv run .`):
 ```bash
-uv run . --signature-scheme jwks                    # Use JWKS scheme
+uv run . --signature-scheme jwks_uri                    # Use JWKS scheme
 uv run . --signature-scheme hwk                     # Use HWK scheme
 uv run . --authorization-scheme signature-only      # Accept valid signatures only
 uv run . --authorization-scheme user-delegated      # Require user consent flow
 uv run . --authorization-scheme autonomous          # Autonomous auth
-uv run . --signature-scheme jwks --authorization-scheme signature-only
+uv run . --signature-scheme jwks_uri --authorization-scheme signature-only
 uv run . --help                                     # Show all options
 ```
 
@@ -69,7 +69,7 @@ cp env.jwks .env   # Example: use JWKS + signature-only
 MARKET_ANALYSIS_AGENT_URL=http://market-analysis-agent.localhost:3000/
 
 # AAuth Configuration
-AAUTH_SIGNATURE_SCHEME=jwks
+AAUTH_SIGNATURE_SCHEME=jwks_uri
 # Agent identifier for JWKS scheme (HTTPS URL)
 # Also used to derive canonical authority for signature verification (per SPEC 10.3.1)
 # Canonical authority format: host:port (if port is non-default) or just host (if default port)
@@ -120,8 +120,8 @@ This agent acts as a **verifier only** (it receives requests from supply-chain-a
 Set these environment variables in your `.env` file:
 
 ```bash
-# AAuth signature scheme expected from callers: "hwk" (pseudonymous) or "jwks" (identified agent)
-AAUTH_SIGNATURE_SCHEME=jwks
+# AAuth signature scheme expected from callers: "hwk" (pseudonymous) or "jwks_uri" (identified agent)
+AAUTH_SIGNATURE_SCHEME=jwks_uri
 
 # Agent identifier for JWKS scheme (HTTPS URL)
 # Also used to derive canonical authority for signature verification (per SPEC 10.3.1)
@@ -131,13 +131,13 @@ MARKET_ANALYSIS_AGENT_ID_URL=http://market-analysis-agent.localhost:3000
 
 **CLI override**: When using `uv run .`, you can override both settings without editing `.env`:
 ```bash
-uv run . --signature-scheme jwks --authorization-scheme signature-only
+uv run . --signature-scheme jwks_uri --authorization-scheme signature-only
 ```
 CLI options take precedence over environment variables.
 
 For **user-delegated AAuth** (resource tokens, JWT verification, Keycloak JWKS), see [docs/USER_DELEGATED_AAUTH.md](../docs/USER_DELEGATED_AAUTH.md) and [docs/AAUTH_CONFIGURATION.md](../docs/AAUTH_CONFIGURATION.md). Key variables: `AAUTH_AUTHORIZATION_SCHEME=user-delegated`, `KEYCLOAK_AAUTH_ISSUER_URL`.
 
-For **signature-only mode** (`AAUTH_AUTHORIZATION_SCHEME=signature-only`): accept requests with valid JWKS or HWK signatures without requiring auth_token or resource_token. Rejects requests with invalid signatures. Useful when using `AAUTH_SIGNATURE_SCHEME=jwks` and you only need proof-of-possession.
+For **signature-only mode** (`AAUTH_AUTHORIZATION_SCHEME=signature-only`): accept requests with valid JWKS_URI or HWK signatures without requiring auth_token or resource_token. Rejects requests with invalid signatures. Useful when using `AAUTH_SIGNATURE_SCHEME=jwks_uri` and you only need proof-of-possession.
 
 ### Code Locations
 

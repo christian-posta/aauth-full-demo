@@ -17,10 +17,17 @@ from tracing_config import (
     inject_context_to_headers, initialize_tracing
 )
 from http_headers_middleware import get_current_request_headers, get_current_request_info
-from aauth_interceptor import AAuthSigningInterceptor
-from aauth import verify_signature
+from aauth_interceptor import AAuthSigningInterceptor, get_signing_keypair
+from aauth_protocol import parse_aauth_header, format_auth_token_required
+from aauth import (
+    verify_signature,
+    build_error_response,
+    ERROR_INVALID_SIGNATURE,
+    ERROR_INVALID_AUTH_TOKEN,
+    ChallengeBuilder,
+    jwk_to_public_key,
+)
 from aauth.errors import SignatureError
-from resource_token_service import generate_resource_token
 from aauth_token_service import AAuthTokenService
 from starlette.exceptions import HTTPException
 from starlette.responses import Response
@@ -252,17 +259,17 @@ class SupplyChainOptimizerAgent:
                         # Just get the first response for now
                         break
                 except httpx.HTTPStatusError as e:
-                    # Check if this is a 401 with Agent-Auth header
+                    # Check if this is a 401 with AAuth header
                     if e.response.status_code == 401:
                         token_logger.info(f"🔐 401 from market-analysis-agent: headers={dict(e.response.headers)}")
-                        agent_auth_header = e.response.headers.get("Agent-Auth")
+                        agent_auth_header = e.response.headers.get("AAuth")
                         if agent_auth_header:
-                            logger.info(f"🔐 Received 401 with Agent-Auth challenge from MAA")
+                            logger.info(f"🔐 Received 401 with AAuth challenge from MAA")
                             add_event("maa_agent_auth_challenge_received", {
                                 "has_agent_auth": True
                             })
                         else:
-                            # 401 without Agent-Auth - re-raise
+                            # 401 without AAuth - re-raise
                             raise
                     else:
                         # Other HTTP error - re-raise
@@ -270,21 +277,21 @@ class SupplyChainOptimizerAgent:
                 except Exception as e:
                     # The A2A client library may wrap httpx exceptions in its own exception type.
                     # Check the exception chain (__cause__) for the original httpx.HTTPStatusError
-                    # to extract the Agent-Auth header for 401 responses.
+                    # to extract the AAuth header for 401 responses.
                     original_exc = e.__cause__
                     if original_exc and isinstance(original_exc, httpx.HTTPStatusError):
                         if original_exc.response.status_code == 401:
                             token_logger.info(f"🔐 401 from market-analysis-agent: headers={dict(original_exc.response.headers)}")
-                            agent_auth_header = original_exc.response.headers.get("Agent-Auth")
+                            agent_auth_header = original_exc.response.headers.get("AAuth")
                             if agent_auth_header:
-                                logger.info(f"🔐 Received 401 with Agent-Auth challenge from MAA (via exception chain)")
+                                logger.info(f"🔐 Received 401 with AAuth challenge from MAA (via exception chain)")
                                 add_event("maa_agent_auth_challenge_received", {
                                     "has_agent_auth": True,
                                     "via_exception_chain": True
                                 })
                                 # Don't re-raise - let the token exchange logic handle it
                             else:
-                                logger.warning(f"⚠️ 401 error without Agent-Auth header: {e}")
+                                logger.warning(f"⚠️ 401 error without AAuth header: {e}")
                                 raise
                         else:
                             # Non-401 HTTP error - re-raise
@@ -294,42 +301,31 @@ class SupplyChainOptimizerAgent:
                         response = getattr(e, 'response', None)
                         if response is not None and hasattr(response, 'headers'):
                             token_logger.info(f"🔐 401 from market-analysis-agent: headers={dict(response.headers)}")
-                            agent_auth_header = response.headers.get("Agent-Auth")
+                            agent_auth_header = response.headers.get("AAuth")
                             if agent_auth_header:
-                                logger.info(f"🔐 Received 401 with Agent-Auth challenge from MAA (via exception.response)")
+                                logger.info(f"🔐 Received 401 with AAuth challenge from MAA (via exception.response)")
                                 add_event("maa_agent_auth_challenge_received", {
                                     "has_agent_auth": True,
                                     "via_exception_response": True
                                 })
                             else:
-                                logger.warning(f"⚠️ 401 error without Agent-Auth header (from response attr): {e}")
+                                logger.warning(f"⚠️ 401 error without AAuth header (from response attr): {e}")
                                 raise
                         else:
-                            logger.warning(f"⚠️ Possible 401 error but cannot extract Agent-Auth header: {e}")
+                            logger.warning(f"⚠️ Possible 401 error but cannot extract AAuth header: {e}")
                             raise
                     else:
                         raise
                 
-                # Handle Agent-Auth challenge if present
+                # Handle AAuth challenge if present
                 if agent_auth_header:
-                    logger.info(f"🔐 Processing Agent-Auth challenge from MAA")
+                    logger.info(f"🔐 Processing AAuth challenge from MAA")
                     add_event("processing_maa_agent_auth_challenge")
-                    
-                    # Parse Agent-Auth header to extract resource_token and auth_server
-                    # Format: httpsig; auth-token; resource_token="<jwt>"; auth_server="<url>"
-                    resource_token = None
-                    auth_server = None
-                    
-                    # Extract resource_token
-                    resource_token_match = re.search(r'resource_token="([^"]+)"', agent_auth_header)
-                    if resource_token_match:
-                        resource_token = resource_token_match.group(1)
-                        token_logger.info(f"🔐 Received resource_token from MAA 401: {resource_token}")
-                    
-                    # Extract auth_server
-                    auth_server_match = re.search(r'auth_server="([^"]+)"', agent_auth_header)
-                    if auth_server_match:
-                        auth_server = auth_server_match.group(1)
+                    parsed_header = parse_aauth_header(agent_auth_header)
+                    resource_token = parsed_header.resource_token
+                    auth_server = parsed_header.auth_server
+                    if resource_token:
+                        token_logger.info(f"🔐 Received resource_token from MAA 401")
                     
                     if resource_token and upstream_auth_token:
                         token_logger.info(f"🔐 Token exchange: upstream_auth_token={upstream_auth_token}, resource_token={resource_token}")
@@ -356,7 +352,34 @@ class SupplyChainOptimizerAgent:
                                 resource_token=resource_token,
                                 auth_server_url=auth_server
                             )
-                            
+                            exchange_status = exchange_result.get("status", "success")
+                            if exchange_status in ("interaction_required", "approval_pending"):
+                                pending_url = exchange_result.get("pending_url")
+                                retry_after = exchange_result.get("retry_after", 0)
+                                interaction_code = exchange_result.get("interaction_code")
+                                require_value = exchange_result.get("require") or (
+                                    "interaction" if exchange_status == "interaction_required" else "approval"
+                                )
+                                pending_headers: Dict[str, str] = {
+                                    "Location": pending_url or "",
+                                    "Retry-After": str(retry_after),
+                                    "Cache-Control": "no-store",
+                                }
+                                if require_value == "interaction" and interaction_code:
+                                    pending_headers["AAuth"] = f'require=interaction; code="{interaction_code}"'
+                                else:
+                                    pending_headers["AAuth"] = "require=approval"
+                                raise HTTPException(
+                                    status_code=202,
+                                    detail=json.dumps({
+                                        "status": "pending",
+                                        "location": pending_url,
+                                        "require": require_value,
+                                        **({"code": interaction_code} if interaction_code else {}),
+                                    }),
+                                    headers=pending_headers,
+                                )
+
                             exchanged_auth_token = exchange_result.get("auth_token")
                             expires_in = exchange_result.get("expires_in", 3600)
                             
@@ -399,6 +422,8 @@ class SupplyChainOptimizerAgent:
                                 logger.error(f"❌ Token exchange did not return auth_token")
                                 add_event("token_exchange_failed", {"reason": "no_auth_token"})
                                 return "No market analysis provided (token exchange failed)"
+                        except HTTPException:
+                            raise
                         except Exception as exchange_error:
                             logger.error(f"❌ Token exchange failed: {exchange_error}")
                             if DEBUG:
@@ -420,6 +445,8 @@ class SupplyChainOptimizerAgent:
                     logger.debug(f"📊 Final market response: {market_response[:100]}...")
                 return market_response if market_response else "No market analysis provided"
                 
+            except HTTPException:
+                raise
             except Exception as e:
                 add_event("market_analysis_error", {"error": str(e)})
                 set_attribute("market_analysis.error", str(e))
@@ -693,10 +720,10 @@ class SupplyChainOptimizerExecutor(AgentExecutor):
                         scheme = "hwk"
                         logger.info(f"🔐 AAuth scheme: {scheme} (Header Web Key) - pseudonymous authentication")
                         set_attribute("auth.aauth.scheme", "hwk")
-                    elif 'scheme=jwks' in sig_key_value.lower():
-                        scheme = "jwks"
+                    elif 'scheme=jwks_uri' in sig_key_value.lower():
+                        scheme = "jwks_uri"
                         logger.info(f"🔐 AAuth scheme: JWKS - identified agent")
-                        set_attribute("auth.aauth.scheme", "jwks")
+                        set_attribute("auth.aauth.scheme", "jwks_uri")
                     elif 'scheme=jwt' in sig_key_value.lower():
                         scheme = "jwt"
                         logger.info(f"🔐 AAuth scheme: JWT - authorized agent")
@@ -809,9 +836,9 @@ class SupplyChainOptimizerExecutor(AgentExecutor):
                                     public_key = None
                                     jwks_fetcher = None
                                     
-                                    if scheme == "jwks":
+                                    if scheme == "jwks_uri":
                                         # Extract agent_id and kid from Signature-Key header
-                                        # Format: sig1=(scheme=jwks id="https://agent.example" kid="key-1")
+                                        # Format: sig1=(scheme=jwks_uri id="https://agent.example" kid="key-1")
                                         agent_id = None
                                         kid = None
                                         
@@ -834,13 +861,13 @@ class SupplyChainOptimizerExecutor(AgentExecutor):
                                                 """Fetch JWKS for agent using metadata discovery.
                                                 
                                                 Per SPEC Section 10.7 Mode 2: Fetch metadata from
-                                                {agent_id}/.well-known/aauth-agent, extract jwks_uri, then fetch JWKS.
+                                                {agent_id}/.well-known/aauth-agent.json, extract jwks_uri, then fetch JWKS.
                                                 """
                                                 try:
                                                     import httpx
                                                     
-                                                    # Fetch metadata from {agent_id}/.well-known/aauth-agent
-                                                    metadata_url = f"{agent_id_param}/.well-known/aauth-agent"
+                                                    # Fetch metadata from {agent_id}/.well-known/aauth-agent.json
+                                                    metadata_url = f"{agent_id_param}/.well-known/aauth-agent.json"
                                                     if DEBUG:
                                                         logger.debug(f"🔐 Fetching metadata from {metadata_url}")
                                                     
@@ -905,7 +932,7 @@ class SupplyChainOptimizerExecutor(AgentExecutor):
                                                         # For now, use httpx in sync mode
                                                         import httpx
                                                         try:
-                                                            metadata_url = f"{agent_id_param}/.well-known/aauth-agent"
+                                                            metadata_url = f"{agent_id_param}/.well-known/aauth-agent.json"
                                                             if DEBUG:
                                                                 logger.debug(f"🔐 Fetching metadata from {metadata_url}")
                                                             metadata_response = httpx.get(metadata_url, timeout=10.0)
@@ -1120,7 +1147,7 @@ class SupplyChainOptimizerExecutor(AgentExecutor):
         
         if auth_scheme in ("autonomous", "user-delegated"):
             # Require scheme=jwt with valid auth_token
-            # First, check if this is an initial request (hwk/jwks) or a retry with auth_token (jwt)
+            # First, check if this is an initial request (hwk/jwks_uri) or a retry with auth_token (jwt)
             if scheme == "jwt" and sig_key_header:
                 # Extract auth_token from Signature-Key header
                 # Format: sig1=(scheme=jwt jwt="<auth-token>")
@@ -1259,11 +1286,30 @@ class SupplyChainOptimizerExecutor(AgentExecutor):
                                             # Extract agent identity and scopes
                                             auth_token_agent_id = decoded_payload.get("agent")
                                             auth_token_scope = decoded_payload.get("scope", "")
-                                            
-                                            # Verify cnf.jwk matches the request signature (if available)
-                                            # This is complex - for now, we'll skip this check
-                                            # In a full implementation, we'd verify that the request signature
-                                            # was created with the key from cnf.jwk
+                                            request_agent_id = unverified_payload.get("agent")
+                                            request_cnf_jwk = (unverified_payload.get("cnf") or {}).get("jwk")
+                                            decoded_cnf_jwk = (decoded_payload.get("cnf") or {}).get("jwk")
+
+                                            # Enforce at least one of sub or scope (SPEC 16.2.2)
+                                            if not decoded_payload.get("sub") and not auth_token_scope:
+                                                logger.error("❌ Auth token validation failed: missing both sub and scope")
+                                                auth_token_valid = False
+                                                raise ValueError("missing_sub_and_scope")
+
+                                            # Verify agent claim matches request signer context
+                                            if request_agent_id and auth_token_agent_id != request_agent_id:
+                                                logger.error(
+                                                    f"❌ Auth token validation failed: agent mismatch "
+                                                    f"(token={auth_token_agent_id}, request={request_agent_id})"
+                                                )
+                                                auth_token_valid = False
+                                                raise ValueError("agent_mismatch")
+
+                                            # Verify key binding by matching cnf.jwk from request and verified token
+                                            if not request_cnf_jwk or not decoded_cnf_jwk or request_cnf_jwk != decoded_cnf_jwk:
+                                                logger.error("❌ Auth token validation failed: cnf.jwk key binding mismatch")
+                                                auth_token_valid = False
+                                                raise ValueError("key_binding_failed")
                                             
                                             logger.info(f"✅ Auth token verified successfully")
                                             if DEBUG:
@@ -1325,7 +1371,13 @@ class SupplyChainOptimizerExecutor(AgentExecutor):
             else:
                 # Reject: signature-only mode requires valid signature
                 logger.warning(f"⚠️ Signature-only mode: rejecting request with invalid/missing signature")
-                raise HTTPException(status_code=401, detail="Valid AAuth signature required")
+                raise HTTPException(
+                    status_code=401,
+                    detail=json.dumps(build_error_response(
+                        ERROR_INVALID_SIGNATURE,
+                        "Valid AAuth signature required",
+                    )),
+                )
 
         # Per SPEC 3.1: HWK (pseudonymous) - accept without resource_token challenge.
         # Applies to autonomous, user-delegated, and signature-only (HWK is valid for all).
@@ -1348,7 +1400,7 @@ class SupplyChainOptimizerExecutor(AgentExecutor):
                     import re
                     import httpx
                     
-                    # Try to extract from scheme=jwks
+                    # Try to extract from scheme=jwks_uri
                     id_match = re.search(r'id="([^"]+)"', sig_key_header)
                     kid_match = re.search(r'kid="([^"]+)"', sig_key_header)
                     
@@ -1359,7 +1411,7 @@ class SupplyChainOptimizerExecutor(AgentExecutor):
                         # Fetch the agent's JWKS to get the actual public key
                         try:
                             # Step 1: Fetch agent metadata to get jwks_uri
-                            metadata_url = f"{agent_id}/.well-known/aauth-agent"
+                            metadata_url = f"{agent_id}/.well-known/aauth-agent.json"
                             logger.info(f"🔐 Fetching agent metadata from {metadata_url}")
                             
                             with httpx.Client(timeout=10.0) as client:
@@ -1439,13 +1491,23 @@ class SupplyChainOptimizerExecutor(AgentExecutor):
                             additional_list = []
                         scope = f"{base_scope} {' '.join(additional_list)}".strip() if additional_list else base_scope
                         
-                        resource_token = generate_resource_token(
-                            agent_id=agent_id,
-                            agent_jwk=agent_jwk,
-                            auth_server_url=keycloak_issuer_url,
-                            scope=scope
+                        _, _, public_jwk = get_signing_keypair()
+                        resource_private_key, _, _ = get_signing_keypair()
+                        resource_id = os.getenv("SUPPLY_CHAIN_AGENT_ID_URL", os.getenv("SUPPLY_CHAIN_AGENT_URL", "http://localhost:9999").rstrip('/'))
+                        resource_kid = public_jwk.get("kid", "supply-chain-agent-key-1")
+                        challenge_builder = ChallengeBuilder(
+                            resource_id=resource_id,
+                            resource_private_key=resource_private_key,
+                            resource_kid=resource_kid,
+                            auth_server=keycloak_issuer_url,
                         )
-                        
+                        resource_token = challenge_builder.build_challenge(
+                            require_auth_token=True,
+                            agent_id=agent_id,
+                            agent_public_key=jwk_to_public_key(agent_jwk),
+                            scope=scope,
+                        ).split('resource-token="')[1].split('"')[0]
+
                         token_logger.info(f"🔐 Issuing resource_token: {resource_token}")
                         logger.info(f"🔐 Issuing resource_token for agent: {agent_id}")
                         if additional_list:
@@ -1453,10 +1515,9 @@ class SupplyChainOptimizerExecutor(AgentExecutor):
                         if DEBUG:
                             logger.debug(f"🔐 Resource token claims: iss={os.getenv('SUPPLY_CHAIN_AGENT_ID_URL', 'http://localhost:9999')}, aud={keycloak_issuer_url}, agent={agent_id}, scope={scope}")
                         
-                        # Return 401 with Agent-Auth header
-                        agent_auth_header_value = f'httpsig; auth-token; resource_token="{resource_token}"; auth_server="{keycloak_issuer_url}"'
+                        agent_auth_header_value = format_auth_token_required(resource_token, keycloak_issuer_url)
                         
-                        logger.info(f"🔐 Returning 401 with Agent-Auth header")
+                        logger.info(f"🔐 Returning 401 with AAuth header")
                         add_event("resource_token_issued", {
                             "agent_id": agent_id,
                             "auth_server": keycloak_issuer_url
@@ -1466,8 +1527,11 @@ class SupplyChainOptimizerExecutor(AgentExecutor):
                         # Raise HTTPException to return 401
                         raise HTTPException(
                             status_code=401,
-                            detail="Authorization required",
-                            headers={"Agent-Auth": agent_auth_header_value}
+                            detail=json.dumps(build_error_response(
+                                ERROR_INVALID_AUTH_TOKEN,
+                                "Authorization required",
+                            )),
+                            headers={"AAuth": agent_auth_header_value},
                         )
                     else:
                         logger.warning(f"⚠️ Cannot generate resource_token: agent_id or agent_jwk not available")
@@ -1476,8 +1540,11 @@ class SupplyChainOptimizerExecutor(AgentExecutor):
                         # Still return 401 but without resource_token
                         raise HTTPException(
                             status_code=401,
-                            detail="Authorization required",
-                            headers={"Agent-Auth": f'httpsig; auth-token; auth_server="{keycloak_issuer_url}"'}
+                            detail=json.dumps(build_error_response(
+                                ERROR_INVALID_AUTH_TOKEN,
+                                "Authorization required",
+                            )),
+                            headers={"AAuth": f'require=auth-token; auth-server="{keycloak_issuer_url}"'},
                         )
                 except HTTPException:
                     # Re-raise HTTPException
@@ -1490,7 +1557,10 @@ class SupplyChainOptimizerExecutor(AgentExecutor):
                     # Return 401 without resource_token
                     raise HTTPException(
                         status_code=401,
-                        detail="Authorization required"
+                        detail=json.dumps(build_error_response(
+                            ERROR_INVALID_AUTH_TOKEN,
+                            "Authorization required",
+                        )),
                     )
         else:
             # Auth token is valid - log success and proceed
