@@ -100,8 +100,8 @@ async def root():
 async def health_check():
     return {"status": "healthy", "service": "supply-chain-api"}
 
-@app.get("/.well-known/aauth-agent.json")
-async def aauth_agent_metadata():
+def _aauth_agent_metadata_payload() -> dict:
+    """Agent server metadata at /.well-known/aauth-agent.json (spec)."""
     agent_url = os.getenv("BACKEND_AGENT_URL", f"http://{settings.host}:{settings.port}")
     jwks_uri = f"{agent_url}/jwks.json"
     return generate_agent_metadata(
@@ -112,6 +112,12 @@ async def aauth_agent_metadata():
         localhost_callback_allowed=True,
         clarification_supported=False,
     )
+
+
+@app.get("/.well-known/aauth-agent.json")
+async def aauth_agent_metadata():
+    return _aauth_agent_metadata_payload()
+
 
 @app.get("/jwks.json")
 async def jwks_endpoint():

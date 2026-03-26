@@ -29,6 +29,7 @@ from aauth import (
 )
 from aauth.errors import SignatureError
 from aauth_token_service import AAuthTokenService
+from aauth_metadata import get_aauth_jwks_url
 from starlette.exceptions import HTTPException
 from starlette.responses import Response
 import re
@@ -1027,7 +1028,7 @@ class SupplyChainOptimizerExecutor(AgentExecutor):
                                                                 logger.debug(f"🔐 JWT scheme: Fetching Keycloak JWKS from {issuer_or_agent_id}")
                                                             try:
                                                                 import httpx
-                                                                jwks_url = f"{issuer_or_agent_id}/protocol/openid-connect/certs"
+                                                                jwks_url = get_aauth_jwks_url(issuer_or_agent_id)
                                                                 if DEBUG:
                                                                     logger.debug(f"🔐 Fetching Keycloak JWKS from {jwks_url}")
                                                                 jwks_response = httpx.get(jwks_url, timeout=10.0)
@@ -1166,7 +1167,6 @@ class SupplyChainOptimizerExecutor(AgentExecutor):
                     try:
                         import jwt
                         import httpx
-                        import json
                         from aauth import public_key_to_jwk
                         
                         # Decode without verification first to get header
@@ -1194,8 +1194,8 @@ class SupplyChainOptimizerExecutor(AgentExecutor):
                                 keycloak_realm = os.getenv("KEYCLOAK_REALM", "aauth-test")
                                 keycloak_issuer_url = f"{keycloak_url}/realms/{keycloak_realm}"
                             
-                            # Fetch Keycloak JWKS
-                            jwks_url = f"{keycloak_issuer_url}/protocol/openid-connect/certs"
+                            # Fetch Keycloak / AAuth JWKS (metadata jwks_uri or OIDC fallback)
+                            jwks_url = get_aauth_jwks_url(keycloak_issuer_url)
                             if DEBUG:
                                 logger.debug(f"🔐 Fetching Keycloak JWKS from {jwks_url}")
                             
@@ -1517,7 +1517,12 @@ class SupplyChainOptimizerExecutor(AgentExecutor):
                         
                         agent_auth_header_value = format_auth_token_required(resource_token, keycloak_issuer_url)
                         
-                        logger.info(f"🔐 Returning 401 with AAuth header")
+                        # JSON body uses invalid_auth_token for 401 + require=auth-token challenges (spec-style
+                        # error object). This is not "Keycloak rejected a JWT"; the client had no auth token yet.
+                        logger.info(
+                            "🔐 401 AAuth challenge: returning resource_token in AAuth response header "
+                            "(JSON error field is for the challenge, not a failed token verification)"
+                        )
                         add_event("resource_token_issued", {
                             "agent_id": agent_id,
                             "auth_server": keycloak_issuer_url

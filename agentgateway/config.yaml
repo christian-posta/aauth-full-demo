@@ -45,6 +45,7 @@ binds:
           mode: optional
           requiredScheme: jwks
           timestampTolerance: 60    
+          allowInsecureHttpIssuer: true
         # Mark this route as a2a traffic
         a2a: {}
         backendAuth:
@@ -64,7 +65,8 @@ binds:
         aauth:
           mode: optional
           requiredScheme: jwks
-          timestampTolerance: 60            
+          timestampTolerance: 60     
+          allowInsecureHttpIssuer: true       
         a2a: {}
         backendAuth:
           passthrough: {}             

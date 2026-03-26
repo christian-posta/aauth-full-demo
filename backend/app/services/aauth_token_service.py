@@ -23,6 +23,18 @@ DEBUG = os.getenv("DEBUG", "false").lower() == "true"
 _token_cache: Dict[str, Dict[str, Any]] = {}
 
 
+def _normalize_aauth_metadata(metadata: Dict[str, Any]) -> Dict[str, Any]:
+    """Map spec + Keycloak extension field names to canonical keys."""
+    token = metadata.get("token_endpoint") or metadata.get("agent_token_endpoint")
+    interaction = metadata.get("interaction_endpoint") or metadata.get("agent_auth_endpoint")
+    jwks = metadata.get("jwks_uri")
+    return {
+        "token_endpoint": token,
+        "interaction_endpoint": interaction,
+        "jwks_uri": jwks,
+    }
+
+
 class AAuthTokenService:
     def __init__(self):
         self.issuer_url = os.getenv("KEYCLOAK_AAUTH_ISSUER_URL")
@@ -33,7 +45,7 @@ class AAuthTokenService:
 
         self.token_endpoint = os.getenv("KEYCLOAK_AAUTH_TOKEN_ENDPOINT")
         self.interaction_endpoint = os.getenv("KEYCLOAK_AAUTH_INTERACTION_ENDPOINT")
-        self.metadata_url = f"{self.issuer_url.rstrip('/')}/.well-known/aauth-issuer.json"
+        self.jwks_uri: Optional[str] = None
         self.cache_ttl = int(os.getenv("AAUTH_AUTH_TOKEN_CACHE_TTL", "3600"))
         self.default_wait_seconds = int(os.getenv("AAUTH_PREFER_WAIT_SECONDS", "45"))
 
@@ -42,25 +54,55 @@ class AAuthTokenService:
         if self.signature_scheme not in ["hwk", "jwks_uri"]:
             self.signature_scheme = "hwk"
 
-    async def _fetch_metadata(self) -> Dict[str, Any]:
+    async def _fetch_metadata_for_issuer(self, issuer_url: str) -> Dict[str, Any]:
+        """Fetch AAuth issuer metadata; try current spec path then Keycloak extension path."""
+        base = issuer_url.rstrip("/")
+        paths = ("/.well-known/aauth-issuer.json", "/.well-known/aauth-issuer")
+        last_exc: Optional[Exception] = None
         async with httpx.AsyncClient(timeout=10.0) as client:
-            response = await client.get(self.metadata_url)
-            response.raise_for_status()
-            return response.json()
+            for path in paths:
+                url = f"{base}{path}"
+                try:
+                    response = await client.get(url)
+                    response.raise_for_status()
+                    raw = response.json()
+                    return _normalize_aauth_metadata(raw)
+                except Exception as e:
+                    last_exc = e
+                    if DEBUG:
+                        logger.debug("AAuth metadata fetch failed for %s: %s", url, e)
+        raise ValueError(
+            f"AAuth issuer metadata not found for {issuer_url} (tried {paths})"
+        ) from last_exc
 
-    async def _get_endpoints(self) -> tuple[str, str]:
-        if self.token_endpoint and self.interaction_endpoint:
+    async def _get_endpoints(self, issuer_url: Optional[str] = None) -> tuple[str, str]:
+        """Resolve token and interaction endpoints. Optional issuer_url overrides default (e.g. from 401 challenge)."""
+        base = (issuer_url or self.issuer_url).rstrip("/")
+        default_base = self.issuer_url.rstrip("/")
+        use_env = issuer_url is None or base == default_base
+
+        if use_env and self.token_endpoint and self.interaction_endpoint:
             return self.token_endpoint, self.interaction_endpoint
 
-        metadata = await self._fetch_metadata()
-        self.token_endpoint = self.token_endpoint or metadata.get("token_endpoint")
-        self.interaction_endpoint = self.interaction_endpoint or metadata.get("interaction_endpoint")
+        metadata = await self._fetch_metadata_for_issuer(base)
+        self.jwks_uri = metadata.get("jwks_uri") or self.jwks_uri
 
-        if not self.token_endpoint:
-            raise ValueError("AAuth metadata missing token_endpoint")
-        if not self.interaction_endpoint:
-            raise ValueError("AAuth metadata missing interaction_endpoint")
-        return self.token_endpoint, self.interaction_endpoint
+        if use_env:
+            token_ep = self.token_endpoint or metadata.get("token_endpoint")
+            interaction_ep = self.interaction_endpoint or metadata.get("interaction_endpoint")
+            if token_ep:
+                self.token_endpoint = self.token_endpoint or token_ep
+            if interaction_ep:
+                self.interaction_endpoint = self.interaction_endpoint or interaction_ep
+        else:
+            token_ep = metadata.get("token_endpoint")
+            interaction_ep = metadata.get("interaction_endpoint")
+
+        if not token_ep:
+            raise ValueError("AAuth metadata missing token_endpoint (or agent_token_endpoint)")
+        if not interaction_ep:
+            raise ValueError("AAuth metadata missing interaction_endpoint (or agent_auth_endpoint)")
+        return token_ep, interaction_ep
 
     async def _sign_request(
         self,
@@ -145,9 +187,11 @@ class AAuthTokenService:
         resource_token: str,
         purpose: Optional[str] = None,
         wait_seconds: Optional[int] = None,
+        auth_server_url: Optional[str] = None,
     ) -> Dict[str, Any]:
         with span("aauth_token_service.request_auth_token", {"has_resource_token": bool(resource_token)}):
-            token_endpoint, interaction_endpoint = await self._get_endpoints()
+            issuer_override = auth_server_url.rstrip("/") if auth_server_url else None
+            token_endpoint, interaction_endpoint = await self._get_endpoints(issuer_override)
             payload: Dict[str, Any] = {"resource_token": resource_token}
             if purpose:
                 payload["purpose"] = purpose

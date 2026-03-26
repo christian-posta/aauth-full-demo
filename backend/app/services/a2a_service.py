@@ -66,13 +66,22 @@ class A2AService:
             async def response_hook(response: httpx.Response):
                 """Hook to intercept HTTP responses and extract AAuth header from 401."""
                 if response.status_code == 401:
-                    token_logger.info(f"🔐 401 from supply-chain-agent (url={response.url}): headers={dict(response.headers)}")
                     agent_auth_header = response.headers.get("AAuth")
+                    token_logger.info(
+                        f"🔐 401 from supply-chain-agent (url={response.url}): "
+                        f"AAuth_header_present={bool(agent_auth_header)} "
+                        f"header_names={list(response.headers.keys())}"
+                    )
                     if agent_auth_header:
                         service_instance._last_401_response = response
                         add_event("agent_auth_challenge_received", {
                             "has_agent_auth": bool(agent_auth_header)
                         })
+                    else:
+                        token_logger.warning(
+                            "🔐 401 but no AAuth response header — cannot exchange resource_token at Keycloak. "
+                            "If traffic goes through a gateway, ensure the AAuth header is forwarded from upstream."
+                        )
             
             httpx_client = httpx.AsyncClient(
                 timeout=self.timeout,
@@ -286,6 +295,7 @@ class A2AService:
                             token_result = await aauth_token_service.request_auth_token(
                                 resource_token=resource_token,
                                 purpose=request.custom_prompt or request.effective_optimization_type,
+                                auth_server_url=auth_server,
                             )
 
                             if token_result.get("status") == "interaction_required":

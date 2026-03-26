@@ -1,4 +1,5 @@
 !./supply-chain-agent/.env
+!./supply-chain-agent/*.log
 !./market-analysis-agent/.env
 !.env
 !*.log
