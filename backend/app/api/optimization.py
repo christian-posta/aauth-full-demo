@@ -1,7 +1,7 @@
 import asyncio
 import logging
 import os
-from fastapi import APIRouter, Depends, HTTPException, BackgroundTasks, Request
+from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from typing import List, Any
 from app.models import (
@@ -186,7 +186,6 @@ async def start_optimization(
     request: OptimizationRequest,
     current_user: dict = Depends(get_current_user),
     http_request: Request = None,
-    background_tasks: BackgroundTasks = None,
 ):
     """Start a new optimization request with tracing support.
     
@@ -276,10 +275,21 @@ async def start_optimization(
                     interaction_endpoint=result.get("interaction_endpoint"),
                     callback_url=callback_url,
                     requirement="interaction",
+                    polling_started=True,
                 )
                 optimization_service.optimizations[request_id].status = OptimizationStatus.INTERACTION_REQUIRED
                 optimization_service.update_progress(request_id, 0.0, "User interaction required for AAuth")
                 add_event("consent_required_returned_to_api", {"request_id": request_id})
+                # Start polling immediately so we can handle clarification questions
+                # while the user is on the consent page (spec §11.4).
+                # The callback from Keycloak is a UX hint for the frontend, not the poll trigger.
+                from app.api.auth import _resume_pending_request
+
+                asyncio.create_task(_resume_pending_request(request_id))
+                logger.info(
+                    "AAuth: scheduled pending-URL poll (interaction_required) for request_id=%s",
+                    request_id,
+                )
                 return {
                     "status": "interaction_required",
                     "interaction_required": True,
@@ -301,10 +311,14 @@ async def start_optimization(
                 )
                 optimization_service.optimizations[request_id].status = OptimizationStatus.APPROVAL_PENDING
                 optimization_service.update_progress(request_id, 5.0, "Waiting for approval from AAuth server")
-                if background_tasks:
-                    from app.api.auth import _resume_pending_request
+                # Schedule poll immediately (do not rely on BackgroundTasks; default None was skipping the task)
+                from app.api.auth import _resume_pending_request
 
-                    background_tasks.add_task(_resume_pending_request, request_id)
+                asyncio.create_task(_resume_pending_request(request_id))
+                logger.info(
+                    "AAuth: scheduled pending-URL poll (approval_pending) for request_id=%s",
+                    request_id,
+                )
                 return {
                     "status": "approval_pending",
                     "approval_pending": True,

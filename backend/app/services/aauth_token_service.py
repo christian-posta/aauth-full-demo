@@ -22,6 +22,13 @@ token_logger = logging.getLogger("aauth.tokens")
 DEBUG = os.getenv("DEBUG", "false").lower() == "true"
 _token_cache: Dict[str, Dict[str, Any]] = {}
 
+# Hardcoded demo reply for AAuth clarification chat (consent screen Q&A).
+AAUTH_CLARIFICATION_DEMO_RESPONSE = (
+    "Great question! Honestly, we're just trying to get this demo to work. "
+    "But if this were real, I'd need this access to optimize your supply chain. "
+    "Please approve so we can show off the cool AAuth flow!"
+)
+
 
 def _normalize_aauth_metadata(metadata: Dict[str, Any]) -> Dict[str, Any]:
     """Map spec + Keycloak extension field names to canonical keys."""
@@ -155,19 +162,20 @@ class AAuthTokenService:
         sig_headers = await self._sign_request(method, url, headers, body_bytes)
         headers.update(sig_headers)
 
-        async with httpx.AsyncClient(timeout=60.0) as client:
+        timeout = max(60.0, (wait_seconds or 0) + 15.0)
+        async with httpx.AsyncClient(timeout=timeout) as client:
             request = client.build_request(method, url, headers=headers, content=body_bytes if payload is not None else None)
             return await client.send(request)
 
     def _parse_pending_response(self, response: httpx.Response, interaction_endpoint: str) -> Dict[str, Any]:
-        location = response.headers.get("Location")
+        body = response.json() if response.content else {}
+        location = response.headers.get("Location") or body.get("location")
         if not location:
             raise ValueError("Pending response missing Location header")
 
         retry_after = int(response.headers.get("Retry-After", "0"))
         aauth_header = response.headers.get("AAuth", "")
         parsed_header = parse_aauth_header(aauth_header) if aauth_header else None
-        body = response.json() if response.content else {}
         require = body.get("require") or (parsed_header.require if parsed_header else None)
         code = body.get("code") or (parsed_header.code if parsed_header else None)
 
@@ -180,6 +188,9 @@ class AAuthTokenService:
         }
         if code:
             result["interaction_code"] = code
+        clarification = body.get("clarification")
+        if clarification:
+            result["clarification"] = clarification
         return result
 
     async def request_auth_token(
@@ -228,19 +239,46 @@ class AAuthTokenService:
         self,
         pending_url: str,
         wait_seconds: Optional[int] = None,
-        max_attempts: int = 20,
+        max_attempts: int = 120,
+        min_poll_interval: float = 3.0,
     ) -> Dict[str, Any]:
+        """Poll a pending URL until an auth_token is delivered or a terminal status is reached.
+
+        Args:
+            min_poll_interval: Floor in seconds between poll GETs when Retry-After is 0
+                               or the server does not honour Prefer: wait (default 3s).
+        """
         with span("aauth_token_service.poll_for_auth_token", {"pending_url": pending_url}):
             _, interaction_endpoint = await self._get_endpoints()
+            ws = wait_seconds or self.default_wait_seconds
+            token_logger.info(
+                "AAuth poll started: pending_url=%s max_attempts=%s Prefer_wait=%s min_interval=%s",
+                pending_url,
+                max_attempts,
+                ws,
+                min_poll_interval,
+            )
             attempts = 0
             next_url = pending_url
             while attempts < max_attempts:
                 attempts += 1
+                token_logger.info(
+                    "AAuth poll GET attempt %s/%s url=%s",
+                    attempts,
+                    max_attempts,
+                    next_url,
+                )
                 response = await self._send_signed_json(
                     "GET",
                     next_url,
                     payload=None,
-                    wait_seconds=wait_seconds or self.default_wait_seconds,
+                    wait_seconds=ws,
+                )
+                token_logger.info(
+                    "AAuth poll response: status=%s attempt=%s/%s",
+                    response.status_code,
+                    attempts,
+                    max_attempts,
                 )
 
                 if response.status_code == 200:
@@ -248,20 +286,104 @@ class AAuthTokenService:
                     auth_token = result.get("auth_token")
                     if not auth_token:
                         raise ValueError("Pending auth success response missing auth_token")
+                    exp = result.get("expires_in", 3600)
+                    token_logger.info(
+                        "AAuth poll complete: auth_token received expires_in=%s",
+                        exp,
+                    )
                     return {
                         "status": "success",
                         "auth_token": auth_token,
-                        "expires_in": result.get("expires_in", 3600),
+                        "expires_in": exp,
                     }
 
                 if response.status_code == 202:
+                    body = response.json() if response.content else {}
+                    pending_status = body.get("status")
+                    require = body.get("require")
+                    retry_after = int(response.headers.get("Retry-After", "0"))
+                    clarification_question = body.get("clarification")
+                    is_awaiting = pending_status == "awaiting_clarification"
+                    token_logger.info(
+                        "AAuth poll 202: body_status=%s require=%s retry_after=%s "
+                        "clarification=%s is_awaiting=%s",
+                        pending_status,
+                        require,
+                        retry_after,
+                        bool(clarification_question),
+                        is_awaiting,
+                    )
+                    if is_awaiting or clarification_question:
+                        token_logger.info(
+                            "AAuth poll 202 full body: %s", json.dumps(body)[:500]
+                        )
+                        token_logger.info(
+                            "AAuth poll 202 response headers: %s",
+                            dict(response.headers),
+                        )
+
+                    if is_awaiting and clarification_question:
+                        post_url = body.get("location") or next_url
+                        token_logger.info(
+                            "Clarification question from user: %s", clarification_question
+                        )
+                        token_logger.info(
+                            "AAuth poll POST clarification_response url=%s (next_url was %s)",
+                            post_url,
+                            next_url,
+                        )
+                        post_resp = await self._send_signed_json(
+                            "POST",
+                            post_url,
+                            payload={"clarification_response": AAUTH_CLARIFICATION_DEMO_RESPONSE},
+                        )
+                        token_logger.info(
+                            "Clarification POST result: status=%s body=%s",
+                            post_resp.status_code,
+                            post_resp.text[:500],
+                        )
+                        if post_resp.status_code in (200, 204):
+                            token_logger.info("Clarification response accepted, resuming poll")
+                        else:
+                            token_logger.warning(
+                                "Clarification POST unexpected status: %s — will retry once after 2s",
+                                post_resp.status_code,
+                            )
+                            await asyncio.sleep(2)
+                            post_resp2 = await self._send_signed_json(
+                                "POST",
+                                post_url,
+                                payload={"clarification_response": AAUTH_CLARIFICATION_DEMO_RESPONSE},
+                            )
+                            token_logger.info(
+                                "Clarification POST retry result: status=%s body=%s",
+                                post_resp2.status_code,
+                                post_resp2.text[:500],
+                            )
+                        next_url = post_url
+                        continue
+                    elif clarification_question and not is_awaiting:
+                        token_logger.warning(
+                            "Clarification field present but status=%s (not awaiting_clarification) — skipping POST",
+                            pending_status,
+                        )
+
                     pending_result = self._parse_pending_response(response, interaction_endpoint)
                     next_url = pending_result["pending_url"]
-                    await asyncio.sleep(max(pending_result.get("retry_after", 0), 0))
+                    sleep_s = max(pending_result.get("retry_after", 0), min_poll_interval)
+                    token_logger.info("AAuth poll sleeping %ss before next GET", sleep_s)
+                    await asyncio.sleep(sleep_s)
                     continue
 
                 if response.status_code == 503:
-                    await asyncio.sleep(int(response.headers.get("Retry-After", "1")))
+                    ra = int(response.headers.get("Retry-After", "1"))
+                    token_logger.warning(
+                        "AAuth poll 503 unavailable, sleeping %ss (attempt %s/%s)",
+                        ra,
+                        attempts,
+                        max_attempts,
+                    )
+                    await asyncio.sleep(ra)
                     continue
 
                 try:
@@ -270,6 +392,11 @@ class AAuthTokenService:
                     error_body = {"error": response.text[:200]}
                 raise ValueError(f"Pending auth polling failed: {response.status_code} {error_body}")
 
+            token_logger.error(
+                "AAuth poll timed out after %s attempts (pending_url=%s)",
+                max_attempts,
+                pending_url,
+            )
             raise TimeoutError("Timed out waiting for auth token")
 
     async def refresh_auth_token(self, auth_token: str) -> Dict[str, Any]:

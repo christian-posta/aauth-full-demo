@@ -199,6 +199,7 @@ if __name__ == '__main__':
                 agent_id=agent_id_url,
                 jwks_uri=jwks_uri,
                 client_name="Supply Chain Optimizer Agent",
+                clarification_supported=True,
             )
         )
     

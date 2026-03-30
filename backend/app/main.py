@@ -14,6 +14,9 @@ if not settings.debug:
     logging.getLogger("app.services.aauth_token_service").setLevel(logging.WARNING)
     logging.getLogger("app.services.aauth_interceptor").setLevel(logging.WARNING)
     logging.getLogger("app.tracing_config").setLevel(logging.WARNING)
+    # Token exchange + pending-URL polling (separate logger name, not under aauth_token_service)
+    logging.getLogger("aauth.tokens").setLevel(logging.INFO)
+    logging.getLogger("app.api.auth").setLevel(logging.INFO)
 
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
@@ -110,7 +113,7 @@ def _aauth_agent_metadata_payload() -> dict:
         client_name="Supply Chain Backend",
         callback_endpoint=f"{agent_url.rstrip('/')}/auth/aauth/callback",
         localhost_callback_allowed=True,
-        clarification_supported=False,
+        clarification_supported=True,
     )
 
 
