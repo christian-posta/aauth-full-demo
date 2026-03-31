@@ -4,67 +4,53 @@ title: Agent Delegation - Distributing Identity Across Workloads and Devices
 description: How agent tokens enable distributed identity without shared keys
 ---
 
-In [previous posts](./flow-05-token-exchange.md), we explored how resources with established identities can exchange tokens to act on behalf of agents. But what happens when a single logical agent needs to operate across multiple execution contexts: server workloads, mobile devices, desktop applications each with its own keys and identity? This post covers how [Agent Auth](https://github.com/dickhardt/AAuth) enables **agent delegation** through agent tokens.
+In [previous posts](./flow-05-token-ex.md), we explored direct authorization, user consent, token exchange, and other ways agents and resources obtain access. This flow covers a different problem: how one logical agent can safely operate through multiple delegates, each with its own signing key. This is where [Agent Auth](https://github.com/dickhardt/AAuth) uses **agent delegation** and **agent tokens**.
 
 [← Back to index](index.md)
 
 ## The Distributed Identity Problem
 
-Modern agents rarely run in a single monolithic process. Consider:
+Modern agents rarely run as a single process with a single key. Consider:
 
-- A personal assistant with instances on laptop, phone, and tablet
-- A microservice with containers across multiple availability zones
-- A trading agent with regional deployments for low latency
-- A mobile app with millions of unique installations
+- a personal assistant with laptop, phone, and tablet installations
+- a microservice deployed in many containers
+- a background worker fleet spread across zones
+- a CLI and a hosted service that both act as the same product
 
-Each instance needs to prove the same agent identity, but traditional approaches create problems:
+Each instance needs to act as the same logical agent, but naive approaches break down:
 
-1. **Shared secrets**: All instances use the same signing key
-   - Key compromise affects entire agent identity
-   - No per-instance revocation
-   - Difficult key rotation
-   
-2. **Separate identities**: Each instance gets its own agent identifier
-   - Authorization policies must list every instance
-   - User sees "laptop agent," "phone agent," "server agent" separately
-   - Lost semantic unity of "this is the same agent"
+1. Shared signing keys create one large blast radius.
+2. Separate agent identifiers fragment policy and user understanding.
+3. Bearer-style delegation loses proof-of-possession.
 
-3. **Bearer tokens**: Central service issues session tokens
-   - No proof-of-possession per instance
-   - Tokens can be stolen and replayed
-   - Requires online token validation
+AAuth’s delegation model takes a different approach:
 
-AAuth's delegation model provides a fourth option: **distributed proof-of-possession identity**. Multiple delegates share one agent identity while each holding unique keys.
+- one stable parent agent identity
+- many delegates, each with its own keypair
+- short-lived `agent+jwt` tokens binding each delegate key to the parent identity
 
+## Roles in This Flow
 
-## How Agent Delegation Works
+This flow uses two agent-side roles:
 
-Agent delegation involves two roles:
+- **Agent server**: the authoritative identity holder
+  - publishes metadata and JWKS
+  - issues agent tokens to delegates
+  - represents the parent agent identity
 
-- **Agent server**: The authoritative identity holder at `https://agent.supply-chain.com`
-  - Publishes JWKS at `/.well-known/aauth-agent`
-  - Issues agent tokens to delegates
-  - Can also make signed requests directly (which is what we've seen so far in this series of posts)
-  - Basically acts as a "CA"
+- **Agent delegate**: a specific execution instance
+  - generates its own signing key
+  - requests an agent token from the agent server
+  - signs requests with its own key
+  - presents the agent token to prove it is acting under the parent agent identity
 
-- **Agent delegate**: An execution instance that receives an agent token
-  - Server workloads (containers, serverless functions, microservices)
-  - Mobile app installations (each with unique installation ID)
-  - Desktop applications, CLI tools, edge devices
-  - Each has its own signing key pair
-  - Still needs to authenticate itself to the agent server to get an agent token
+## The Flow
 
-The delegation flow has three phases:
+![](./images/demo6.png)
 
-### Phase 1: Delegate Obtains Agent Token
+### Phase 1: The Delegate Obtains an Agent Token
 
-The delegate authenticates to the agent server and receives an agent token binding its ephemeral key to the agent identity. **How the delegate authenticates is out-of-scope for the AAuth specification** - but different deployments may use different mechanisms:
-
-- **Server workloads**: mTLS with SPIFFE certificates, cloud provider instance identity, Kubernetes service account tokens
-- **Mobile apps**: Platform attestation (iOS App Attest, Android Play Integrity)
-- **Desktop apps**: User login, device certificates, enterprise credentials
-
-From our test output, we see a simple delegate token request:
+The delegate first asks the agent server for an agent token:
 
 ```bash
 ================================================================================
@@ -73,26 +59,28 @@ From our test output, we see a simple delegate token request:
 POST https://agent.supply-chain.com/delegate/token HTTP/1.1
 Content-Type: application/json
 
-[Body]
-{
-  "sub": "delegate-1",
-  "cnf_jwk": {
-    "kty": "OKP",
-    "crv": "Ed25519",
-    "x": "F3qaAzz4oWqJllxanygNdyR8o5apnV3uXmUQQZeT5Ys",
-    "kid": "delegate-key-1"
-  }
-}
+[Body (143 bytes)]
+{"sub": "delegate-1", "cnf_jwk": {"kty": "OKP", "crv": "Ed25519", "x": "-XbMHZc393RgM8I3PFQqLYWLnOSC1KPCA1hYgOyAxVc", "kid": "delegate-key-1"}}
 ================================================================================
 ```
 
-The delegate provides:
-- **`sub`**: Delegate identifier (persists across key rotations)
-- **`cnf_jwk`**: The delegate's public key
+The delegate sends:
 
-*Note: In production, this request would include authentication credentials (mTLS, bearer token, etc.) - this example flow omits this for clarity.*
+- `sub`: a stable delegate identifier
+- `cnf_jwk`: the delegate’s public key
 
-The agent server issues an agent token:
+In a real deployment, this request would not be anonymous. The delegate still needs to authenticate to the agent server before the agent server will issue an agent token. AAuth leaves that authentication method out of scope so deployments can use whatever attestation or platform identity fits their environment. Common examples include:
+
+- server workloads using mTLS, SPIFFE, or cloud workload identity
+- mobile apps using platform attestation
+- desktop or CLI clients using user login, device credentials, or enterprise identity
+
+So the important distinction is:
+
+- AAuth defines the agent token that comes out of this step
+- the deployment defines how the delegate proves it is entitled to ask for that token
+
+The agent server responds with an agent token:
 
 ```bash
 ================================================================================
@@ -109,9 +97,9 @@ Content-Type: application/json
 ================================================================================
 ```
 
-### Agent Token Structure
+### The Agent Token Shape
 
-The agent token is a JWT with these claims:
+For this flow, the agent token looks like this:
 
 ```json
 {
@@ -119,81 +107,106 @@ The agent token is a JWT with these claims:
   "kid": "key-1",
   "typ": "agent+jwt"
 }
+```
+
+```json
 {
   "iss": "https://agent.supply-chain.com",
   "sub": "delegate-1",
-  "exp": 1768789821,
+  "jti": "8eb1e0fc-db74-4446-909d-664052a379c6",
   "cnf": {
     "jwk": {
       "kty": "OKP",
       "crv": "Ed25519",
-      "x": "F3qaAzz4oWqJllxanygNdyR8o5apnV3uXmUQQZeT5Ys",
+      "x": "-XbMHZc393RgM8I3PFQqLYWLnOSC1KPCA1hYgOyAxVc",
       "kid": "delegate-key-1"
     }
-  }
+  },
+  "iat": 1774977290,
+  "exp": 1774980890
 }
 ```
 
-Key elements:
-- **Header `typ: agent+jwt`**: Identifies this as an agent token (not auth token)
-- **`iss`**: The agent identity - this is what resources see as the agent
-- **`sub`**: The delegate identifier - persists across key rotations
-- **`cnf.jwk`**: Cryptographically binds this token to the delegate's signing key
-- **Signature**: Signed by the agent server using its JWKS
+The important parts are:
 
-The delegate now has cryptographic proof: "I am delegate-1 of agent https://agent.supply-chain.com, bound to this specific key."
+- `typ: agent+jwt` identifies this as an agent token
+- `iss` is the parent agent identity
+- `sub` is the delegate identifier
+- `cnf.jwk` binds the token to the delegate’s key
 
-### Phase 2: Delegate Accesses Resources
+This means the delegate can say: “I am delegate `delegate-1`, acting for `https://agent.supply-chain.com`, and this is the specific key I’m allowed to use.”
 
-The delegate can now access resources using the agent token to fulfill the Signature-Key / Signature with the jwt scheme, Basically the agent signs with its epheeral key and then presents the agent token to the receiver to verify the signature. Presenting it via the `Signature-Key` header:
+## Phase 2: The Delegate Accesses a Resource
+
+With the agent token, the delegate can now call a resource that requires agent identity:
 
 ```bash
 ================================================================================
 >>> DELEGATE REQUEST to https://important.resource.com/data-jwks
 ================================================================================
 GET https://important.resource.com/data-jwks HTTP/1.1
-Signature: sig1=:g1VmPaHtG7B1_vZ0FmmegnAtf804jio4EpC866wHyuPeQM07ikVZmAWxc5hjxR1SiveSq3ib9lgzDf7GwRL9AA:
-Signature-Input: sig1=("@method" "@authority" "@path" "signature-key");created=1768786221
-Signature-Key: sig1=(scheme=jwt jwt="eyJhbGciOiJFZERTQSIsImtpZCI6ImtleS0xIiwidHlwIjoiYWdlbnQrand0In0...")
+Signature: sig=:ooGVsioU9vOZplVZgQFjCACPyIMQg9iLf7qFms-Owq4_4PAidGMS5bsG-Z2yMl2EdShZRfaaOAESypP1ABNxBg:
+Signature-Input: sig=("@method" "@authority" "@path" "signature-key");created=1774977290
+Signature-Key: sig=(scheme=jwt jwt="eyJhbGciOiJFZERTQSIsImtpZCI6ImtleS0xIiwidHlwIjoiYWdlbnQrand0In0.eyJpc3MiOiJo...")
 ================================================================================
 ```
 
-The resource validates:
+The delegate signs the request with its own private key. The resource verifies:
 
-1. **Agent token signature**: Verify using the agent server's JWKS from `https://agent.supply-chain.com/.well-known/aauth-agent`
-2. **Agent token claims**: Check `iss`, `typ: agent+jwt`, expiration
-3. **Request signature**: Verify using the key from `cnf.jwk` in the agent token
-4. **Cryptographic binding**: The request signature must match the key bound in the agent token
+1. the `agent+jwt` signature using the parent agent server’s JWKS
+2. the token’s claims (`iss`, `sub`, `exp`, `typ`)
+3. the request signature using the key inside `cnf.jwk`
+4. that the request signature matches the key bound in the agent token
 
-
-
-## Phase 3: Delegate Requests Auth Tokens
-
-For resources requiring authorization, the delegate follows the standard [authorization flow](./flow-03-authz.md), but presents the agent token instead of JWKS-based identity:
+If all of that checks out, the resource grants access:
 
 ```bash
 ================================================================================
->>> DELEGATE REQUEST to https://auth-server.com/agent/token
+<<< RESOURCE RESPONSE
 ================================================================================
-POST https://auth-server.com/agent/token HTTP/1.1
-Content-Digest: sha-256=:rMyTWCblP3KXnWkI2KGnDVqj91ETqvcEUuzSrXChi+c=:
-Content-Type: application/x-www-form-urlencoded
-Signature: sig1=:ICv_zjE12EOoEOSKofQR9R3-IoRL7TM0DEc2Q8cJubwoRnbWvFNUDQQFiVizugLFeTAmBQ4JqRGv2qLpQO8GBw:
-Signature-Input: sig1=("@method" "@authority" "@path" "content-type" "content-digest" "signature-key");created=...
-Signature-Key: sig1=(scheme=jwt jwt="eyJhbGciOiJFZERTQSIsImtpZCI6ImtleS0xIiwidHlwIjoiYWdlbnQrand0In0...")
+HTTP/1.1 200
+content-length: 206
+content-type: application/json
 
-[Body]
-request_type=auth&resource_token=eyJhbGciOiJFZERTQSIsImtpZCI6InJlc291cmNlLWtleS0xIiwidHlwIjoicmVzb3VyY2Urand0In0...
+[Body (206 bytes)]
+{"message":"Access granted","data":"This is protected data (identified via agent token)","scheme":"jwt","token_type":"agent+jwt","method":"GET","agent":"https://agent.supply-chain.com","agent_delegate":"delegate-1"}
 ================================================================================
 ```
 
-The auth server validates:
-1. The agent token signature (from the parent agent's JWKS)
-2. The resource token signature
-3. The request signature matches `cnf.jwk` in the agent token
-4. Policy: Is this delegate authorized to act as this agent?
+Notice what the resource learns:
 
-If approved, the auth server issues an auth token:
+- `agent`: the parent agent identity
+- `agent_delegate`: the specific delegate instance
+
+That gives the resource both a stable policy identity and per-delegate visibility for auditing or rate limiting.
+
+## Phase 3: Delegates and Auth Tokens
+
+Delegation also matters when a resource requires authorization, not just identity. In that case, the delegate follows the same auth-token flow as any other caller, but presents the `agent+jwt` instead of proving identity via JWKS discovery.
+
+Conceptually, that request looks like:
+
+```bash
+================================================================================
+>>> DELEGATE REQUEST to https://auth-server.com/token
+================================================================================
+POST https://auth-server.com/token HTTP/1.1
+Content-Type: application/json
+Signature-Key: sig=(scheme=jwt jwt="eyJhbGciOiJFZERTQSIsImtpZCI6ImtleS0xIiwidHlwIjoiYWdlbnQrand0In0...")
+
+[Body]
+{"resource_token":"..."}
+================================================================================
+```
+
+The auth server can then:
+
+1. validate the agent token against the parent agent’s JWKS
+2. validate the resource token
+3. verify the request signature against `cnf.jwk`
+4. issue an auth token that records both the parent agent and the delegate
+
+That resulting auth token would include claims like:
 
 ```json
 {
@@ -205,63 +218,45 @@ If approved, the auth server issues an auth token:
     "jwk": {
       "kty": "OKP",
       "crv": "Ed25519",
-      "x": "F3qaAzz4oWqJllxanygNdyR8o5apnV3uXmUQQZeT5Ys",
+      "x": "-XbMHZc393RgM8I3PFQqLYWLnOSC1KPCA1hYgOyAxVc",
       "kid": "delegate-key-1"
     }
   },
-  "scope": "data.read data.write",
-  "exp": 1768789821
+  "scope": "data.read data.write"
 }
 ```
 
-Note the `agent_delegate` claim—the auth token records which delegate performed the authorization. The resource can use this for audit logging, delegate-specific policies, or rate limiting.
+That `agent_delegate` claim tells the resource exactly which delegate was responsible for the authorization.
 
+For this flow, we focus on two concrete things:
 
-## Key Rotation Without Breaking Refresh Tokens
+- obtaining and validating the `agent+jwt`
+- using that `agent+jwt` successfully against a resource that requires identity
 
-One of the key benefits of agent delegation is **key rotation without affecting refresh tokens**. The `sub` claim (delegate identifier) persists while keys rotate:
+It then notes that the same delegated identity can be used in the auth-token flow as well.
 
-**Scenario**: A container restarts (ephemeral keys are lost):
+## Why Delegation Matters
 
-1. **Before restart**:
-   - Agent token: `sub: spiffe://supply-chain.com/api`, `cnf.jwk: KEY_A`
-   - Refresh token at auth server: bound to `agent: supply-chain.com` + `sub: spiffe://supply-chain.com/api`
+This solves a real operational problem for distributed agents:
 
-2. **After restart**:
-   - Container generates fresh key pair (KEY_B)
-   - Requests new agent token from agent server
-   - Agent server issues: `sub: spiffe://supply-chain.com/api`, `cnf.jwk: KEY_B` (same `sub`, new key)
-   
-3. **Refresh token still works**:
-   - Container uses KEY_B to sign refresh request
-   - Presents new agent token with KEY_B
-   - Auth server validates: same `agent` + `sub`, different key is expected
-   - Issues new auth token bound to KEY_B
+- each delegate gets its own keypair
+- the parent identity remains stable
+- compromised delegates can be revoked independently
+- key rotation does not require inventing a brand-new agent identity
+- resources and auth servers can still attribute behavior to a specific delegate
 
-Without delegation, key rotation would require:
-- Re-authenticating the user
-- Re-granting consent
-- Requesting new refresh tokens
-- Managing complex migration windows
+That gives you a clean balance:
 
-With delegation, the `sub` provides stable identity while keys rotate freely.
+- one logical agent identity for policy and user understanding
+- many delegate keys for operational safety and flexibility
 
 ## Summary
 
-Agent delegation enables distributed agents while maintaining AAuth's security properties:
-
-- **Shared identity, unique keys**: Multiple delegates act as one agent, each with its own signing key
-- **Platform integration**: Leverage existing infrastructure (SPIFFE, mobile attestation, user credentials)
-- **Key rotation without disruption**: `sub` provides stable identity while keys rotate
-- **Per-delegate control**: Agent servers and auth servers can enforce delegate-specific policies
-- **Isolation**: Compromised delegate doesn't compromise the entire agent identity
-- **Proof-of-possession**: Every request cryptographically proves key ownership
-
-The pattern recognizes that modern agents are distributed systems—containers, mobile apps, edge devices—that need to share an identity without sharing secrets. Agent tokens provide the cryptographic binding that makes this possible.
+Agent delegation lets multiple workloads or devices act as one logical agent without sharing a signing key. The parent agent server issues short-lived `agent+jwt` tokens to delegates, each bound to the delegate’s own key. Resources can then verify both the parent agent identity and the delegate instance that made the request. This preserves proof-of-possession, supports per-delegate auditing and policy, and avoids the security problems of shared keys.
 
 ## Where to Next
 
-We've now covered the complete AAuth authorization landscape:
+We've now covered:
 
 - [Pseudonymous (HWK)](./flow-01-hwk.md): Cryptographic proof without identity
 - [Identified (JWKS)](./flow-02-jwks.md): Domain-bound agent identity
@@ -270,6 +265,8 @@ We've now covered the complete AAuth authorization landscape:
 - [Token Exchange](./flow-05-token-ex.md): Multi-hop authorization chains
 - **Agent Delegation (this post)**: Distributing identity across workloads and devices
 
-After going through these flows, we are ready to dig into a real-life implementation with Keycloak, Agentgateway, A2A protocol, and AAuth library support. 
+After these flows, we have the main building blocks for putting AAuth into a real implementation.
+
+[In the next post](./flow-07-clarification.md), we look at clarification chat, where the auth server can ask the agent for additional context during a pending authorization flow.
 
 [← Back to index](./index.md)

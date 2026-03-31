@@ -17,10 +17,11 @@ The source code for this section can be found on GitHub: [https://github.com/chr
 
 1. [Header Web Key (HWK) for Pseudonymous Access](flow-01-hwk.md)
 2. [Json Web Keys (JWKS) for Identified Access / Agent Identity](flow-02-jwks.md)
-4. [Identified Agent Authorization](flow-03-authz.md)
+3. [Identified Agent Authorization](flow-03-authz.md)
 4. [User Consent with Identified Access with Authorization](flow-04-user.md)
 5. [Authorization Token Exchange](flow-05-token-ex.md)
 6. [Delegated Agent Identity](flow-06-delegated.md)
+7. [Clarification Chat During Authorization](flow-07-clarification.md)
 
 
 ## 🎉 Full Working Demo with Keycloak and Agentgateway
