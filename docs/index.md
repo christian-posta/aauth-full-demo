@@ -9,7 +9,7 @@ title: Exploring AAuth for Agent Identity and Access Management (IAM)
 
 ## Intro: Digging in to AAuth Flows
 
-This set of resources is intended to help you understand the AAuth protocol in concrete detail. It is not a specification (see [Agent Auth](https://github.com/dickhardt/AAuth) for the evolution of that). This is specificatlly a more detailed review of the spec with examples (as a result of me implementing this). 
+This set of resources is intended to help you understand the AAuth protocol in concrete detail. It is not a specification (see [Agent Auth](https://github.com/dickhardt/AAuth)). This is specifically a more detailed review of the spec with examples (as a result of me implementing this). 
 
 This section walks through various flows with detailed Header/Payload examples so the sequence diagrams from the AAuth exploratory draft are illustrated concretely. 
 
@@ -25,7 +25,7 @@ The source code for this section can be found on GitHub: [https://github.com/chr
 
 ## 🎉 Full Working Demo with Keycloak and Agentgateway
 
-This set of resources walks you through set up and evaluation of a realistic AAuth implementation with Identity Provider (Keycloak), Agentgateway, and libraries to support AAuth in multiple languages (Java, Python, Rust). 
+This set of resources walks you through set up and evaluation of a realistic AAuth implementation with Identity Provider (Keycloak), [Agentgateway](https://github.com/agentgateway/agentgateway), and libraries to support AAuth in multiple languages (Java, Python, Rust). 
 
 ![](./images/demo-flow.png)
 
