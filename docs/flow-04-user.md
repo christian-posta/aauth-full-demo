@@ -12,7 +12,7 @@ In the [previous post](./flow-03-authz.md), we saw how an agent can obtain autho
 In the previous section which focused on [identified agent authorization](./flow-03-authz.md), the auth server evaluated policy and immediately issued an auth token. This works for scenarios like:
 
 - Machine-to-machine authorization (no user in the loop)
-- Pre-approved agent-resource pairs
+- Pre-approved, admin consented agent-resource pairs
 - Low-sensitivity operations
 
 But many scenarios require explicit user consent:
@@ -22,7 +22,7 @@ But many scenarios require explicit user consent:
 - First-time authorization for a new agent
 - High-sensitivity operations
 
-The auth server makes this determination, not the agent or resource. The agent simply presents the resource token; the auth server decides whether to issue a token directly or require consent.
+The auth server makes this determination, not the agent or resource. The agent simply presents the resource token; the auth server decides whether to issue a token directly or require consent or user involvement.
 
 ## The Consent Flow
 
@@ -38,9 +38,9 @@ The agent requests the protected resource and receives a 401 with a resource tok
 >>> AGENT REQUEST to https://important.resource.com/data-auth
 ================================================================================
 GET https://important.resource.com/data-auth HTTP/1.1
-Signature: sig1=:yNg83RIDMM7dnCJXGig_LrBskrbHtlTFDzCpMBQgtn1oELS1c4QNhH30rboOuGpDLgjaFx6Ut14n2gzWyV26DA:
-Signature-Input: sig1=("@method" "@authority" "@path" "signature-key");created=1768786017
-Signature-Key: sig1=(scheme=jwks id="https://agent.supply-chain.com" kid="key-1" well-known="aauth-agent")
+Signature: sig=:2_i12baYGJq8rTnIQrRltTs8NQKufOF6G98SXwHtaoG1Ygq-cOd1c5vsp70u1bfJ1MEZZWd68zee4AOVTxJbCA:
+Signature-Input: sig=("@method" "@authority" "@path" "signature-key");created=1774923811
+Signature-Key: sig=(scheme=jwks_uri id="https://agent.supply-chain.com" kid="key-1")
 ================================================================================
 ```
 ```bash
@@ -48,7 +48,7 @@ Signature-Key: sig1=(scheme=jwks id="https://agent.supply-chain.com" kid="key-1"
 <<< RESOURCE RESPONSE
 ================================================================================
 HTTP/1.1 401
-agent-auth: httpsig; auth-token; resource_token="eyJhbGciOiJFZERTQSIsImtpZCI6InJlc291cmNlLWtleS0xIiwidHlwIjoi...
+aauth: require=auth-token; resource-token="eyJhbGciOiJFZERTQSIsImtpZCI6InJlc291cmNlLWtleS0xIiwidHlwIjoic...
 content-length: 22
 
 [Body (22 bytes)]
@@ -56,72 +56,85 @@ Authorization required
 ================================================================================
 ```
 
-### Step 3: Agent Requests Authorization (Same Request, Different Response)
+### Step 3: Agent Requests Authorization
 
 The agent presents the resource token to the auth server, exactly as in [identified agent authorization](./flow-03-authz.md):
 
 ```bash
 ================================================================================
->>> AGENT REQUEST to https://auth-server.com/agent/token
+>>> AGENT TOKEN REQUEST to https://auth-server.com/token
 ================================================================================
-POST https://auth-server.com/agent/token HTTP/1.1
-Content-Digest: sha-256=:rMyTWCblP3KXnWkI2KGnDVqj91ETqvcEUuzSrXChi+c=:
-Content-Type: application/x-www-form-urlencoded
-Signature: sig1=:ICv_zjE12EOoEOSKofQR9R3-IoRL7TM0DEc2Q8cJubwoRnbWvFNUDQQFiVizugLFeTAmBQ4JqRGv2qLpQO8GBw:
-Signature-Input: sig1=("@method" "@authority" "@path" "content-type" "content-digest" "signature-key");created=176...
-Signature-Key: sig1=(scheme=jwks id="https://agent.supply-chain.com" kid="key-1" well-known="aauth-agent")
+POST https://auth-server.com/token HTTP/1.1
+Content-Type: application/json
+Signature: sig=:fUdXRsCaWAzclDeC3nHIFIz_QV_GDY7wvIj4mlCH9EzjGdmiRnklUUulJZephPqeDoydsyJD5KsOfqX37MYXDA:
+Signature-Input: sig=("@method" "@authority" "@path" "signature-key");created=1774923811
+Signature-Key: sig=(scheme=jwks_uri id="https://agent.supply-chain.com" kid="key-1")
 
-[Body]
-request_type=auth&resource_token=eyJhbGciOiJFZERTQSIsImtpZCI6InJlc291cmNlLWtleS0xIiwidHlwIjoicmVzb3VyY2Urand0In0...&redirect_uri=https://agent.supply-chain.com/callback
+[Body (537 bytes)]
+{"resource_token": "eyJhbGciOiJFZERTQSIsImtpZCI6InJlc291cmNlLWtleS0xIiwidHlwIjoicmVzb3VyY2Urand0In0..."}
 ================================================================================
 ```
 
-But this time, the auth server evaluates policy and determines that user consent is required. Instead of an auth token, it returns a **request token**:
+But this time, the auth server evaluates policy and determines that user consent is required. Instead of issuing an auth token immediately, it returns a deferred response:
+
 ```bash
 ================================================================================
 <<< AUTH SERVER RESPONSE
 ================================================================================
-HTTP/1.1 200 OK
+HTTP/1.1 202 Accepted
+Location: https://auth-server.com/pending/2e44214dc421
+AAuth: require=interaction; code="7R6XKPRP"
 Content-Type: application/json
 
 [Body]
 {
-  "request_token": "kgJ04U2x_0tIBAddXd5I_LTnUMow6dWnMTjkEPuY1Y4",
-  "expires_in": 600
+  "status": "pending",
+  "location": "https://auth-server.com/pending/2e44214dc421",
+  "require": "interaction",
+  "code": "7R6XKPRP"
 }
 ================================================================================
 ```
 
-## Request Tokens: OAuth PAR for Agents
+The response tells the agent:
 
-If you've worked with OAuth 2.0 Pushed Authorization Requests (PAR, RFC 9126), this pattern will look familiar. PAR lets clients push authorization parameters to the auth server and receive an opaque reference in return.
+- The authorization request is pending
+- Poll `location` to learn when the auth token is ready
+- The user must complete an interaction step
+- The interaction code is `7R6XKPRP`
 
-AAuth's request token serves a similar purpose:
+## Deferred Authorization Instead of Authorization Codes
 
-| OAuth PAR | AAuth Request Token |
-|-----------|---------------------|
-| Stores authorization request server-side | Stores authorization context server-side |
-| Returns `request_uri` | Returns `request_token` |
-| Used in authorization URL | Used in consent URL |
-| Short-lived (typically 60s) | Short-lived (600s in this example) |
+This flow no longer relies on a request token plus authorization code exchange. Instead, the auth server uses a standard deferred pattern:
 
-But there's a key difference: the AAuth request token already contains cryptographically verified context from the resource token. The auth server has already validated:
+- The initial token request returns `202 Accepted`
+- The response includes a pending URL
+- The response tells the agent that interaction is required
+- The response includes a short interaction code the user can enter or scan
+
+Before sending this `202`, the auth server has already validated:
 
 - The resource's identity and signature
 - The agent's identity and signature  
 - The cryptographic binding between them (`agent_jkt`)
-- The requested scopes / constraints
+- The requested scopes and constraints
 
-This context is stored server-side, associated with the request token. The user will consent to a request that has already been cryptographically validated.
+That validated context is stored server-side behind the pending URL. The user is consenting to a request that has already been cryptographically verified.
 
 ## Step 4: User Consent
 
-The agent directs the user to the consent endpoint:
-```
-https://auth-server.com/agent/auth?request_token=kgJ04U2x_0tIBAddXd5I_LTnUMow6dWnMTjkEPuY1Y4&redirect_uri=https://agent.supply-chain.com/callback
+The user completes interaction at the auth server using the interaction code:
+
+```bash
+INFO:     127.0.0.1:49425 - "GET /interact?code=7R6XKPRP HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49425 - "POST /interact HTTP/1.1" 303 See Other
+INFO:     127.0.0.1:49425 - "GET /interact?code=7R6XKPRP HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49425 - "POST /interact HTTP/1.1" 200 OK
 ```
 
-The auth server displays a consent screen to the user. Because the request token references validated context, the consent screen can show verified information:
+The agent would show the user the interaction URL and interaction code and the user would authenticate and grant consent in a browser. If you're familiar with OAuth device code flow, this should feel similar. However, in AAuth, this deferred flow is the default first-class flow not an optional bolt-on after-the-fact. 
+
+The auth server displays a consent screen to the user. Because the pending authorization request already references validated context, the consent screen can show verified information:
 
 - ✓ Agent identity: `https://agent.supply-chain.com` (verified via JWKS)
 - ✓ Resource requesting access: `https://important.resource.com` (verified via signature)
@@ -131,36 +144,19 @@ The user isn't consenting to claims made by the agent. They're consenting to cry
 
 ### After User Approval
 
-Once the user consents, the auth server redirects back to the agent with an authorization code:
-```
-https://agent.supply-chain.com/callback?code=3oyoQOpk9Mn1caCjVoJ-ibMfIpyRzBKwV2A5XPCuFGk
-```
+Once the user completes consent, the pending URL becomes ready to return the auth token.
 
-## Step 5: Code Exchange
+## Step 5: Agent Polls the Pending URL
 
-The agent exchanges the code for an auth token. Note that this request is also signed: the agent continues to prove its identity:
+The agent polls the pending URL until the auth server is ready to return the auth token:
+
 ```bash
-================================================================================
->>> AGENT REQUEST to https://auth-server.com/agent/token
-================================================================================
-POST https://auth-server.com/agent/token HTTP/1.1
-Content-Digest: sha-256=:iW1aTTCfubZKzu+4a8LoxYXIVEX0av0ii09u0ybxS1A=:
-Content-Type: application/x-www-form-urlencoded
-Signature: sig1=:qrlfQIgWSZtk5ret60dsdW-nIIjbM9S_nOO4dq8Mxs1hfnv0UZf-EZVOYB8E7QBD1J0QmQbwt-6CyJyzN8BoAg:
-Signature-Input: sig1=("@method" "@authority" "@path" "content-type" "content-digest" "signature-key");created=176...
-Signature-Key: sig1=(scheme=jwks id="https://agent.supply-chain.com" kid="key-1" well-known="aauth-agent")
-
-[Body]
-request_type=code&code=3oyoQOpk9Mn1caCjVoJ-ibMfIpyRzBKwV2A5XPCuFGk&redirect_uri=https://agent.supply-chain.com/callback
-================================================================================
+INFO:     127.0.0.1:49426 - "GET /pending/2e44214dc421 HTTP/1.1" 200 OK
 ```
 
-The auth server validates:
-1. The agent's signature matches the agent bound to the original request
-2. The authorization code is valid and unused
-3. The redirect URI matches the original request
+There is no OAuth-style authorization code in this flow. The auth token is delivered from the auth server to the agent through the pending URL the agent already knows about and polls with its own authenticated requests. The browser is no longer a trusted (also unsafe) actor in this flow. It's an inconsequential actor from a security perspective. No need to mess around with authorization codes or PKCE. 
 
-Then issues the auth token:
+When the pending request is complete, the auth server returns the auth token:
 ```bash
 ================================================================================
 <<< AUTH SERVER RESPONSE
@@ -171,8 +167,7 @@ Content-Type: application/json
 [Body]
 {
   "auth_token": "eyJhbGciOiJFZERTQSIsImtpZCI6ImF1dGgta2V5LTEiLCJ0eXAiOiJhdXRoK2p3dCJ9...",
-  "expires_in": 3600,
-  "token_type": "Bearer"
+  "expires_in": 3600
 }
 ================================================================================
 ```
@@ -182,16 +177,18 @@ The auth token now includes a `sub` claim identifying the user who consented:
 {
   "iss": "https://auth-server.com",
   "aud": "https://important.resource.com",
+  "jti": "ed2b1398-3a50-4982-946f-302f1a248620",
   "cnf": {
     "jwk": {
       "kty": "OKP",
       "crv": "Ed25519",
-      "x": "UsRd_e0Lq8WU5uYEklowyqe_DSaFfB9fjnn__DwWF6E",
+      "x": "GjVi-2JD9V1LOrEpXE8nVIiuhz8UbFru1Wvz0YrtGWw",
       "kid": "key-1"
     }
   },
+  "iat": 1774923811,
   "scope": "data.read data.write",
-  "exp": 1768789645,
+  "exp": 1774927411,
   "agent": "https://agent.supply-chain.com",
   "sub": "testuser"
 }
@@ -206,9 +203,9 @@ From here, it's identical to [identified agent authorization](./flow-03-authz.md
 >>> AGENT REQUEST to https://important.resource.com/data-auth
 ================================================================================
 GET https://important.resource.com/data-auth HTTP/1.1
-Signature: sig1=:yMTf_qgsX8ouHj7D5N-NGXVpq8UAPaz12MhkQoRJwAsPBwsHc1NcTRXuo2KkicCLG03fzv-HWJd0Zo0bci4aCg:
-Signature-Input: sig1=("@method" "@authority" "@path" "signature-key");created=1768786045
-Signature-Key: sig1=(scheme=jwt jwt="eyJhbGciOiJFZERTQSIsImtpZCI6ImF1dGgta2V5LTEiLCJ0eXAiOiJhdXRoK2p3dCJ9.eyJpc3...
+Signature: sig=:2F0yhIB_jVAR5vCcCwep7W744aTcsltW3fb0bEES8dY6WBrH-Jtf1Di30fxhrPh_E90q2utS6FdNx76-KchTBg:
+Signature-Input: sig=("@method" "@authority" "@path" "signature-key");created=1774923811
+Signature-Key: sig=(scheme=jwt jwt="eyJhbGciOiJFZERTQSIsImtpZCI6ImF1dGgta2V5LTEiLCJ0eXAiOiJhdXRoK2p3dCJ9.eyJpc3...
 ================================================================================
 ```
 ```bash
@@ -226,12 +223,12 @@ content-type: application/json
 
 ## Policy Decides, Not the Agent
 
-A crucial aspect of this design: **the agent doesn't know in advance whether consent will be required**. It makes the same request to `/agent/token` regardless. The auth server's response tells the agent what happens next:
+A crucial aspect of this design: **the agent doesn't know in advance whether consent will be required**. It makes the same request to `/token` regardless. The auth server's response tells the agent what happens next:
 
 | Response | Meaning |
 |----------|---------|
-| `auth_token` in response | Authorization granted directly |
-| `request_token` in response | User consent required |
+| `200` with `auth_token` | Authorization granted directly |
+| `202` with pending URL and interaction code | User interaction required |
 | 4xx error | Authorization denied |
 
 This keeps policy decisions centralized in the auth server. The auth server can consider:
@@ -241,6 +238,8 @@ This keeps policy decisions centralized in the auth server. The auth server can 
 - Does organizational policy allow direct issuance?
 - Are there risk signals that require user confirmation?
 
+And the agent treats any call to /token the same: it could return immediately, or a 202 deferred response. It will always be prepared to handle that. There is no "this is authorization code flow vs device code flow vs client credentials, etc". All auth flows in AAuth are treated as potentially having the same outcome (ie, deferred and polled). 
+
 
 ## Comparison with OAuth
 
@@ -248,7 +247,8 @@ This keeps policy decisions centralized in the auth server. The auth server can 
 |--------|--------------------------|-------------------|
 | Client authentication | Client secret or PKCE | HTTP message signatures |
 | Authorization request | Client constructs URL with scopes | Resource provides scope requirements |
-| Request binding | PKCE code verifier | Request token + agent signatures |
+| Deferred completion | Authorization code redirect | Pending URL polling |
+| Request binding | PKCE code verifier | Resource token + agent signatures |
 | Token binding | Optional (DPoP) | Mandatory (cnf claim) |
 | Scope source | Client decides | Resource declares |
 
