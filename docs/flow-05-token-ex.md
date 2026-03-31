@@ -1,94 +1,61 @@
 ---
 layout: default
-title: Token Exchange for Cross Identity Trust Domain and On Behalf Of
+title: Token Exchange
 ---
 
-
-In the previous posts, we covered how agents obtain authorization through [direct issuance](./flow-03-authz.md) or [user consent](./flow-04-user-consent.md). But what happens when a resource needs to call *another* resource to fulfill a request? The resource could be in its same trust domain, or in a different one. This post covers how [Agent Auth](https://github.com/dickhardt/AAuth) enables multi-hop authorization through **token exchange** while maintaining cryptographic proof of the delegation chain.
+In the previous posts, we covered direct authorization, and user consent. This flow covers a different problem: what happens when one resource needs to call another resource to fulfill the original request. This is where [Agent Auth](https://github.com/dickhardt/AAuth) uses **token exchange**.
 
 [← Back to index](index.md)
 
-## When Resources Become Agents
+## When a Resource Becomes an Agent
 
-In traditional OAuth, resources are endpoints. They receive tokens and serve data. But real-world systems are rarely that simple. A resource often needs to call other services. For example a company's supply chain portal may need to query other systems such as inventory, shipping, or pricing systems.
+In multi-hop systems, a resource often needs to call a downstream resource:
 
-When a resource needs to access a downstream resource on behalf of an agent, it must prove:
+- an application API calls a billing API
+- a workflow engine calls a document service
+- a gateway calls a specialized backend
 
-1. **Its own identity** (the resource is a legitimate caller)
-2. **The authorization chain** (this request ultimately traces back to an authorized agent)
-3. **The delegated authority** (the resource is acting within the bounds of the original authorization)
+At that point, the upstream resource is acting as an agent for the downstream call. It needs:
 
-AAuth handles this through **token exchange** which is a mechanism for resources to obtain new auth tokens bound to their own keys while preserving the delegation chain.
+- its own verifiable identity
+- proof that it already holds legitimate upstream authorization
+- a new auth token bound to its own signing key for the downstream resource
 
-## The Token Exchange Flow
+Token exchange is how it gets that downstream token.
 
-Here's the complete flow when Agent `agent.supply-chain.com` accesses Resource `important.resource.com`, which in turn needs data from Resource `second.resource.com`:
+## The Flow
+
+For this flow, we use this chain:
+
+```text
+Agent 1 → Resource 1 / Auth Server 1 → Resource 2 / Auth Server 2
+```
 
 ![](./images/demo5.png)
 
-### Phase 1: Agent `agent.supply-chain.com` Gets Authorized for Resource `important.resource.com`
+### Step 1: Agent 1 Gets an Auth Token for Resource 1
 
-This follows the standard [authorization flow](./flow-03-authz.md). Agent `agent.supply-chain.com` requests access to Resource `important.resource.com`, receives a challenge, obtains an auth token from Auth Server `auth-server.com`, and accesses the resource:
+This starts exactly like the direct authorization flow:
 
 ```bash
 ================================================================================
 >>> AGENT REQUEST to https://important.resource.com/data-auth
 ================================================================================
 GET https://important.resource.com/data-auth HTTP/1.1
-Signature: sig1=:bfJBXxQfM_-qjKpgUnjsHF_vjkGkMfSvZvcjCR7n0QXGuOWosMpgdQmDraokNjr41wkdy75dfIS-7FXkrjeaDw:
-Signature-Input: sig1=("@method" "@authority" "@path" "signature-key");created=1768786273
-Signature-Key: sig1=(scheme=jwks id="https://agent.supply-chain.com" kid="key-1" well-known="aauth-agent")
+Signature: sig=:PpSpJ904Hp2ntljt58UzAeh64hbww2R8bKH-en2N8zXAcf4deRTXc9qlLrkz2dsrIyOGUZLJNSUN265ju4Q3DA:
+Signature-Input: sig=("@method" "@authority" "@path" "signature-key");created=1774975920
+Signature-Key: sig=(scheme=jwks_uri id="https://agent.supply-chain.com" kid="key-1")
 ================================================================================
 ```
 
-After the challenge-response flow, Agent `agent.supply-chain.com` holds an auth token:
-
-```json
-{
-  "iss": "https://auth-server.com",
-  "aud": "https://important.resource.com",
-  "agent": "https://agent.supply-chain.com",
-  "cnf": {
-    "jwk": {
-      "kty": "OKP",
-      "crv": "Ed25519",
-      "x": "RC-Evfrxrf6yOojCMGjYxwsDpFb4LKa9E4ZLNsG3rwA",
-      "kid": "key-1"
-    }
-  },
-  "scope": "data.read data.write",
-  "exp": 1768789873
-}
-```
-
-### Phase 2: Resource `important.resource.com` Needs Data from Resource `second.resource.com`
-
-Resource `important.resource.com` receives the authenticated request from Agent `agent.supply-chain.com`. To fulfill this request, it needs to call `second.resource.com`. Resource `important.resource.com` now acts as an agent itself, making a signed request to `second.resource.com`:
-
-```bash
-================================================================================
->>> RESOURCE second.resource.com REQUEST received
-================================================================================
-GET /data-auth HTTP/1.1
-Host: 127.0.0.1:8004
-signature: sig1=:QyF8FyJHa_L2yYg7_wJL-VUv3oVIQcbQK8UDH3K8zaTTvFYoS3wVoy090jMt330QBvRKZ8Vl46_2iqs8Fn3eAA:
-signature-input: sig1=("@method" "@authority" "@path" "signature-key");created=1768786273
-signature-key: sig1=(scheme=jwks id="https://important.resource.com" kid="resource-key-1" well-known="aauth-agent")
-================================================================================
-```
-
-Notice the `Signature-Key`: Resource `important.resource.com` is using `scheme=jwks` with its own identity (`https://important.resource.com`) but with `well-known="aauth-agent"`. When a resource acts as an agent, it follows the agent discovery pattern. This means resources that need to make outbound calls should publish both `/.well-known/aauth-resource` (for inbound requests) and `/.well-known/aauth-agent` (for outbound requests). The JWKS can be the same, but the metadata endpoints serve different roles.
-
-### Phase 3: Resource `second.resource.com` Issues a Challenge
-
-Resource `second.resource.com` doesn't know or care that the caller is also a resource. It sees an agent requesting access and issues a standard authorization challenge:
+Resource 1 responds with the standard challenge:
 
 ```bash
 ================================================================================
 <<< RESOURCE RESPONSE
 ================================================================================
 HTTP/1.1 401
-agent-auth: httpsig; auth-token; resource_token="eyJhbGciOiJFZERTQSIsImtpZCI6InJlc291cmNlLWtleS0xIiwidHlwIjoi...
+aauth: require=auth-token; resource-token="eyJhbGciOiJFZERTQSIsImtpZCI6InJlc291cmNlLWtleS0xIiwidHlwIjoic...
 content-length: 22
 
 [Body (22 bytes)]
@@ -96,57 +63,113 @@ Authorization required
 ================================================================================
 ```
 
-The resource token identifies Resource `important.resource.com` as the agent:
+The agent then obtains an auth token from Auth Server 1. For this flow the auth token looks like:
+
+```json
+{
+  "iss": "https://auth-server.com",
+  "aud": "https://important.resource.com",
+  "jti": "7379f720-aff4-404a-a595-9cfa7f6251c8",
+  "cnf": {
+    "jwk": {
+      "kty": "OKP",
+      "crv": "Ed25519",
+      "x": "7cGdr_c-aHQzYICJD6vSlHX2amHMBjMEBamFzXbm-Q0",
+      "kid": "key-1"
+    }
+  },
+  "iat": 1774975920,
+  "exp": 1774979520,
+  "agent": "https://agent.supply-chain.com",
+  "scope": "data.read data.write"
+}
+```
+
+### Step 2: Resource 1 Calls Resource 2
+
+To fulfill the original request, Resource 1 now needs data from Resource 2. Resource 1 acts as an agent and makes its own signed request:
+
+```bash
+================================================================================
+>>> RESOURCE REQUEST received
+================================================================================
+GET /data-auth HTTP/1.1
+Host: second.resource.com
+signature: sig=:eH-XrpOcjyDewRBrbfBKHhgkLb0d3n4hVcelrzM3zvZzzFRPscHOCbz3xei_WGveSM2LCeuLfCg5pg-c2oJLDA:
+signature-input: sig=("@method" "@authority" "@path" "signature-key");created=1774975920
+signature-key: sig=(scheme=jwks_uri id="https://important.resource.com" kid="resource-key-1")
+================================================================================
+```
+
+Resource 2 treats Resource 1 just like any other caller and challenges it for authorization:
+
+```bash
+================================================================================
+<<< RESOURCE RESPONSE
+================================================================================
+HTTP/1.1 401
+aauth: require=auth-token; resource-token="eyJhbGciOiJFZERTQSIsImtpZCI6InJlc291cmNlLWtleS0xIiwidHlwIjoic...
+content-length: 22
+
+[Body (22 bytes)]
+Authorization required
+================================================================================
+```
+
+That downstream resource token identifies Resource 1 as the calling agent:
 
 ```json
 {
   "iss": "https://second.resource.com",
   "aud": "https://second-auth-server.com",
+  "jti": "7b6973a3-a373-4cc7-aacb-b3e8fcf59fd6",
   "agent": "https://important.resource.com",
-  "agent_jkt": "nN2XumQtDleF0DcuaNcF_Enz_9EezET4GK2j4QWPqRw",
+  "agent_jkt": "Vgq45kQ7NSbqGFu7kCWhal680dRj-43f8au-KuLEVJA",
   "scope": "data.read data.write",
-  "exp": 1768786873
+  "iat": 1774975920,
+  "exp": 1774976520
 }
 ```
 
-### Phase 4: Resource `important.resource.com` Exchanges the Token
+### Step 3: Resource 1 Exchanges the Token
 
-Here's where token exchange happens. Resource `important.resource.com` needs authorization from Auth Server `second-auth-server.com`, but it's not starting from scratch. It already has proof of legitimate authorization from the upstream flow. Resource `important.resource.com` makes an exchange request:
+Now Resource 1 asks Auth Server 2 for a downstream token:
 
 ```bash
 ================================================================================
->>> TOKEN EXCHANGE REQUEST to https://second-auth-server.com/agent/token
+>>> TOKEN EXCHANGE REQUEST to https://second-auth-server.com/token
 ================================================================================
-POST https://second-auth-server.com/agent/token HTTP/1.1
-Content-Digest: sha-256=:iPlDBazalrHGLswJx6HRsEUReW593fk1Fm9w8aoshDI=:
-Content-Type: application/x-www-form-urlencoded
-Signature: sig1=:ell-876hRnnrbm4EL1ZFDApnyrym2jT12mRJ4v76BSkBErc_Q_Ayz2dvTJATN4tgVby0nkhCy1g82rscdYcbBw:
-Signature-Input: sig1=("@method" "@authority" "@path" "content-type" "content-digest" "signature-key");created=176...
-Signature-Key: sig1=(scheme=jwt jwt="eyJhbGciOiJFZERTQSIsImtpZCI6ImF1dGgta2V5LTEiLCJ0eXAiOiJhdXRoK2p3dCJ9.eyJpc3...
+POST https://second-auth-server.com/token HTTP/1.1
+Content-Type: application/json
+Signature: sig=:Usk0pc0izUtmgZ4JTpRx8MH-neBtfzBBmOtU-7BIJCyEJMCsuIrIH3GSw3UfgCLbFcBBgP4tY8gM7iqiIUQjDg:
+Signature-Input: sig=("@method" "@authority" "@path" "signature-key");created=1774975920
+Signature-Key: sig=(scheme=jwt jwt="eyJhbGciOiJFZERTQSIsImtpZCI6ImF1dGgta2V5LTEiLCJ0eXAiOiJhdXRoK2p3dCJ9.eyJpc3M...
 
-[Body (470 bytes)]
-request_type=exchange&resource_token=eyJhbGciOiJFZERTQSIsImtpZCI6InJlc291cmNlLWtleS0xIiwidHlwIjoicmVzb3VyY2Urand0In0...
+[Body (1130 bytes)]
+{"resource_token": "eyJhbGciOiJFZERTQSIsImtpZCI6InJlc291cmNlLWtleS0xIiwidHlwIjoicmVzb3VyY2Urand0In0...", "upstream_token": "eyJhbGciOiJFZERTQSIsImtpZCI6ImF1dGgta2V5LTEiLCJ0eXAiOiJhdXRoK2p3dCJ9..."}
+================================================================================
 ```
 
-Two critical elements in this request:
+Two things matter in this exchange request:
 
-1. **`request_type=exchange`**: Tells Auth Server `second-auth-server.com` this is a token exchange, not a fresh authorization request
+1. `resource_token` proves that Resource 2 really challenged Resource 1 for access.
+2. `upstream_token` proves that Resource 1 already has legitimate upstream authorization tied to the original request chain.
 
-2. **`Signature-Key: sig1=(scheme=jwt jwt="...")`**: Resource `important.resource.com` presents the *upstream* auth token (the one it received from Agent `agent.supply-chain.com`) as proof of its authority to make this exchange
+The request is also signed with `scheme=jwt`, using the upstream auth token in the `Signature-Key` header. That binds the exchange request to the authorization Resource 1 already holds.
 
-The upstream token is carried in the `Signature-Key` header itself. Resource `important.resource.com` signs the exchange request with the key bound in that upstream token, proving it's the legitimate holder of the upstream authorization.
+### Step 4: Auth Server 2 Validates the Exchange
 
-### Phase 5: Auth Server `second-auth-server.com` Validates and Issues
+In this flow, Auth Server 2 trusts Auth Server 1. That lets it validate the upstream token and decide whether the exchange is allowed.
 
-Auth Server `second-auth-server.com` performs multiple validations:
+At a high level, Auth Server 2 verifies:
 
-1. **Validate the request signature**: Verify the HTTPSig using the key from the upstream auth token's `aud` claim. The claim will contain the intended resource/agent and we can use the normal JWKS key discovery based on that. Once we see the agent's JWKS we can validate the signature. 
-2. **Validate the upstream auth token**: Verify it was issued by Auth Server `auth-server.com` (which Auth Server `second-auth-server.com` must trust)
-3. **Validate the resource token**: Verify the signature using Resource `second.resource.com`'s published JWKS
-4. **Verify the chain**: Confirm the upstream token's `aud` matches the requester (Resource `important.resource.com`)
-5. **Authorize the exchange**: Evaluate whether this exchange is permitted given the upstream authorization
+- the HTTP message signature on the exchange request
+- the upstream auth token from Auth Server 1
+- the downstream `resource_token` from Resource 2
+- that the trust chain is valid
+- that Resource 1 is allowed to get a token for Resource 2
 
-If everything checks out, Auth Server `second-auth-server.com` issues a new auth token:
+If everything checks out, Auth Server 2 issues a new auth token:
 
 ```bash
 ================================================================================
@@ -163,77 +186,22 @@ Content-Type: application/json
 ================================================================================
 ```
 
-## The `act` Claim: Tracking Delegation
+### Step 5: Resource 1 Uses the Downstream Token
 
-The exchanged token includes a crucial new claim: `act` (actor) - which records the delegation chain:
-
-```json
-{
-  "iss": "https://second-auth-server.com",
-  "aud": "https://second.resource.com",
-  "agent": "https://important.resource.com",
-  "cnf": {
-    "jwk": {
-      "kty": "OKP",
-      "crv": "Ed25519",
-      "x": "cEu1GpfjCgXbz7oi1emwOlYngK4TDHBOQ1rEE7jT7DM",
-      "kid": "resource-key-1"
-    }
-  },
-  "scope": "data.read data.write",
-  "exp": 1768789873,
-  "act": {
-    "agent": "https://agent.supply-chain.com"
-  }
-}
-```
-
-The token tells Resource `second.resource.com`:
-
-- **`agent`**: The immediate caller is `https://important.resource.com` (Resource `important.resource.com`)
-- **`act.agent`**: Resource `important.resource.com` is acting on behalf of `https://agent.supply-chain.com` (Agent `agent.supply-chain.com`)
-- **`cnf.jwk`**: The token is bound to Resource `important.resource.com`'s signing key
-
-Resource `second.resource.com` can now make authorization decisions with full context. It knows who's directly calling it *and* who originated the request.
-
-### Nested `act` Claims
-
-For longer chains, `act` claims nest recursively. If Resource `second.resource.com` needed to call Resource 3:
-
-```json
-{
-  "agent": "https://second.resource.com",
-  "aud": "https://third.resource.com",
-  "act": {
-    "agent": "https://important.resource.com",
-    "act": {
-      "agent": "https://agent.supply-chain.com"
-    }
-  }
-}
-```
-
-Each hop adds a layer. The full chain is preserved and verifiable.
-
-## Phase 6: Resource `important.resource.com` Accesses Resource `second.resource.com`
-
-With the exchanged token, Resource `important.resource.com` can now access Resource `second.resource.com`:
+With that exchanged token, Resource 1 can now call Resource 2 successfully:
 
 ```bash
 ================================================================================
 >>> RESOURCE (as agent) REQUEST to https://second.resource.com/data-auth
 ================================================================================
 GET https://second.resource.com/data-auth HTTP/1.1
-Signature: sig1=:ZZneZeSzbj7NQvv_RDs4kjtwKVeXadHCVDWVPrR3kyIRujc_ghFeBJbpfbqH1bbaZbbVuIFvi_PMLuewAibvCw:
-Signature-Input: sig1=("@method" "@authority" "@path" "signature-key");created=1768786273
-Signature-Key: sig1=(scheme=jwt jwt="eyJhbGciOiJFZERTQSIsImtpZCI6ImF1dGgta2V5LTEiLCJ0eXAiOiJhdXRoK2p3dCJ9.eyJpc3...
+Signature: sig=:r3Y5_33ydgB5zmhf1jh_N1bkGMSy_NhmwCk-pQ1RAAy16KussPt7LRQkwjLchlVAgYkblyfs6j2r-T2Avu3iDg:
+Signature-Input: sig=("@method" "@authority" "@path" "signature-key");created=1774975920
+Signature-Key: sig=(scheme=jwt jwt="eyJhbGciOiJFZERTQSIsImtpZCI6ImF1dGgta2V5LTEiLCJ0eXAiOiJhdXRoK2p3dCJ9.eyJpc3M...
 ================================================================================
 ```
 
-Resource `second.resource.com` validates:
-1. The auth token signature (from Auth Server `second-auth-server.com`'s JWKS)
-2. The `aud` claim matches this resource
-3. The request signature matches the key in `cnf.jwk`
+Resource 2 grants access:
 
 ```bash
 ================================================================================
@@ -248,67 +216,68 @@ content-type: application/json
 ================================================================================
 ```
 
-Access granted. Resource `important.resource.com` can now aggregate data from Resource `second.resource.com` and return it to Agent `agent.supply-chain.com`.
+That response shows the immediate caller is Resource 1.
 
-## Cross-Auth-Server vs Same-Auth-Server Exchange
+## The Exchanged Token Shape
 
-The example above shows **cross-auth-server exchange**. Auth Server `auth-server.com` and Auth Server `second-auth-server.com` are separate systems. This is the more complex case, requiring federation trust between auth servers.
+For this flow, the downstream token looks like this:
 
-**Same-auth-server exchange** is simpler and common for ["on-behalf-of"](https://blog.christianposta.com/explaining-on-behalf-of-for-ai-agents/) scenarios within a single provider:
-
-| Scenario | Auth Servers | Use Case |
-|----------|--------------|----------|
-| Cross-auth-server | Different | Service meshes, cross-organization access, federated systems |
-| Same-auth-server | Same | On-behalf-of within single provider, microservices in same org |
-
-### Same-Auth-Server Exchange
-
-When all resources use the same auth server, the exchange is simpler:
-
-1. Agent A gets token from Auth Server for Resource R1
-2. Resource R1 needs to call Resource R2 (also governed by same Auth Server)
-3. Resource R1 exchanges token at the *same* Auth Server
-4. Auth Server validates the upstream token it issued, creates new token with `act` claim
-
-The flow is identical, but no federation trust is required—the auth server trusts itself.
-
-This pattern is essentially OAuth 2.0 Token Exchange (RFC 8693) with AAuth's cryptographic binding. The difference is that every step is signed, and tokens are proof-of-possession bound.
-
-
-### Scope Narrowing
-
-Downstream tokens should typically have equal or narrower scope than upstream tokens:
-
-```
-Upstream: scope="data.read data.write files.read"
-Downstream: scope="data.read"  ✓ (narrowed)
-Downstream: scope="data.read data.write files.read admin.write"  ✗ (privilege escalation)
+```json
+{
+  "iss": "https://second-auth-server.com",
+  "aud": "https://second.resource.com",
+  "jti": "abdceb92-5458-4fbc-9403-7c0d8255526d",
+  "cnf": {
+    "jwk": {
+      "kty": "OKP",
+      "crv": "Ed25519",
+      "x": "jmSgswMNo0aagxxh_6a3JXMFW9nPgHWZ8k7ejHNI-9k",
+      "kid": "resource-key-1"
+    }
+  },
+  "iat": 1774975920,
+  "exp": 1774979520,
+  "agent": "https://important.resource.com",
+  "scope": "data.read data.write"
+}
 ```
 
-Auth servers should enforce scope constraints during exchange to prevent privilege escalation through delegation.
+The key properties are:
 
+- `iss` is the downstream auth server
+- `aud` is the downstream resource
+- `agent` is the immediate caller, Resource 1
+- `cnf.jwk` binds the token to Resource 1's signing key
+
+Notably, this implementation does **not** include a legacy `act` claim in the exchanged token.
+
+## Why This Matters
+
+Token exchange lets AAuth support multi-hop systems without falling back to bearer tokens or vague delegation state.
+
+It preserves:
+
+- proof-of-possession on every hop
+- explicit resource challenges through `resource_token`
+- explicit trust decisions at the downstream auth server
+- a downstream token bound to the downstream caller's own key
+
+That means Resource 2 can trust what it sees directly: a token from its own auth server, for its own audience, bound to the key that signed the request.
 
 ## Summary
 
-Token exchange enables sophisticated authorization chains while maintaining AAuth's security properties:
-
-- **Cryptographic binding**: Every token is bound to a key, every exchange is signed
-- **Chain tracking**: The `act` claim preserves full delegation history
-- **Scope control**: Downstream authorization can be constrained
-- **Federation**: Cross-auth-server exchange enables multi-organization workflows
-
-The pattern recognizes that in real systems, resources aren't just endpoints—they're participants in larger workflows that require maintaining authorization context across multiple hops.
+In token exchange, an upstream resource becomes an agent for a downstream call. It receives a challenge from the downstream resource, presents both that `resource_token` and its `upstream_token` to the downstream auth server, and gets back a new auth token whose audience is the downstream resource and whose `agent` is the immediate upstream resource. The result is a clean, cryptographically bound delegation hop without bearer-token handoff.
 
 ## Where to Next
 
-We've now covered the core AAuth authorization flows:
+We've now covered:
 
 - [Pseudonymous (HWK)](./flow-01-hwk.md): Cryptographic proof without identity
 - [Identified (JWKS)](./flow-02-jwks.md): Domain-bound agent identity
 - [Authorized (Direct)](./flow-03-authz.md): Runtime authorization without user interaction
-- [User Consent](./flow-04-user-consent.md): Interactive authorization with user approval
-- **Token Exchange (this post)**: Multi-hop delegation chains
+- [User Consent](./flow-04-user.md): Interactive authorization with user approval
+- **Token Exchange (this post)**: Multi-hop downstream authorization
 
-[In the next post](./flow-06-delegated.md), we'll take a look at agent identity delegation to support distributed agents scaled across devices (workstations, mobile, etc) or agents that need to inherit policy based on parent-delegation relationship. 
+[In the next post](./flow-06-delegated.md), we'll look at delegated agent identity, where an agent acts through a delegate and proves that delegated relationship cryptographically.
 
 [← Back to index](index.md)
