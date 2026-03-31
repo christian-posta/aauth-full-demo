@@ -78,7 +78,7 @@ Here's the flow:
 ![](./images/demo3.png)
 
 
-Continuing our example flows, here we see where a resource server requires authorization for a particular acceess for a particular agent identity. 
+Continuing our example flows, here we see where a resource server requires authorization for a particular access by a particular agent identity.
 
 
 ### Step 1: Agent Requests Protected Resource
@@ -90,9 +90,9 @@ The agent makes an identified request (using JWKS identity from the previous pos
 >>> AGENT REQUEST to https://important-resource.com/data-auth
 ================================================================================
 GET https://important-resource.com/data-auth HTTP/1.1
-Signature: sig1=:ZMGGi5N61KL-AWkTbLZDPWRA3AUefyhCtOmQ-Wp7CF6IeIch6RpzAfatdOj3VoSGL-BAouXpMCViML8gvFH1Aw:
-Signature-Input: sig1=("@method" "@authority" "@path" "signature-key");created=1768785919
-Signature-Key: sig1=(scheme=jwks id="https://agent.supply-chain.com" kid="key-1" well-known="aauth-agent")
+Signature: sig=:UE4b1SQFOopnDz--ssnnwRKTNrYfvMT8T-Os-hsMFosOSBOA2mGBvqg_wu8jgCbYxemnQ8nzk_rpF_wF7acBCQ:
+Signature-Input: sig=("@method" "@authority" "@path" "signature-key");created=1774922661
+Signature-Key: sig=(scheme=jwks_uri id="https://agent.supply-chain.com" kid="key-1")
 ================================================================================
 ```
 
@@ -100,14 +100,14 @@ The agent proves *who* it is, but hasn't proven it's *authorized* to access this
 
 ### Step 2: Resource Issues Challenge with Resource Token
 
-The resource determines this endpoint requires authorization and responds with a **401 and an Agent-Auth challenge**:
+The resource determines this endpoint requires authorization and responds with a **401 and an AAuth challenge**:
 
 ```bash
 ================================================================================
 <<< RESOURCE RESPONSE
 ================================================================================
 HTTP/1.1 401
-agent-auth: httpsig; auth-token; resource_token="eyJhbGciOiJFZERTQSIsImtpZCI6InJlc291cmNlLWtleS0xIiwidHlwIjoi...
+aauth: require=auth-token; resource-token="eyJhbGciOiJFZERTQSIsImtpZCI6InJlc291cmNlLWtleS0xIiwidHlwIjoic...
 content-length: 22
 
 [Body (22 bytes)]
@@ -120,7 +120,7 @@ This is where AAuth diverges from OAuth. The resource doesn't just say "you need
 - **The requesting agent** (who wants access)  
 - **The agent's current signing key** (cryptographic binding)
 - **The required scopes** (what access is being requested)
-- **Any context, constraings, time restrictions**
+- **Any context, constraints, or time restrictions**
 
 Let's decode that resource token:
 
@@ -136,10 +136,12 @@ Let's decode that resource token:
 {
   "iss": "https://important-resource.com",
   "aud": "https://auth-server.com",
+  "jti": "f7a4cc0c-7a42-42d5-a614-b1160801d803",
   "agent": "https://agent.supply-chain.com",
-  "agent_jkt": "zAkRaFpmIxi7kHESqzoRr3ihmKPJHBejcHrzOUqTeGo",
+  "agent_jkt": "KP-aJ1QTO_JMcP86ipWLUASDKVlpTLCNhkX80YjhWCo",
   "scope": "data.read data.write",
-  "exp": 1768786519
+  "iat": 1774922661,
+  "exp": 1774923261
 }
 ```
 
@@ -149,6 +151,12 @@ The resource token provides cryptographic proof that:
 2. For this specific agent (`https://agent.supply-chain.com`)
 3. Bound to this specific signing key (`agent_jkt`)
 4. For these specific scopes (`data.read data.write`)
+
+In the current demo, this flow is shown in two variants:
+- Once without a `txn` claim in the resource token
+- Once with a `txn` claim so the auth server can carry that correlation value into the auth token
+
+That behavior is intentional. In AAuth, `txn` is optional request-correlation context. If the resource includes `txn` in the resource token, the auth server is expected to preserve it in the issued auth token. If the resource does not include `txn`, the auth token should not invent one on its own.
 
 
 ### Confused Deputy Prevention
@@ -173,24 +181,23 @@ The agent takes the resource token to the auth server:
 
 ```bash
 ================================================================================
->>> AGENT REQUEST to https://auth-server.com/agent/token
+>>> AGENT TOKEN REQUEST to https://auth-server.com/token
 ================================================================================
-POST https://auth-server.com/agent/token HTTP/1.1
-Content-Digest: sha-256=:X4BI4dl2iOkMAnOAiyP0GgBX01OkmEmauc6Nm6DTbwE=:
-Content-Type: application/x-www-form-urlencoded
-Signature: sig1=:MYpXTXsAIXRUw8oUy70waxmtkbdKljMolYS6v_R7yeNUaly3mtE9NC01uF3KBCD4CfBoTBcuf3FoXAXF84bLCQ:
-Signature-Input: sig1=("@method" "@authority" "@path" "content-type" "content-digest" "signature-key");created=176...
-Signature-Key: sig1=(scheme=jwks id="https://agent.supply-chain.com" kid="key-1" well-known="aauth-agent")
+POST https://auth-server.com/token HTTP/1.1
+Content-Type: application/json
+Signature: sig=:U4OZE9sXOs6YN1CdxdOg7XNxCRx3u8cJMasOFGtY3HVf0plM1-LO32tOMjcdM6cSt7iAR21y_PEHuQJO1X83Bw:
+Signature-Input: sig=("@method" "@authority" "@path" "signature-key");created=1774922661
+Signature-Key: sig=(scheme=jwks_uri id="https://agent.supply-chain.com" kid="key-1")
 
-[Body (510 bytes)]
-request_type=auth&resource_token=eyJhbGciOiJFZERTQSIsImtpZCI6InJlc291cmNlLWtleS0xIiwidHlwIjoicmVzb3VyY2Urand0In0...
+[Body (537 bytes)]
+{"resource_token": "eyJhbGciOiJFZERTQSIsImtpZCI6InJlc291cmNlLWtleS0xIiwidHlwIjoicmVzb3VyY2Urand0In0..."}
 ================================================================================
 ```
 
 Notice several things:
 - The request is **signed** (the agent continues to prove its identity)
-- The body includes `content-digest` in the signature (integrity protection)
-- The resource token is passed as a parameter
+- The token request body is JSON in the current demo
+- The resource token is passed directly to the auth server
 
 
 The auth server:
@@ -207,8 +214,7 @@ If policy permits, the auth server issues an **auth token**:
 ```json
 {
   "auth_token": "eyJhbGciOiJFZERTQSIsImtpZCI6ImF1dGgta2V5LTEiLCJ0eXAiOiJhdXRoK2p3dCJ9...",
-  "expires_in": 3600,
-  "token_type": "Bearer"
+  "expires_in": 3600
 }
 ```
 
@@ -226,16 +232,18 @@ Decoded:
 {
   "iss": "https://auth-server.com",
   "aud": "https://important-resource.com",
+  "jti": "20e5b5be-b7d9-4c00-9516-6389e4190fd4",
   "cnf": {
     "jwk": {
       "kty": "OKP",
       "crv": "Ed25519",
-      "x": "v4w1nfeU2IV9Mi7N_pLDbBvNMerWhlMwagF1Dw_7wXQ",
+      "x": "OF4t_ABCoiTD55tJlzcfZeyxjzQJ9nYhHg-cAisAyqg",
       "kid": "key-1"
     }
   },
+  "iat": 1774922661,
   "scope": "data.read data.write",
-  "exp": 1768789519,
+  "exp": 1774926261,
   "agent": "https://agent.supply-chain.com"
 }
 ```
@@ -251,9 +259,9 @@ Now the agent can make the authorized request:
 >>> AGENT REQUEST to https://important-resource.com/data-auth
 ================================================================================
 GET https://important-resource.com/data-auth HTTP/1.1
-Signature: sig1=:7iiclCyzY7xfitBNgWZBAJOM4JmmmNtyoE7JaYwOXSej-OZg7Mx9FMHtLTau5tGs-NEtvJKQWmJndCfPbhNuDw:
-Signature-Input: sig1=("@method" "@authority" "@path" "signature-key");created=1768785919
-Signature-Key: sig1=(scheme=jwt jwt="eyJhbGciOiJFZERTQSIsImtpZCI6ImF1dGgta2V5LTEiLCJ0eXAiOiJhdXRoK2p3dCJ9.eyJpc3...
+Signature: sig=:SI-fdm7uLdrGOOAlMd-3mknx5doKvKgzD8y3H0ADbinu_VT8dNzS2Tp-UqS_awVIScLtfwlJ0t22feNlDADLCg:
+Signature-Input: sig=("@method" "@authority" "@path" "signature-key");created=1774922661
+Signature-Key: sig=(scheme=jwt jwt="eyJhbGciOiJFZERTQSIsImtpZCI6ImF1dGgta2V5LTEiLCJ0eXAiOiJhdXRoK2p3dCJ9.eyJpc3M...
 ================================================================================
 ```
 
@@ -280,15 +288,80 @@ content-type: application/json
 
 Access granted.
 
+## `txn` Request Correlation
+
+The current demo also shows optional transaction correlation. In the basic variant, the resource token has no `txn`, so the auth token also omits it:
+
+```json
+{
+  "iss": "https://auth-server.com",
+  "aud": "https://important-resource.com",
+  "jti": "20e5b5be-b7d9-4c00-9516-6389e4190fd4",
+  "cnf": {
+    "jwk": {
+      "kty": "OKP",
+      "crv": "Ed25519",
+      "x": "OF4t_ABCoiTD55tJlzcfZeyxjzQJ9nYhHg-cAisAyqg",
+      "kid": "key-1"
+    }
+  },
+  "iat": 1774922661,
+  "exp": 1774926261,
+  "agent": "https://agent.supply-chain.com",
+  "scope": "data.read data.write"
+}
+```
+
+In the correlated variant, the resource adds a `txn` claim to the resource token and the auth server carries it into the auth token:
+
+```json
+{
+  "iss": "https://important-resource.com",
+  "aud": "https://auth-server.com",
+  "jti": "edd3fb5d-e976-4839-9e66-45ad94ca061e",
+  "agent": "https://agent.supply-chain.com",
+  "agent_jkt": "KP-aJ1QTO_JMcP86ipWLUASDKVlpTLCNhkX80YjhWCo",
+  "scope": "data.read data.write",
+  "iat": 1774922661,
+  "exp": 1774923261,
+  "txn": "0352a0bb-6918-4875-acb3-3dde0d1e2a95"
+}
+```
+
+```json
+{
+  "iss": "https://auth-server.com",
+  "aud": "https://important-resource.com",
+  "jti": "25ba8f82-d1e4-4e53-a085-ba9a963ce3da",
+  "cnf": {
+    "jwk": {
+      "kty": "OKP",
+      "crv": "Ed25519",
+      "x": "OF4t_ABCoiTD55tJlzcfZeyxjzQJ9nYhHg-cAisAyqg",
+      "kid": "key-1"
+    }
+  },
+  "iat": 1774922661,
+  "exp": 1774926261,
+  "agent": "https://agent.supply-chain.com",
+  "scope": "data.read data.write",
+  "txn": "0352a0bb-6918-4875-acb3-3dde0d1e2a95"
+}
+```
+
+That shared `txn` value lets the request, resource token, auth token, and audit logs all refer to the same authorization event.
+
+If you're scanning the examples quickly, the key point is this: `txn` only appears in the correlated variant. The basic flow demonstrates autonomous authorization without correlation, and the correlated flow demonstrates the expected carry-forward behavior when correlation is enabled.
+
 ## Progressive Authorization in Practice
 
 AAuth supports **progressive authentication levels**: pseudonymous, identified, and authorized. Resources dynamically challenge for the appropriate level:
 
-| Level | Agent-Auth Header | Use Case |
+| Level | AAuth Header | Use Case |
 |-------|-------------------|----------|
-| Pseudonymous | `Agent-Auth: httpsig` | Rate limiting, abuse prevention |
-| Identified | `Agent-Auth: httpsig; identity=?1` | Allowlisting, reputation |
-| Authorized | `Agent-Auth: httpsig; auth-token; resource_token="..."` | Protected data access |
+| Pseudonymous | `AAuth: require=pseudonym` | Rate limiting, abuse prevention |
+| Identified | `AAuth: require=identity` | Allowlisting, reputation |
+| Authorized | `AAuth: require=auth-token; resource-token="..."` | Protected data access |
 
 A single resource can expose different endpoints at different protection levels. A public status endpoint might accept pseudonymous requests, while a data mutation endpoint requires full authorization.
 
@@ -298,7 +371,7 @@ If you're building AI agents, the runtime authorization model means:
 
 1. **Don't pre-request all possible scopes.** Let resources tell you what they need when you access them.
 
-2. **Handle 401 challenges gracefully.** A 401 with `Agent-Auth` isn't an error—it's the protocol telling you to get authorization.
+2. **Handle 401 challenges gracefully.** A 401 with `AAuth` isn't an error, it's the protocol telling you to get authorization.
 
 3. **Cache auth tokens appropriately.** They're valid for the resource and scope combination. Reuse them until expiry.
 
