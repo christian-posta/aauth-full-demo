@@ -58,7 +58,7 @@ Now you have access to the UI, but the backend components need to be started. Ru
     <pre><code>
       > cd backend
       > cp env.jwks .env # just need to do this one time
-      > uv run . --signature-scheme jwks
+      > uv run . --signature-scheme jwks_uri
     </code></pre>
   </div>
   <div class="tab-content" id="content-agentgateway">
@@ -72,7 +72,7 @@ Now you have access to the UI, but the backend components need to be started. Ru
     <pre><code>
       > cd supply-chain-agent
       > cp env.jwks .env # just need to do this one time
-      > uv run . --signature-scheme jwks --authorization-scheme signature-only
+      > uv run . --signature-scheme jwks_uri --authorization-scheme signature-only
     </code></pre>
   </div>
   <div class="tab-content" id="content-market-analysis">
@@ -80,7 +80,7 @@ Now you have access to the UI, but the backend components need to be started. Ru
     <pre><code>
       > cd market-analysis-agent
       > cp env.jwks .env # just need to do this one time
-      > uv run . --signature-scheme jwks --authorization-scheme signature-only
+      > uv run . --signature-scheme jwks_uri --authorization-scheme signature-only
     </code></pre>
   </div>
 </div>
@@ -126,7 +126,7 @@ This diagram illustrates the core sequence:
 Let's take a look at what the `backend` logs look like:
 
 ```bash
-INFO:     127.0.0.1:54969 - "GET /.well-known/aauth-agent HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54969 - "GET /.well-known/aauth-agent.json HTTP/1.1" 200 OK
 INFO:     127.0.0.1:54970 - "GET /jwks.json HTTP/1.1" 200 OK
 INFO:     127.0.0.1:54965 - "POST /optimization/start HTTP/1.1" 200 OK
 INFO:     127.0.0.1:54965 - "OPTIONS /optimization/progress/7c595657-a4b4-45b6-a8c4-f49696328963 HTTP/1.1" 200 OK
@@ -134,7 +134,7 @@ INFO:     127.0.0.1:54965 - "GET /optimization/progress/7c595657-a4b4-45b6-a8c4-
 ```
 {: .log-output}
 
-What we can see from these access logs is that something called the `/.well-known/aauth-agent` and `jwks.json` files to verify its public keys. So what happens is `backend` calls `supply-chain-agent` with the correct AAuth headers (which we'll see shortly) and `supply-chain-agent` uses the JWKS scheme to identify the `backend` by verifying its signing keys. 
+What we can see from these access logs is that something fetched `/.well-known/aauth-agent.json` and `jwks.json` to verify its public keys. So what happens is `backend` calls `supply-chain-agent` with the correct AAuth headers (which we'll see shortly) and `supply-chain-agent` uses the JWKS scheme to identify the `backend` by verifying its signing keys. 
 
 If we look at the logs for the `supply-chain-agent`, it should look similar to:
 
@@ -142,17 +142,17 @@ If we look at the logs for the `supply-chain-agent`, it should look similar to:
 INFO:http_headers_middleware:🔐 AAuth headers received: ['signature', 'signature-key', 'signature-input']
 INFO:agent_executor:🔐 AAuth signature headers detected: ['signature', 'signature-key', 'signature-input']
 INFO:agent_executor:🔐 AAuth scheme: JWKS - identified agent
-INFO:agent_executor:🔐 Verifying AAuth signature (scheme: jwks)
+INFO:agent_executor:🔐 Verifying AAuth signature (scheme: jwks_uri)
 INFO:agent_executor:🔐 VERIFYING with: method=POST, target_uri='http://supply-chain-agent.localhost:3000/'
 INFO:aauth.signing:🔐 VERIFIER: verify_signature() called
 INFO:aauth.signing:🔐 VERIFIER: method=POST, target_uri=http://supply-chain-agent.localhost:3000/
 INFO:aauth.signing:🔐 VERIFIER: signature_input_header=sig1=("@method" "@authority" "@path" "signature-key");created=1770414041
-INFO:httpx:HTTP Request: GET http://backend.localhost:8000/.well-known/aauth-agent "HTTP/1.1 200 OK"
+INFO:httpx:HTTP Request: GET http://backend.localhost:8000/.well-known/aauth-agent.json "HTTP/1.1 200 OK"
 INFO:httpx:HTTP Request: GET http://backend.localhost:8000/jwks.json "HTTP/1.1 200 OK"
 INFO:agent_executor:✅ AAuth signature verification successful
-INFO:agent_executor:🔐 Accepting request with valid signature (signature-only mode, scheme=jwks)
+INFO:agent_executor:🔐 Accepting request with valid signature (signature-only mode, scheme=jwks_uri)
 INFO:agent_executor:✅ Authorization successful: auth_token verified for agent: None
-INFO:agent_executor:🔐 Using AAuth JWKS signing for downstream agent calls
+INFO:agent_executor:🔐 Using AAuth JWKS_URI signing for downstream agent calls
 INFO:     127.0.0.1:54968 - "POST / HTTP/1.1" 200 OK
 ```
 {: .log-output}
@@ -169,7 +169,7 @@ Lastly, if we look at the logs for Agentgateway:
 2026-02-06T21:19:22.419344Z     info    management::hyper_helpers       listener established    address=[::]:15020 component="stats"
 2026-02-06T21:19:22.419386Z     info    proxy::gateway  started bind    bind="bind/3000"
 2026-02-06T21:19:22.419395Z     info    agent_core::readiness   Task 'state manager' complete (7.872532ms), marking server ready
-2026-02-06T21:40:41.536353Z     info    request gateway=default/default listener=listener0 route=default/route0 endpoint=localhost:9999 src.addr=127.0.0.1:54966 http.method=POST http.host=supply-chain-agent.localhost http.path=/ http.version=HTTP/1.1 http.status=200 trace.id=3aef7d77d62861bad0066c70fc24a1db span.id=a4085bd01952f77f aauth.scheme=Jwks aauth.agent=http://backend.localhost:8000 protocol=a2a a2a.method=message/send duration=117ms aauth_scheme="Jwks" aauth_agent_identity="http://backend.localhost:8000" sig_key="sig1=(scheme=jwks id=\"http://backend.localhost:8000\" kid=\"backend-ephemeral-1\")"
+2026-02-06T21:40:41.536353Z     info    request gateway=default/default listener=listener0 route=default/route0 endpoint=localhost:9999 src.addr=127.0.0.1:54966 http.method=POST http.host=supply-chain-agent.localhost http.path=/ http.version=HTTP/1.1 http.status=200 trace.id=3aef7d77d62861bad0066c70fc24a1db span.id=a4085bd01952f77f aauth.scheme=Jwks aauth.agent=http://backend.localhost:8000 protocol=a2a a2a.method=message/send duration=117ms aauth_scheme="Jwks" aauth_agent_identity="http://backend.localhost:8000" sig_key="sig1=(scheme=jwks_uri id=\"http://backend.localhost:8000\" kid=\"backend-ephemeral-1\")"
 ```
 {: .log-output}
 

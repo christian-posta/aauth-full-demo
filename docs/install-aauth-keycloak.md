@@ -35,7 +35,7 @@ Now let's [download the AAuth extension](https://github.com/christian-posta/keyc
 
 ```bash
 # Download the AAuth extension JAR from the GitHub release
-curl -LO https://github.com/christian-posta/keycloak-aauth-extension/releases/download/v1.0.0/keycloak-aauth-extension-1.0.0.jar
+curl -LO https://github.com/christian-posta/keycloak-aauth-extension/releases/download/v1.0.1/keycloak-aauth-extension-1.0.0.jar
 
 # Copy the JAR file into the Keycloak 'providers' directory
 mv keycloak-aauth-extension-1.0.0.jar providers/
@@ -138,7 +138,7 @@ To get started with Agentgateway for this AAuth demo, you can [download the rele
 
 ```bash
 # Download Agentgateway binary (for macOS amd64) and rename to 'agentgateway'
-curl -L -o agw https://github.com/christian-posta/agentgateway/releases/download/v0.11.3/agentgateway-darwin-amd64
+curl -L -o agw https://github.com/christian-posta/agentgateway/releases/download/v0.11.4/agentgateway-darwin-amd64
 chmod +x agw
 ```
 

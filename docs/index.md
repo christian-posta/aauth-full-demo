@@ -5,6 +5,9 @@ title: Exploring AAuth for Agent Identity and Access Management (IAM)
 
 # Exploring AAuth for Agent IAM
 
+> **Note — AAuth spec as of March 31, 2026.** AAuth continues to update. The flows and demos in this repo are aligned with the latest AAuth spec as of the time of writing (March 31, 2026).
+{: .callout}
+
 [Agent Auth](https://github.com/dickhardt/AAuth) (AAuth -- pronounced "AY-awth") is an IETF draft paper for agent identity and access management from [Dick Hardt](https://github.com/dickhardt) who [authored OAuth 2.0](https://datatracker.ietf.org/doc/html/rfc6749) and co-author of [OAuth 2.1](https://github.com/oauth-wg/oauth-v2-1/blob/main/draft-ietf-oauth-v2-1.md). 
 
 ## Intro: Digging in to AAuth Flows
