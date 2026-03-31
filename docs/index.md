@@ -5,11 +5,11 @@ title: Exploring AAuth for Agent Identity and Access Management (IAM)
 
 # Exploring AAuth for Agent IAM
 
-[Agent Auth](https://github.com/dickhardt/agent-auth) (AAuth -- pronounced "AY-awth") is an exploratory spec for agent identity and access management from [Dick Hardt](https://github.com/dickhardt) who [authored OAuth 2.0](https://datatracker.ietf.org/doc/html/rfc6749) and co-author of [OAuth 2.1](https://github.com/oauth-wg/oauth-v2-1/blob/main/draft-ietf-oauth-v2-1.md). 
+[Agent Auth](https://github.com/dickhardt/AAuth) (AAuth -- pronounced "AY-awth") is an IETF draft paper for agent identity and access management from [Dick Hardt](https://github.com/dickhardt) who [authored OAuth 2.0](https://datatracker.ietf.org/doc/html/rfc6749) and co-author of [OAuth 2.1](https://github.com/oauth-wg/oauth-v2-1/blob/main/draft-ietf-oauth-v2-1.md). 
 
 ## Intro: Digging in to AAuth Flows
 
-This set of resources is intended to help you understand the AAuth protocol in concrete detail. It is not a specification (see [AAuth](https://github.com/dickhardt/agent-auth) for the evolution of that). This is specificatlly a more detailed review of the spec with examples (as a result of me implementing this). 
+This set of resources is intended to help you understand the AAuth protocol in concrete detail. It is not a specification (see [Agent Auth](https://github.com/dickhardt/AAuth) for the evolution of that). This is specificatlly a more detailed review of the spec with examples (as a result of me implementing this). 
 
 This section walks through various flows with detailed Header/Payload examples so the sequence diagrams from the AAuth exploratory draft are illustrated concretely. 
 

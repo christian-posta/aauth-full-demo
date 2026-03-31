@@ -317,6 +317,6 @@ This completes our deep dive into AAuth! You now understand:
 3. Token exchange for delegation chains
 4. Policy enforcement with Agentgateway
 
-For more advanced scenarios, explore the [AAuth specification](https://github.com/dickhardt/agent-auth) and consider integrating with OPA or FGA for complex authorization logic.
+For more advanced scenarios, explore [Agent Auth](https://github.com/dickhardt/AAuth) and consider integrating with OPA or FGA for complex authorization logic.
 
 [← Back to index](index.md)

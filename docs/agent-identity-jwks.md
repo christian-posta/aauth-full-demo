@@ -5,7 +5,7 @@ title: Agent Identity with JWKS
 
 # Agent Identity with JWKS
 
-In this demo, we'll establish Agent Identity with HTTP message signing using JWKS [as described in detail in this flow](./flow-02-jwks.md). For the draft of [AAuth please visit the GitHub repo](https://github.com/dickhardt/agent-auth). 
+In this demo, we'll establish Agent Identity with HTTP message signing using JWKS [as described in detail in this flow](./flow-02-jwks.md). For the draft, see [Agent Auth](https://github.com/dickhardt/AAuth). 
 
 [← Back to index](index.md)
 

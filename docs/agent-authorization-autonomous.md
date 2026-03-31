@@ -5,7 +5,7 @@ title: Agent Authorization (Autonomous)
 
 # Agent Authorization (Autonomous)
 
-In this demo, we'll use Agent Identity Authorization provided by Keycloak [as described in details in this flow](./flow-03-authz.md). For the draft of [AAuth please visit the GitHub repo](https://github.com/dickhardt/agent-auth). 
+In this demo, we'll use Agent Identity Authorization provided by Keycloak [as described in details in this flow](./flow-03-authz.md). For the draft, see [Agent Auth](https://github.com/dickhardt/AAuth). 
 
 [← Back to index](index.md)
 

@@ -4,7 +4,7 @@ title: Agent Delegation - Distributing Identity Across Workloads and Devices
 description: How agent tokens enable distributed identity without shared keys
 ---
 
-In [previous posts](./flow-05-token-exchange.md), we explored how resources with established identities can exchange tokens to act on behalf of agents. But what happens when a single logical agent needs to operate across multiple execution contexts: server workloads, mobile devices, desktop applications each with its own keys and identity? This post covers how [AAuth](https://github.com/dickhardt/agent-auth) enables **agent delegation** through agent tokens.
+In [previous posts](./flow-05-token-exchange.md), we explored how resources with established identities can exchange tokens to act on behalf of agents. But what happens when a single logical agent needs to operate across multiple execution contexts: server workloads, mobile devices, desktop applications each with its own keys and identity? This post covers how [Agent Auth](https://github.com/dickhardt/AAuth) enables **agent delegation** through agent tokens.
 
 [← Back to index](index.md)
 

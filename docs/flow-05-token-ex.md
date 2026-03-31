@@ -4,7 +4,7 @@ title: Token Exchange for Cross Identity Trust Domain and On Behalf Of
 ---
 
 
-In the previous posts, we covered how agents obtain authorization through [direct issuance](./flow-03-authz.md) or [user consent](./flow-04-user-consent.md). But what happens when a resource needs to call *another* resource to fulfill a request? The resource could be in its same trust domain, or in a different one. This post covers how [AAuth](https://github.com/dickhardt/agent-auth) enables multi-hop authorization through **token exchange** while maintaining cryptographic proof of the delegation chain.
+In the previous posts, we covered how agents obtain authorization through [direct issuance](./flow-03-authz.md) or [user consent](./flow-04-user-consent.md). But what happens when a resource needs to call *another* resource to fulfill a request? The resource could be in its same trust domain, or in a different one. This post covers how [Agent Auth](https://github.com/dickhardt/AAuth) enables multi-hop authorization through **token exchange** while maintaining cryptographic proof of the delegation chain.
 
 [← Back to index](index.md)
 

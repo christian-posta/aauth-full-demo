@@ -7,7 +7,7 @@ title: Overview of AAuth protocol
 
 [← Back to index](index.md)
 
-Agent Auth (AAuth -- pronounced "AY-awth") is an [exploratory spec for agent identity](https://github.com/dickhardt/agent-auth) from [Dick Hardt](https://github.com/dickhardt) who was one of the [primary authors](https://github.com/oauth-wg/oauth-v2-1/blob/main/draft-ietf-oauth-v2-1.md) of OAuth 2.1. 
+[Agent Auth](https://github.com/dickhardt/AAuth) (AAuth -- pronounced "AY-awth") is an exploratory spec for agent identity from [Dick Hardt](https://github.com/dickhardt) who was one of the [primary authors](https://github.com/oauth-wg/oauth-v2-1/blob/main/draft-ietf-oauth-v2-1.md) of OAuth 2.1. 
 
 
 My thoughts:
