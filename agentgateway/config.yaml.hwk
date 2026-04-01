@@ -5,9 +5,7 @@ config:
     randomSampling: true
     fields:
       add:
-        # Add JWT actor claim
         authenticated: 'jwt.sub != null'
-        jwt_act: 'jwt.act'
         user_id: 'jwt.name'
         token_issuer: 'jwt.iss'
         token_audience: 'jwt.aud'
@@ -20,9 +18,7 @@ config:
   logging:
     fields:
       add:
-        # Add JWT actor claim
         authenticated: 'jwt.sub != null'
-        jwt_act: "jwt.act"
         user_id: 'jwt.name'
         token_issuer: 'jwt.iss'
         token_audience: 'jwt.aud'

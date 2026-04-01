@@ -5,7 +5,7 @@ title: Agent Token Exchange for On Behalf Of
 
 # Agent Token Exchange
 
-In this demo, we'll explore how Agent Identity orks when user consent is required and _needs to propagate across agents/resources_. This builds on the [authorization wiht user consent flow](./agent-authorization-on-behalf-of.md) but adds one more piece: agent acting on behalf of. When an agent needs to act on behalf of a user, even across service hops, the authorization server (Keycloak) enables token exchange.
+In this demo, we'll explore how agent identity works when user consent is required and _needs to propagate across agents/resources_. This builds on the [authorization with user consent flow](./agent-authorization-on-behalf-of.md) but adds one more piece: an agent acting on behalf of another. When an agent needs to act on behalf of a user, even across service hops, the authorization server (Keycloak) enables token exchange.
 
 [← Back to index](index.md)
 
@@ -23,28 +23,29 @@ Here's the complete flow:
 ```mermaid
 sequenceDiagram
     participant BE as Backend
-    participant SCA as Supply-Chain Agent
-    participant MAA as Market-Analysis Agent
+    participant SCA as "Supply-Chain Agent"
+    participant MAA as "Market-Analysis Agent"
     participant KC as Keycloak
 
-    BE->>SCA: Request with auth_token<br/>(sub: user, agent: backend)
-    SCA->>MAA: Initial request (jwks scheme)
-    MAA-->>SCA: 401 + resource_token
+    BE->>SCA: Request with auth_token sub user agent backend
+    SCA->>MAA: Initial request jwks_uri scheme
+    MAA-->>SCA: 401 AAuth challenge plus resource token
     
-    Note over SCA: Exchange upstream token
-    SCA->>KC: Token exchange:<br/>upstream auth_token + resource_token
-    KC-->>SCA: Exchanged auth_token<br/>(agent: SCA, act: {backend, user})
+    Note over SCA: Exchange upstream token at auth server
+    SCA->>KC: Token exchange upstream auth_token plus resource_token
+    KC-->>SCA: New auth_token aud MAA agent SCA
     
     SCA->>MAA: Retry with exchanged token
-    MAA-->>SCA: 200 OK + market data
-    SCA-->>BE: 200 OK + optimization result
+    MAA-->>SCA: 200 OK plus market data
+    SCA-->>BE: 200 OK plus optimization result
 ```
 
-### Step 1: MAA Issues Challenge
+### Step 1: MAA issues challenge
 
-When SCA first calls MAA, it receives a 401 with a resource token:
+When SCA first calls MAA, it receives **401** with an **`AAuth: require=auth-token; resource-token="..."; auth-server="..."`** response (same challenge shape as in the [autonomous authorization](./agent-authorization-autonomous.md) and [resource authorization](./flow-03-authz.md) flows). The body indicates authorization is required until a suitable auth token is presented.
+
 ```bash
-INFO:agent_executor:🔐 Authorization required: scheme=jwt needed but received jwks
+INFO:agent_executor:🔐 Authorization required: scheme=jwt needed but received jwks_uri
 INFO:resource_token_service:✅ Resource token generated successfully
 INFO:agent_executor:🔐 Issuing resource_token for agent: http://supply-chain-agent.localhost:3000
 ```
@@ -61,22 +62,21 @@ The resource token identifies SCA as the requesting agent:
 }
 ```
 
-### Step 2: Token Exchange Request
+### Step 2: Token exchange request
 
-SCA now performs a token exchange. It presents to Keycloak:
-1. **Upstream auth_token**: The token it received from `backend` (proving user authorization)
-2. **Resource token**: The token from MAA (proving what SCA needs access to)
+SCA now performs a token exchange. On the signed `POST` to the token endpoint it sends (see [Token exchange](./flow-05-token-ex.md)):
+
+1. **`upstream_token`**: The auth token SCA received from `backend` (proves upstream authorization and user context the auth server already issued)
+2. **`resource_token`**: The token from MAA (proves Resource 2 challenged SCA for access)
 
 From the logs in SCA:
 
 ```bash
 INFO:agent_executor:🔐 Exchanging upstream auth_token for MAA token
-INFO:aauth.tokens:🔐 Token exchange request: 
-  upstream_auth_token=eyJhbGci...
-  resource_token=eyJhbGci...
+INFO:aauth.tokens:🔐 Token exchange: upstream_auth_token=eyJhbGci..., resource_token=eyJhbGci...
 ```
 
-The token exchange request is provided with the JWT scheme and SCA signs the request using using its key. The Auth server reviews the JWT from the `Signature-Key` header and sees that the token was issued with an `aud` of `supply-chain-agent`. The Auth server, knowing this is a token exchange request, will use the `aud` claim to retrieve the JWKS of the `supply-chain-agent`. 
+The token exchange request uses the JWT scheme in `Signature-Key`, and SCA signs the HTTP request with its own key. The Auth server reviews the JWT from the `Signature-Key` header and sees that the token was issued with an `aud` of `supply-chain-agent`. The Auth server, knowing this is a token exchange request, will use the `aud` claim to retrieve the JWKS of the `supply-chain-agent`. 
 
 
 ```bash
@@ -84,19 +84,24 @@ INFO:aauth_token_service:🔐 Signing with JWT scheme for token exchange
 INFO:aauth.signing:🔐   Line 3: '"signature-key": sig1=(scheme=jwt jwt="eyJhbGci...")'
 ```
 
-### Step 3: Keycloak Issues Exchanged Token
+### Step 3: Keycloak issues exchanged token
 
-Keycloak validates:
-1. The upstream auth_token signature (from Keycloak's own JWKS)
-2. The resource token signature (from MAA's JWKS)
-3. The request signature matches the key in `aud`/JWKS of the upstream token
-4. The delegation chain is authorized
+Keycloak validates, in line with call-chaining token exchange:
 
-Keycloak issues a new auth_token:
+1. The HTTP message signature on the exchange request
+2. The **`upstream_token`** (auth token for the upstream audience, issued by this auth server)
+3. The **`resource_token`** from MAA (including `agent` / `agent_jkt` binding to SCA)
+4. Policy: whether SCA is allowed to receive an auth token for MAA with the requested scopes
+
+It then issues a **new** auth token for the downstream hop. That token’s claims describe the **immediate** caller and the resource audience—not a nested “actor” object. As in [flow-05-token-ex](./flow-05-token-ex.md), the exchanged JWT does **not** carry a legacy **`act`** claim; provenance of the chain is established when the auth server validates **`upstream_token`** and **`resource_token`** together.
+
+Keycloak issues a new auth_token shaped like this (illustrative):
+
 ```json
 {
   "iss": "http://localhost:8080/realms/aauth-test",
   "aud": "http://market-analysis-agent.localhost:3000",
+  "jti": "abdceb92-5458-4fbc-9403-7c0d8255526d",
   "sub": "00b519e8-f409-4201-8911-1cb408e8a082",
   "agent": "http://supply-chain-agent.localhost:3000",
   "cnf": {
@@ -107,32 +112,25 @@ Keycloak issues a new auth_token:
       "kid": "-DN2FPpkqklNWGbl9yYVuH4ONyIgBp36hU4nJJKUARY"
     }
   },
-  "scope": "market-analysis:analyze",
-  "act": {
-    "sub": "00b519e8-f409-4201-8911-1cb408e8a082",
-    "agent": "http://backend.localhost:8000"
-  }
+  "iat": 1770659000,
+  "exp": 1770662600,
+  "scope": "market-analysis:analyze"
 }
 ```
 
-### The `act` Claim: Tracking Delegation
+### What MAA can rely on in the exchanged token
 
-The critical new element is the **`act` (actor) claim**:
+| Claim | Role |
+|-------|------|
+| **`agent`** | Verifiable immediate caller — SCA (matches who must sign requests with this token) |
+| **`aud`** | Intended resource — MAA |
+| **`sub`** | User identity when the upstream grant was user-delegated (same meaning as elsewhere in auth tokens) |
+| **`cnf.jwk`** | Proof-of-possession — only SCA’s key can be used with this token |
+| **`scope`** | What MAA authorized for this hop |
 
-| Claim | Value | Meaning |
-|-------|-------|---------|
-| **`agent`** | `supply-chain-agent.localhost:3000` | **Direct caller** - SCA is making this request |
-| **`act.agent`** | `backend.localhost:8000` | **Acting on behalf of** - Backend authorized the original request |
-| **`act.sub`** | `00b519e8-f409-4201-8911-1cb408e8a082` | **User identity** - The user who granted consent |
-| **`cnf.jwk`** | SCA's signing key | **Cryptographic binding** - Only SCA can use this token |
+The **backend** does not appear as a nested field in this JWT. The auth server already used the **`upstream_token`** (audience backend → SCA, user in `sub`, etc.) when deciding to mint this token. Audit and policy at MAA focus on **who is calling now** (`agent`), **for which user** (`sub` when present), and **what is allowed** (`scope`, `aud`).
 
-MAA can now make authorization decisions with full causal context:
-- **Who's calling?** supply-chain-agent
-- **On whose behalf?** backend agent
-- **For which user?** User `00b519e8...`
-- **With what authorization?** scope: `market-analysis:analyze`
-
-### Step 4: Supply Chain Agent Accesses Market Analysis Agent
+### Step 4: Supply-chain agent calls market-analysis agent again
 
 SCA retries the request with the exchanged token:
 ```bash
@@ -147,29 +145,23 @@ INFO:agent_executor:🔐 JWT scheme detected: verifying auth_token
 INFO:agent_executor:✅ Auth token verified successfully
 ```
 
-## Causal Chain Preserved
+## Chain preserved without an `act` claim
 
 Compare the tokens at each hop:
 
-| Hop | Token Audience | Agent Claim | Actor Claim | Meaning |
-|-----|---------------|-------------|-------------|---------|
-| **Backend → SCA** | `supply-chain-agent` | `backend.localhost:8000` | ❌ None | Backend directly authorized |
-| **SCA → MAA** | `market-analysis-agent` | `supply-chain-agent` | ✅ `{agent: backend, sub: user}` | SCA acting on-behalf-of backend+user |
+| Hop | `aud` | `agent` | `sub` (if user-delegated) | Where the rest of the chain is proven |
+|-----|-------|---------|---------------------------|----------------------------------------|
+| **Backend → SCA** | SCA | Backend | User | First auth token from AS after resource challenge / consent |
+| **SCA → MAA** | MAA | SCA | User (when carried forward) | Auth server validated **`upstream_token`** + **`resource_token`** at exchange time |
 
-The `act` claim creates an **audit trail**: 
-- User `00b519e8...` authorized backend
-- Backend called SCA
-- SCA called MAA
-- All actions trace back to the original user consent
-
-This is the foundation for **multi-hop authorization** - each service in the chain proves both its own identity and the authority under which it's acting.
+There is **no** separate actor object inside the downstream JWT. The **multi-hop** story is: each hop gets a token whose **`agent`** is the caller for **that** request, and the auth server used the **previous** token (as `upstream_token`) plus the new **resource** challenge when issuing the next one. That matches AAuth **call chaining**: `resource_token` + `upstream_token` on the token endpoint, not an `act` claim in the issued auth token.
 
 ## Summary
 
-When an agent needs to call another agent/MCP server after receiving user consent, the token will need to be exchanged. AAuth explicitly calls out Token Exchange for this purpose. This part of the spec also accounts for cross-identity token exchange (not shown in this demo) where agents live in different trust domains governed by separate authorization servers. 
+When an agent needs to call another agent or MCP server after receiving user consent, it typically obtains a new auth token for that audience via **token exchange** at the auth server: signed `POST` with **`resource_token`** and **`upstream_token`**. The new token names the **immediate** `agent` and resource `aud`; it does not embed a nested **`act`** claim. The same pattern extends to cross-domain cases (not shown here) where different authorization servers participate in the chain.
 
 Use user-delegated mode when: Agents must act on behalf of a specific user (accessing user data, making decisions with user accountability, compliance requirements).
 
-In the next and final post, we'll dig into using Agentgateway for policy control .
+In the next and final post, we'll dig into using Agentgateway for policy control.
 
 [← Back to index](index.md)

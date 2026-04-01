@@ -54,8 +54,8 @@ Watch the Agentgateway logs to see policy enforcement:
 
 ```bash
 info request aauth.scheme=Jwt aauth.agent=http://supply-chain-agent.localhost:3000
-     jwt_act={agent:http://backend.localhost:8000,sub:00b519e8-f409...}
-     authenticated=true user_id=mcp-user http.status=200
+     token_audience=http://market-analysis-agent.localhost:3000 authenticated=true
+     user_id=mcp-user http.status=200
 ```
 {: .log-output}
 
@@ -78,7 +78,6 @@ config:
     fields:
       add:
         authenticated: 'jwt.sub != null'
-        jwt_act: 'jwt.act'
         user_id: 'jwt.name'
         token_issuer: 'jwt.iss'
         token_audience: 'jwt.aud'
@@ -90,7 +89,6 @@ config:
     fields:
       add:
         authenticated: 'jwt.sub != null'
-        jwt_act: "jwt.act"
         user_id: 'jwt.name'
         aauth_scheme: 'aauth.scheme'
         aauth_agent_identity: 'aauth.agent'
@@ -99,8 +97,8 @@ config:
 **Key Fields:**
 - `aauth.scheme` - Which AAuth scheme was used (JWKS, JWT, HWK)
 - `aauth.agent` - The verified identity of the calling agent
-- `jwt.act` - The actor claim for delegation chains (on-behalf-of)
 - `jwt.sub` - The user identity when using user-delegated authorization
+- `jwt.aud` / `token_audience` - Intended audience of the auth token
 - `aauth.jwt_claims` - Full JWT claims for advanced policy decisions
 
 When you run the demo with this configuration, you'll see rich logs like:
@@ -167,45 +165,23 @@ authorization:
 
 This policy allows requests if ANY rule evaluates to `true`. You can make policies more restrictive by requiring multiple conditions.
 
-### 4. Checking the `act` Claim for Delegation
+### 4. Policies after token exchange (no `act` claim)
 
-When agents call other agents on-behalf-of users (token exchange), the `act` claim contains the delegation chain. You can write policies to validate this:
+After [token exchange](./agent-token-exchange.md), the downstream auth token names the **immediate** caller in **`agent`** and the resource in **`aud`**. It may still carry **`sub`** for the user when the upstream grant was user-delegated. Current AAuth does **not** define a nested **`act`** claim in that JWT—the auth server already validated **`upstream_token`** and **`resource_token`** when it minted the token.
+
+Write policies from what the gateway can see on the wire, for example for calls to MAA:
 
 ```yaml
 authorization:
   rules:
-    # Verify delegation chain
-    - "has(aauth.jwt_claims.act) && 
-       aauth.jwt_claims.act.agent == 'http://backend.localhost:8000' &&
-       aauth.jwt_claims.act.sub != null"
+    - "aauth.agent == 'http://supply-chain-agent.localhost:3000' &&
+       has(aauth.jwt_claims.sub) &&
+       has(aauth.jwt_claims.aud) &&
+       aauth.jwt_claims.aud == 'http://market-analysis-agent.localhost:3000' &&
+       aauth.jwt_claims.scope.contains('market-analysis:analyze')"
 ```
 
-This rule ensures:
-- The token was obtained via token exchange (`act` claim present)
-- The original caller was the backend agent
-- A user identity is present (user-delegated authorization)
-
-From the [token exchange post](./agent-token-exchange.md), recall that the `act` claim looks like:
-
-```json
-{
-  "agent": "http://supply-chain-agent.localhost:3000",
-  "act": {
-    "agent": "http://backend.localhost:8000",
-    "sub": "00b519e8-f409-4201-8911-1cb408e8a082"
-  }
-}
-```
-
-You can validate the entire delegation chain:
-
-```yaml
-# Only allow supply-chain-agent when acting on behalf of backend + user
-- "aauth.agent == 'http://supply-chain-agent.localhost:3000' &&
-   has(aauth.jwt_claims.act) &&
-   aauth.jwt_claims.act.agent == 'http://backend.localhost:8000' &&
-   has(aauth.jwt_claims.act.sub)"
-```
+That checks the caller is SCA, the token is for MAA, the user is present, and the scope matches—without relying on a removed **`act`** shape.
 
 ### 5. Rate Limiting (Optional)
 
@@ -300,7 +276,7 @@ Agentgateway provides a centralized policy enforcement point for AAuth-enabled a
 |------------|---------|
 | **Signature Verification** | Verify agent identity before reaching your services |
 | **Authorization Policy** | Fine-grained access control using CEL on AAuth claims |
-| **Delegation Validation** | Track and validate on-behalf-of chains with `act` claim |
+| **Exchanged-token checks** | Use `aauth.agent`, `aud`, `sub`, and `scope` on the downstream token |
 | **Observability** | Structured logging and tracing with agent identity context |
 | **Rate Limiting** | Protect resources while maintaining identity context |
 | **Centralized Config** | Manage all agent policies in one place |
@@ -308,7 +284,7 @@ Agentgateway provides a centralized policy enforcement point for AAuth-enabled a
 **Key Policy Patterns:**
 - Verify agent identity: `aauth.agent == 'expected-agent'`
 - Check authorization scopes: `aauth.jwt_claims.scope.contains('required-scope')`
-- Validate delegation: `has(aauth.jwt_claims.act) && aauth.jwt_claims.act.agent == 'trusted-agent'`
+- After exchange: require expected `aauth.agent`, `aud`, and scopes for the downstream resource
 - Require user consent: `has(aauth.jwt_claims.sub)`
 
 This completes our deep dive into AAuth! You now understand:
