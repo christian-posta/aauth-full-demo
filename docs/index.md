@@ -41,6 +41,7 @@ The source code for this section can be found in GitHub: [https://github.com/chr
 4. [Agent authorization (user consent)](agent-authorization-on-behalf-of.md)
 5. [Token Exchange for Auth propagation (OBO)](agent-token-exchange.md)
 6. [Apply policy with AgentGateway](apply-policy-agentgateway.md)
+7. [Clarification Chat on Authorization](clarification-chat-authorization.md)
 
 
 ## AAuth Implementation Resources

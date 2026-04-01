@@ -262,6 +262,6 @@ Use autonomous mode when: Agents are acting on their own authority (background j
 
 Use user-delegated mode when: Agents must act on behalf of a specific user (accessing user data, making decisions with user accountability, compliance requirements).
 
-In the next post, we'll explore token exchange and delegation chains - how agents can delegate to other agents while preserving the user's identity and consent.
+In the next post, we'll explore token exchange and delegation chains—how agents can delegate to other agents while preserving the user's identity and consent. [Read more: Agent Token Exchange →](./agent-token-exchange.md)
 
 [← Back to index](index.md)

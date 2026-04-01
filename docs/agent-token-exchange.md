@@ -145,16 +145,6 @@ INFO:agent_executor:🔐 JWT scheme detected: verifying auth_token
 INFO:agent_executor:✅ Auth token verified successfully
 ```
 
-## Chain preserved without an `act` claim
-
-Compare the tokens at each hop:
-
-| Hop | `aud` | `agent` | `sub` (if user-delegated) | Where the rest of the chain is proven |
-|-----|-------|---------|---------------------------|----------------------------------------|
-| **Backend → SCA** | SCA | Backend | User | First auth token from AS after resource challenge / consent |
-| **SCA → MAA** | MAA | SCA | User (when carried forward) | Auth server validated **`upstream_token`** + **`resource_token`** at exchange time |
-
-There is **no** separate actor object inside the downstream JWT. The **multi-hop** story is: each hop gets a token whose **`agent`** is the caller for **that** request, and the auth server used the **previous** token (as `upstream_token`) plus the new **resource** challenge when issuing the next one. That matches AAuth **call chaining**: `resource_token` + `upstream_token` on the token endpoint, not an `act` claim in the issued auth token.
 
 ## Summary
 

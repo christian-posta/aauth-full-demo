@@ -35,7 +35,7 @@ Now let's [download the AAuth extension](https://github.com/christian-posta/keyc
 
 ```bash
 # Download the AAuth extension JAR from the GitHub release
-curl -LO https://github.com/christian-posta/keycloak-aauth-extension/releases/download/v1.0.1/keycloak-aauth-extension-1.0.0.jar
+curl -LO https://github.com/christian-posta/keycloak-aauth-extension/releases/download/v1.0.2/keycloak-aauth-extension-1.0.0.jar
 
 # Copy the JAR file into the Keycloak 'providers' directory
 mv keycloak-aauth-extension-1.0.0.jar providers/
@@ -105,13 +105,8 @@ If you prefer to set up manually, you can create a realm called `aauth-test` and
 * Last name: `User`
 * Email verified: true (no verification required)
 
-Test whether the aauth/auth and token endpoints are available:
+Test whether the token endpoint is available:
 
-```bash
-curl http://localhost:8080/realms/aauth-test/protocol/aauth/agent/auth
-
-{"error":"invalid_request","error_description":"Missing required parameter: request_token"}%
-```
 
 ```bash
 curl -X POST http://localhost:8080/realms/aauth-test/protocol/aauth/agent/token
