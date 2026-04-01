@@ -51,4 +51,4 @@ The source code for this section can be found in GitHub: [https://github.com/chr
 3. [Rust Library](https://github.com/christian-posta/agentgateway/tree/ceposta-aauth-rust/crates/aauth)
 4. [Keycloak AAuth SPI](https://github.com/christian-posta/keycloak-aauth-extension)
 5. [Agentgateway AAuth Impl](https://github.com/christian-posta/agentgateway/tree/ceposta-aauth-rust)
-6. [Agentgateway AAuth Release](https://github.com/christian-posta/agentgateway/releases/tag/v0.11.3)
+6. [Agentgateway AAuth Release](https://github.com/christian-posta/agentgateway/releases/tag/v0.11.4)
