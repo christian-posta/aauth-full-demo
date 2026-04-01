@@ -7,6 +7,8 @@ title: Agent authorization (on behalf of)
 
 In this demo, we'll explore how Agent Identity Authorization works when user consent is required. This builds on the [autonomous authorization flow](./agent-authorization-autonomous.md) but adds a critical dimension: user delegation. When an agent needs to act on behalf of a user, the authorization server (Keycloak) ensures the user explicitly grants permission.
 
+When user consent is needed, the auth server does not return an `auth_token` on the first signed `POST` to the token endpoint. Instead it responds with **`202 Accepted`**, a **`Location`** header pointing at a **pending URL**, and an **`AAuth: require=interaction; code="..."`** header so the user can complete consent out-of-band. The agent (here, the backend) **polls** that pending URL with signed `GET` requests (often with `Prefer: wait`) until the server responds with **`200`** and an `auth_token`. There is no separate opaque “request token” the browser exchanges for the auth token, the pending URL and polling carry that role. The same pattern is walked through in [Agent authorization with user consent](./flow-04-user.md).
+
 [← Back to index](index.md)
 
 ## Watch the demo
@@ -94,42 +96,42 @@ Now restart the `supply-chain-agent` with user-delegated authorization:
     <p>From the <code>supply-chain-agent</code> directory:</p>
     <pre><code>
       > cd supply-chain-agent
-      > uv run . --signature-scheme jwks --authorization-scheme user-delegated
+      > uv run . --signature-scheme jwks_uri --authorization-scheme user-delegated
     </code></pre>
   </div>
   <div class="tab-content" id="content-market-analysis">
     <p>From the <code>market-analysis-agent</code> directory:</p>
     <pre><code>
       > cd market-analysis-agent
-      > uv run . --signature-scheme jwks --authorization-scheme autonomous
+      > uv run . --signature-scheme jwks_uri --authorization-scheme autonomous
     </code></pre>
   </div>
 </div>
 
 
-Navigate to the UI and click "Optimize Laptop Supply Chain". The flow now includes an additional step for user consent:
+Navigate to the UI and click "Optimize Laptop Supply Chain". The flow now includes the **deferred** consent path: the token endpoint may return **`202`** instead of issuing an `auth_token` immediately.
 
 ```mermaid
 sequenceDiagram
   participant UI as UI
   participant BE as Backend
   participant KC as Keycloak
-  participant SCA as Supply-Chain Agent
+  participant SCA as "Supply-Chain Agent"
 
-  UI->>BE: 1. User clicks "Optimize Laptop Supply Chain"
-  BE->>SCA: 2. POST /optimize (signed request)
-  SCA-->>BE: 3. 401 + resource_token
-  BE->>KC: 4. Exchange resource_token
-  KC-->>BE: 5. request_token (consent required)
-  BE-->>UI: 6. Return request_token
-  UI->>KC: 7. User consent flow
-  KC-->>UI: 8. consent_token
-  UI->>BE: 9. Submit consent_token
-  BE->>KC: 10. Exchange consent_token for auth_token
-  KC-->>BE: 11. auth_token (with sub + agent)
-  BE->>SCA: 12. Retry with auth_token
-  SCA-->>BE: 13. Success
+  UI->>BE: 1. User clicks Optimize Laptop Supply Chain
+  BE->>SCA: 2. POST signed, no auth_token yet
+  SCA-->>BE: 3. 401 + AAuth require=auth-token + resource-token
+  BE->>KC: 4. POST token + resource_token, Prefer wait
+  KC-->>BE: 5. 202 + Location pending URL + interaction code
+  BE-->>UI: 6. interaction_endpoint, code, request_id, callback_url
+  Note over BE: Backend polls pending URL with signed GET
+  UI->>KC: 7. User opens interaction URL and completes consent
+  BE->>KC: 8. Poll returns 200 + auth_token after consent
+  BE->>SCA: 9. Retry with auth_token, scheme=jwt
+  SCA-->>BE: 10. Success
 ```
+
+The UI response is a convenience for this demo so the browser can open Keycloak’s consent page. The **authoritative** protocol step is polling the **pending URL** from the `202` response; the backend starts that polling when it returns `interaction_required` to the frontend (and the optional callback URL is only a UX hint to return to the app).
 
 
 ## Step By Step
@@ -140,18 +142,42 @@ When the `backend` calls the `supply-chain-agent`, it receives a 401 with a reso
 
 
 ```bash
-INFO:aauth.tokens:🔐 401 from supply-chain-agent (url=http://supply-chain-agent.localhost:3000): headers={'date': 'Sat, 07 Feb 2026 16:56:35 GMT', 'server': 'uvicorn', 'agent-auth': 'httpsig; auth-token; resource_token="eyJhbGciOiJFZERTQSIsImtpZCI6InN1cHBseS1jaGFpbi1hZ2VudC1lcGhlbWVyYWwtMSIsInR5cCI6InJlc291cmNlK2p3dCJ9.eyJpc3MiOiJodHRwOi8vc3VwcGx5LWNoYWluLWFnZW50LmxvY2FsaG9zdDozMDAwIiwiYXVkIjoiaHR0cDovL2xvY2FsaG9zdDo4MDgwL3JlYWxtcy9hYXV0aC10ZXN0IiwiYWdlbnQiOiJodHRwOi8vYmFja2VuZC5sb2NhbGhvc3Q6ODAwMCIsImFnZW50X2prdCI6IlVDaWE5dEpNV3lEMWZPMGlhV1YxV2NzQmRaQzIwb0E5MVZYLS1VY2NXM0UiLCJleHAiOjE3NzA0ODM2OTYsInNjb3BlIjoic3VwcGx5LWNoYWluOm9wdGltaXplIG1hcmtldC1hbmFseXNpczphbmFseXplIn0.jHesCOn3qIXke_aAe3VrIzS7RbLhW9_rMRfLNqVeMDC9YZl16a1RvOEELHiy0wXA-Cy7y3CUzW7t5N_FbxgiCA"; auth_server="http://localhost:8080/realms/aauth-test"', 'content-length': '22', 'content-type': 'text/plain; charset=utf-8'}
+INFO:aauth.tokens:🔐 401 from supply-chain-agent (url=http://supply-chain-agent.localhost:3000): headers={'date': 'Sat, 07 Feb 2026 16:56:35 GMT', 'server': 'uvicorn', 'aauth': 'require=auth-token; resource-token="eyJhbGciOiJFZERTQSIsImtpZCI6InN1cHBseS1jaGFpbi1hZ2VudC1lcGhlbWVyYWwtMSIsInR5cCI6InJlc291cmNlK2p3dCJ9.eyJpc3MiOiJodHRwOi8vc3VwcGx5LWNoYWluLWFnZW50LmxvY2FsaG9zdDozMDAwIiwiYXVkIjoiaHR0cDovL2xvY2FsaG9zdDo4MDgwL3JlYWxtcy9hYXV0aC10ZXN0IiwiYWdlbnQiOiJodHRwOi8vYmFja2VuZC5sb2NhbGhvc3Q6ODAwMCIsImFnZW50X2prdCI6IlVDaWE5dEpNV3lEMWZPMGlhV1YxV2NzQmRaQzIwb0E5MVZYLS1VY2NXM0UiLCJleHAiOjE3NzA0ODM2OTYsInNjb3BlIjoic3VwcGx5LWNoYWluOm9wdGltaXplIG1hcmtldC1hbmFseXNpczphbmFseXplIn0.jHesCOn3qIXke_aAe3VrIzS7RbLhW9_rMRfLNqVeMDC9YZl16a1RvOEELHiy0wXA-Cy7y3CUzW7t5N_FbxgiCA"; auth-server="http://localhost:8080/realms/aauth-test"', 'content-length': '22', 'content-type': 'text/plain; charset=utf-8'}
 ```
 {: .log-output}
 
-### 2. Keycloak Detects Consent Required
+### 2. Keycloak returns 202 (interaction required)
 
-The backend exchanges the resource token at Keycloak. But this time, Keycloak recognizes that supply-chain:optimize requires user consent and returns a request_token instead of an auth_token:
+The backend exchanges the resource token at Keycloak’s AAuth **token endpoint** (signed `POST` with `resource_token`, typically with `Prefer: wait=…`). When policy requires user consent, the auth server does **not** return `auth_token` in the first response. It returns a **deferred** response (see also [flow-04-user](./flow-04-user.md)):
+
+- **`202 Accepted`**
+- **`Location`**: pending URL to poll with `GET`
+- **`AAuth: require=interaction; code="…"`** (and a JSON body echoing `status`, `location`, `require`, `code`)
+
+The backend maps that to an API payload for the UI (`interaction_required` with `interaction_endpoint`, `interaction_code`, `request_id`, `callback_url`) and begins **polling** the pending URL with signed `GET` requests until Keycloak responds with **`200`** and an `auth_token`.
+
+Illustrative HTTP shape (same idea as the auth-server response in [flow-04-user](./flow-04-user.md); the exact `Location` path depends on your auth server):
+
+```http
+HTTP/1.1 202 Accepted
+Location: http://localhost:8080/realms/aauth-test/pending/2e44214dc421
+AAuth: require=interaction; code="7R6XKPRP"
+Content-Type: application/json
+
+{"status":"pending","location":"http://localhost:8080/realms/aauth-test/pending/2e44214dc421","require":"interaction","code":"7R6XKPRP"}
+```
+
+You should see **`aauth.tokens`** poll lines in the backend logs (exact wording varies by attempt), for example:
 
 ```bash
-INFO:aauth.tokens:🔐 Received request_token from auth server (user consent required): 6cd2d825-158b-4efb-93da-f4e73a499d8a.1770483396.NmNkMmQ4MjUtMTU4Yi00ZWZiLTkzZGEtZjRlNzNhNDk5ZDhhOjE3NzA0ODMzOTY6aHR0cDovL2JhY2tlbmQubG9jYWxob3N0OjgwMDA
+INFO:aauth.tokens:AAuth poll started: pending_url=http://localhost:8080/realms/aauth-test/... max_attempts=120 Prefer_wait=45 min_interval=3.0
+INFO:aauth.tokens:AAuth poll GET attempt 1/120 url=http://localhost:8080/realms/aauth-test/...
+INFO:aauth.tokens:AAuth poll response: status=202 attempt=1/120
+INFO:aauth.tokens:AAuth poll 202: body_status=pending require=interaction retry_after=0 clarification=False is_awaiting=False
 ```
 {: .log-output}
+
+After the user completes consent, a later poll returns **`200`** and **`AAuth poll complete: auth_token received`**.
 
 ### 3. User Consent Screen
 
@@ -165,10 +191,12 @@ The user sees:
 * What scopes are being requested (supply-chain:optimize)
 * The ability to approve or deny
 
+The browser reaches this screen via the **interaction endpoint** and **interaction code** returned to the UI (step 2 above). AAuth expects the user to be sent to the auth server’s interaction URL with that code while the agent keeps polling the pending URL.
 
-### 4. Authorization Token with User Identity
 
-After the user approves, the backend exchanges the consent token for an auth_token. The supply-chain-agent receives:
+### 4. Authorization token with user identity
+
+After the pending poll completes, the backend holds a valid **`auth_token`** and retries the call to the supply-chain-agent using **`scheme=jwt`** in the `Signature-Key` header. The supply-chain-agent receives:
 
 ```bash
 INFO:agent_executor:✅ AAuth signature verification successful

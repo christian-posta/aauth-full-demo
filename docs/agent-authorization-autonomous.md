@@ -36,14 +36,14 @@ We will restart the `supply-chain-agent` and `market-analysis-agent` with new pa
     <p>From the <code>supply-chain-agent</code> directory:</p>
     <pre><code>
       > cd supply-chain-agent
-      > uv run . --signature-scheme jwks --authorization-scheme autonomous
+      > uv run . --signature-scheme jwks_uri --authorization-scheme autonomous
     </code></pre>
   </div>
   <div class="tab-content" id="content-market-analysis">
     <p>From the <code>market-analysis-agent</code> directory:</p>
     <pre><code>
       > cd market-analysis-agent
-      > uv run . --signature-scheme jwks --authorization-scheme autonomous
+      > uv run . --signature-scheme jwks_uri --authorization-scheme autonomous
     </code></pre>
   </div>
 </div>
@@ -52,7 +52,7 @@ At this point you're ready to return to the UI to review the demo flow:
 
 ## Walking through the Demo Flow
 
-From the main UI page, if you click the `"Optimize Laptop Supply Chain"` button, it should kick off the flow for the backend components. You may need to refresh the page (some time the OIDC token / User session expires). 
+From the main UI page, if you click the `"Optimize Laptop Supply Chain"` button, it should kick off the flow for the backend components. You may need to refresh the page (some time the OIDC token / User session expires). if it fails, try restarting the `agentgateway` as that can cache JWKS and become stale. 
 
 The flow we see will look like this:
 
@@ -70,16 +70,16 @@ sequenceDiagram
   BE-->>UI: 6. Return progress/result to user
 ```
 
-When backend makes a call to supply-chain-agent, it will see a 401 and an "agent-auth" header. This header will have the resource token which binds the needed scopes (as determined by the resource) to the agent who's calling (backend in this case). Let's take a look at what the `backend` logs look like:
+When backend makes a call to supply-chain-agent, it will see a 401 and an `AAuth` header. This header will have the resource token which binds the needed scopes (as determined by the resource) to the agent who's calling (backend in this case). Let's take a look at what the `backend` logs look like:
 
 ```bash
-INFO:aauth.tokens:🔐 401 from supply-chain-agent (url=http://supply-chain-agent.localhost:3000): headers={'date': 'Fri, 06 Feb 2026 22:12:49 GMT', 'server': 'uvicorn', 'agent-auth': 'httpsig; auth-token; resource_token="eyJhbGciOiJFZERTQSIsImtpZCI6InN1cHBseS1jaGFpbi1hZ2VudC1lcGhlbWVyYWwtMSIsInR5cCI6InJlc291cmNlK2p3dCJ9.eyJpc3MiOiJodHRwOi8vc3VwcGx5LWNoYWluLWFnZW50LmxvY2FsaG9zdDozMDAwIiwiYXVkIjoiaHR0cDovL2xvY2FsaG9zdDo4MDgwL3JlYWxtcy9hYXV0aC10ZXN0IiwiYWdlbnQiOiJodHRwOi8vYmFja2VuZC5sb2NhbGhvc3Q6ODAwMCIsImFnZW50X2prdCI6Il9YUHA3YmZNdDV1Z25yUnFBU1VuS2JaRW5rd2JrRmpwb01GQS1lemVYS3ciLCJleHAiOjE3NzA0MTYyNzAsInNjb3BlIjoic3VwcGx5LWNoYWluOm9wdGltaXplIn0.ZAUQNnQz76zSbp4XGRyST_K5b0wVavVys5sYIUKJwLWe6LnJqN6By-37jdXDuup5c9nGak3iXw1MlaqAIdkgDQ"; auth_server="http://localhost:8080/realms/aauth-test"', 'content-length': '22', 'content-type': 'text/plain; charset=utf-8'}
-INFO:     127.0.0.1:55612 - "GET /.well-known/aauth-agent HTTP/1.1" 200 OK
+INFO:aauth.tokens:🔐 401 from supply-chain-agent (url=http://supply-chain-agent.localhost:3000): headers={'date': 'Fri, 06 Feb 2026 22:12:49 GMT', 'server': 'uvicorn', 'aauth': 'require=auth-token; resource-token="eyJhbGciOiJFZERTQSIsImtpZCI6InN1cHBseS1jaGFpbi1hZ2VudC1lcGhlbWVyYWwtMSIsInR5cCI6InJlc291cmNlK2p3dCJ9.eyJpc3MiOiJodHRwOi8vc3VwcGx5LWNoYWluLWFnZW50LmxvY2FsaG9zdDozMDAwIiwiYXVkIjoiaHR0cDovL2xvY2FsaG9zdDo4MDgwL3JlYWxtcy9hYXV0aC10ZXN0IiwiYWdlbnQiOiJodHRwOi8vYmFja2VuZC5sb2NhbGhvc3Q6ODAwMCIsImFnZW50X2prdCI6Il9YUHA3YmZNdDV1Z25yUnFBU1VuS2JaRW5rd2JrRmpwb01GQS1lemVYS3ciLCJleHAiOjE3NzA0MTYyNzAsInNjb3BlIjoic3VwcGx5LWNoYWluOm9wdGltaXplIn0.ZAUQNnQz76zSbp4XGRyST_K5b0wVavVys5sYIUKJwLWe6LnJqN6By-37jdXDuup5c9nGak3iXw1MlaqAIdkgDQ"; auth-server="http://localhost:8080/realms/aauth-test"', 'content-length': '22', 'content-type': 'text/plain; charset=utf-8'}
+INFO:     127.0.0.1:55612 - "GET /.well-known/aauth-agent.json HTTP/1.1" 200 OK
 INFO:     127.0.0.1:55612 - "GET /jwks.json HTTP/1.1" 200 OK
 ```
 {: .log-output}
 
-Here we can see that we got a `401` when `backend` tried to call `supply-chain-agent` and it also returned an `agent-auth` header with requirements to upgrade to `httpsig; auth-token` with a resource token. This resource token binds a request for scopes to call this `supply-chain-agent` to the `backend` caller. If we decode the JWT resource token it looks like this:
+Here we can see that we got a `401` when `backend` tried to call `supply-chain-agent` and it also returned an `AAuth` header with `require=auth-token` and a resource token. This resource token binds a request for scopes to call this `supply-chain-agent` to the `backend` caller. If we decode the JWT resource token it looks like this:
 
 ```json
 {
@@ -101,12 +101,12 @@ If we look at the logs for the `supply-chain-agent`, we can see JWKS was used to
 INFO:http_headers_middleware:🔐 AAuth headers received: ['signature', 'signature-key', 'signature-input']
 INFO:agent_executor:🔐 AAuth signature headers detected: ['signature', 'signature-key', 'signature-input']
 INFO:agent_executor:🔐 AAuth scheme: JWKS - identified agent
-INFO:agent_executor:🔐 Verifying AAuth signature (scheme: jwks)
+INFO:agent_executor:🔐 Verifying AAuth signature (scheme: jwks_uri)
 INFO:agent_executor:🔐 VERIFYING with: method=POST, target_uri='http://supply-chain-agent.localhost:3000/'
 INFO:aauth.signing:🔐 VERIFIER: verify_signature() called
 INFO:aauth.signing:🔐 VERIFIER: method=POST, target_uri=http://supply-chain-agent.localhost:3000/
 INFO:aauth.signing:🔐 VERIFIER: signature_input_header=sig1=("@method" "@authority" "@path" "signature-key");created=1770415970
-INFO:httpx:HTTP Request: GET http://backend.localhost:8000/.well-known/aauth-agent "HTTP/1.1 200 OK"
+INFO:httpx:HTTP Request: GET http://backend.localhost:8000/.well-known/aauth-agent.json "HTTP/1.1 200 OK"
 INFO:httpx:HTTP Request: GET http://backend.localhost:8000/jwks.json "HTTP/1.1 200 OK"
 INFO:agent_executor:✅ AAuth signature verification successful
 INFO:agent_executor:🔐 Authorization required: auth_token missing or invalid
@@ -120,7 +120,7 @@ You can see the identity of the caller has been established, but this call requi
 INFO:resource_token_service:✅ Resource token generated successfully
 INFO:aauth.tokens:🔐 Issuing resource_token: eyJhbGciOiJFZERTQSIsImtpZCI6InN1cHBseS1jaGFpbi1hZ2VudC1lcGhlbWVyYWwtMSIsInR5cCI6InJlc291cmNlK2p3dCJ9.eyJpc3MiOiJodHRwOi8vc3VwcGx5LWNoYWluLWFnZW50LmxvY2FsaG9zdDozMDAwIiwiYXVkIjoiaHR0cDovL2xvY2FsaG9zdDo4MDgwL3JlYWxtcy9hYXV0aC10ZXN0IiwiYWdlbnQiOiJodHRwOi8vYmFja2VuZC5sb2NhbGhvc3Q6ODAwMCIsImFnZW50X2prdCI6Il9YUHA3YmZNdDV1Z25yUnFBU1VuS2JaRW5rd2JrRmpwb01GQS1lemVYS3ciLCJleHAiOjE3NzA0MTYyNzAsInNjb3BlIjoic3VwcGx5LWNoYWluOm9wdGltaXplIn0.ZAUQNnQz76zSbp4XGRyST_K5b0wVavVys5sYIUKJwLWe6LnJqN6By-37jdXDuup5c9nGak3iXw1MlaqAIdkgDQ
 INFO:agent_executor:🔐 Issuing resource_token for agent: http://backend.localhost:8000
-INFO:agent_executor:🔐 Returning 401 with Agent-Auth header
+INFO:agent_executor:🔐 401 AAuth challenge: returning resource_token in AAuth response header
 ```
 {: .log-output}
 
@@ -175,7 +175,7 @@ INFO:httpx:HTTP Request: GET http://localhost:8080/realms/aauth-test/protocol/op
 INFO:agent_executor:✅ Auth token verified successfully
 INFO:agent_executor:✅ Authorization successful: auth_token verified for agent: http://backend.localhost:8000
 INFO:agent_executor:🔐 Extracted upstream auth_token for token exchange (length: 945)
-INFO:agent_executor:🔐 Using AAuth JWKS signing for downstream agent calls
+INFO:agent_executor:🔐 Using AAuth JWKS_URI signing for downstream agent calls
 INFO:agent_executor:🔐 Upstream auth_token available for token exchange if needed
 INFO:     127.0.0.1:55606 - "POST / HTTP/1.1" 200 OK
 ```
