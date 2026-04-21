@@ -13,7 +13,7 @@ import httpx
 
 from app.config import settings
 from app.services.aauth_interceptor import get_signing_keypair
-from app.services.aauth_protocol import parse_aauth_header
+from aauth import parse_aauth_header
 from app.tracing_config import add_event, set_attribute, span
 
 logger = logging.getLogger(__name__)

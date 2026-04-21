@@ -52,8 +52,8 @@ from a2a.types import (
     HTTPAuthSecurityScheme,
 )
 from agent_executor import MarketAnalysisAgentExecutor
-from resource_token_service import get_signing_keypair
-from aauth import generate_jwks, generate_agent_metadata, generate_resource_metadata
+from aauth_keys import get_signing_keypair
+from aauth import generate_jwks, generate_agent_metadata
 from starlette.responses import JSONResponse
 from tracing_config import initialize_tracing
 
@@ -193,8 +193,7 @@ if __name__ == '__main__':
     app.add_middleware(HTTPHeadersCaptureMiddleware)
     print(f"🔐 Added HTTPHeadersCaptureMiddleware for AAuth header capture")
     
-    # Add JWKS endpoints for AAuth (agent metadata, resource metadata, and key set)
-    # Keycloak fetches /.well-known/aauth-resource to validate resource tokens issued by this agent.
+    # Add JWKS endpoints for AAuth (agent metadata and key set)
     @app.route("/.well-known/aauth-agent.json", methods=["GET"])
     async def aauth_agent_metadata(request):
         agent_id_url = os.getenv("MARKET_ANALYSIS_AGENT_ID_URL", agent_url.rstrip('/'))
@@ -206,20 +205,7 @@ if __name__ == '__main__':
                 client_name="Market Analysis Agent",
             )
         )
-    
-    @app.route("/.well-known/aauth-resource.json", methods=["GET"])
-    async def aauth_resource_metadata(request):
-        resource_id_url = os.getenv("MARKET_ANALYSIS_AGENT_ID_URL", agent_url.rstrip('/'))
-        jwks_uri = f"{resource_id_url.rstrip('/')}/jwks.json"
-        return JSONResponse(
-            generate_resource_metadata(
-                resource_id=resource_id_url,
-                jwks_uri=jwks_uri,
-                client_name="Market Analysis Agent",
-                additional_signature_components=["content-type", "content-digest"],
-            )
-        )
-    
+
     @app.route("/jwks.json", methods=["GET"])
     async def jwks_endpoint(request):
         """JWKS endpoint for AAuth signature verification and resource token validation."""
@@ -227,6 +213,6 @@ if __name__ == '__main__':
         jwks = generate_jwks([public_jwk])
         return JSONResponse(jwks)
     
-    print(f"🔐 Added JWKS endpoints: /.well-known/aauth-agent.json, /.well-known/aauth-resource.json, and /jwks.json")
+    print(f"🔐 Added JWKS endpoints: /.well-known/aauth-agent.json and /jwks.json")
     
     uvicorn.run(app, host='0.0.0.0', port=port)

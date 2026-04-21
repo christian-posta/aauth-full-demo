@@ -16,7 +16,7 @@ from app.config import settings
 from app.models import OptimizationRequest, OptimizationProgress, OptimizationResults
 from app.tracing_config import span, add_event, set_attribute, extract_context_from_headers
 from app.services.aauth_interceptor import AAuthSigningInterceptor
-from app.services.aauth_protocol import parse_aauth_header
+from aauth import parse_aauth_header
 from app.services.aauth_token_service import aauth_token_service
 
 # Configure logging

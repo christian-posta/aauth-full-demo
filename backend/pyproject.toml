@@ -22,7 +22,7 @@ dependencies = [
     "opentelemetry-instrumentation-httpx>=0.40b0",
     "opentelemetry-instrumentation-fastapi>=0.40b0",
     "opentelemetry-exporter-otlp-proto-grpc>=1.20.0",
-    "aauth==0.1.1",
+    "aauth==0.3.0",
 ]
 requires-python = ">=3.12"
 
