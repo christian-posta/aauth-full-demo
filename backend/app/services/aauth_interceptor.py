@@ -242,15 +242,19 @@ class AAuthSigningInterceptor(ClientCallInterceptor):
                         sig_scheme = os.getenv("AAUTH_SIGNATURE_SCHEME", "hwk").lower()
                 
                 if sig_scheme == "jwks_uri":
-                    # For JWKS scheme, need agent identifier and key ID
+                    # For JWKS scheme: id, kid, dwk (well-known doc name) per SIG-Key jwks_uri + SPEC aauth-agent.json
                     agent_id = os.getenv("BACKEND_AGENT_URL", f"http://{settings.host}:{settings.port}")
                     # Extract kid from the public JWK
                     kid = _PUBLIC_JWK.get("kid", "backend-key-1")
+                    dwk = os.getenv("AAUTH_AGENT_DWK", "aauth-agent.json")
                     sign_kwargs = {
                         "id": agent_id,
-                        "kid": kid
+                        "kid": kid,
+                        "dwk": dwk,
                     }
-                    logger.info(f"🔐 AAuth: Signing with JWKS_URI scheme (agent: {agent_id}, kid: {kid})")
+                    logger.info(
+                        f"🔐 AAuth: Signing with JWKS_URI scheme (agent: {agent_id}, kid: {kid}, dwk: {dwk})"
+                    )
                     if settings.debug:
                         logger.debug(f"🔐 AAuth: Agent ID: {agent_id}, Kid: {kid}")
                 elif sig_scheme == "hwk":

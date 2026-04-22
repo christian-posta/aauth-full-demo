@@ -16,12 +16,27 @@ from app.config import settings
 from app.models import OptimizationRequest, OptimizationProgress, OptimizationResults
 from app.tracing_config import span, add_event, set_attribute, extract_context_from_headers
 from app.services.aauth_interceptor import AAuthSigningInterceptor
-from aauth import parse_aauth_header
+from aauth import HEADER_AAUTH_REQUIREMENT, parse_aauth_header
 from app.services.aauth_token_service import aauth_token_service
 
 # Configure logging
 logger = logging.getLogger(__name__)
 token_logger = logging.getLogger("aauth.tokens")  # For token/challenge visibility - not suppressed
+
+
+def aauth_requirement_value_from_response(response: httpx.Response) -> str | None:
+    """Read AAuth challenge from response (prefer ``AAuth-Requirement``, then legacy ``AAuth``)."""
+    h = response.headers
+    for key in (
+        HEADER_AAUTH_REQUIREMENT,
+        "AAuth-Requirement",
+        "AAuth",
+        "Signature-Requirement",
+    ):
+        v = h.get(key)
+        if v:
+            return v
+    return None
 
 
 class A2AService:
@@ -66,10 +81,10 @@ class A2AService:
             async def response_hook(response: httpx.Response):
                 """Hook to intercept HTTP responses and extract AAuth header from 401."""
                 if response.status_code == 401:
-                    agent_auth_header = response.headers.get("AAuth")
+                    agent_auth_header = aauth_requirement_value_from_response(response)
                     token_logger.info(
                         f"🔐 401 from supply-chain-agent (url={response.url}): "
-                        f"AAuth_header_present={bool(agent_auth_header)} "
+                        f"AAuth_challenge_header_present={bool(agent_auth_header)} "
                         f"header_names={list(response.headers.keys())}"
                     )
                     if agent_auth_header:
@@ -79,8 +94,8 @@ class A2AService:
                         })
                     else:
                         token_logger.warning(
-                            "🔐 401 but no AAuth response header — cannot exchange resource_token at Keycloak. "
-                            "If traffic goes through a gateway, ensure the AAuth header is forwarded from upstream."
+                            "🔐 401 but no AAuth-Requirement (or legacy AAuth) — cannot exchange resource_token. "
+                            "If traffic goes through a gateway, ensure these headers are forwarded from upstream."
                         )
             
             httpx_client = httpx.AsyncClient(
@@ -255,7 +270,7 @@ class A2AService:
                         break
                 except httpx.HTTPStatusError as e:
                     if e.response.status_code == 401:
-                        agent_auth_header = e.response.headers.get("AAuth")
+                        agent_auth_header = aauth_requirement_value_from_response(e.response)
                         if agent_auth_header:
                             add_event("agent_auth_challenge_received", {
                                 "has_agent_auth": True
@@ -268,7 +283,7 @@ class A2AService:
                         raise
                 except Exception as e:
                     if self._last_401_response:
-                        agent_auth_header = self._last_401_response.headers.get("AAuth")
+                        agent_auth_header = aauth_requirement_value_from_response(self._last_401_response)
                         if agent_auth_header:
                             add_event("agent_auth_challenge_detected", {
                                 "has_agent_auth": True
@@ -282,8 +297,8 @@ class A2AService:
                 if agent_auth_header:
                     add_event("processing_agent_auth_challenge")
                     parsed_header = parse_aauth_header(agent_auth_header)
-                    resource_token = parsed_header.resource_token
-                    auth_server = parsed_header.auth_server
+                    resource_token = parsed_header.get("resource_token")
+                    auth_server = parsed_header.get("auth_server")
 
                     if resource_token:
                         add_event("resource_token_extracted", {

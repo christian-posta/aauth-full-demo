@@ -190,7 +190,7 @@ class AAuthSigningInterceptor(ClientCallInterceptor):
                     if DEBUG:
                         logger.debug(f"🔐 AAuth: Auth token length: {len(self.auth_token)}")
                 elif sig_scheme == "jwks_uri":
-                    # For JWKS scheme, need agent identifier and key ID
+                    # For JWKS scheme: id, kid, dwk (well-known doc) per SIG-Key + SPEC /.well-known/aauth-agent.json
                     # Try SUPPLY_CHAIN_AGENT_ID_URL first, then SUPPLY_CHAIN_AGENT_URL, then agent_card.url
                     agent_id = os.getenv("SUPPLY_CHAIN_AGENT_ID_URL")
                     if not agent_id:
@@ -202,11 +202,16 @@ class AAuthSigningInterceptor(ClientCallInterceptor):
                     
                     # Extract kid from the public JWK
                     kid = _PUBLIC_JWK.get("kid", "supply-chain-agent-key-1")
+                    dwk = os.getenv("AAUTH_AGENT_DWK", "aauth-agent.json")
                     sign_kwargs = {
                         "id": agent_id,
-                        "kid": kid
+                        "kid": kid,
+                        "dwk": dwk,
                     }
-                    logger.info(f"🔐 AAuth: Signing request to {url} with JWKS scheme (agent: {agent_id}, kid: {kid})")
+                    logger.info(
+                        f"🔐 AAuth: Signing request to {url} with JWKS scheme "
+                        f"(agent: {agent_id}, kid: {kid}, dwk: {dwk})"
+                    )
                     if DEBUG:
                         logger.debug(f"🔐 AAuth: Agent ID: {agent_id}, Kid: {kid}")
                 else:

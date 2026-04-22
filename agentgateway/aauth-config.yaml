@@ -11,6 +11,7 @@ resources:
   - id: supply-chain-api
     issuer: http://localhost:8081
     hosts:
+      - "supply-chain-agent.localhost:3000"
       - "supply-chain-agent.localhost"
     signing_key:
       kid: spa-rsk-1
@@ -24,6 +25,7 @@ resources:
   - id: market-analysis-api
     issuer: http://localhost:8081
     hosts:
+      - "market-analysis-agent.localhost:3000"
       - "market-analysis-agent.localhost"
     signing_key:
       kid: maa-rsk-1

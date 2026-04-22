@@ -102,7 +102,8 @@ class AAuthTokenService:
         if self.signature_scheme == "jwks_uri":
             agent_id = os.getenv("SUPPLY_CHAIN_AGENT_ID_URL") or os.getenv("SUPPLY_CHAIN_AGENT_URL", "http://localhost:9999").rstrip("/")
             kid = self.public_jwk.get("kid", "supply-chain-agent-key-1")
-            sign_kwargs = {"id": agent_id, "kid": kid}
+            dwk = os.getenv("AAUTH_AGENT_DWK", "aauth-agent.json")
+            sign_kwargs = {"id": agent_id, "kid": kid, "dwk": dwk}
 
         return sign_request(
             method=method,

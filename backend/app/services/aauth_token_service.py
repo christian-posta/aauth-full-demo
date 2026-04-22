@@ -13,7 +13,7 @@ import httpx
 
 from app.config import settings
 from app.services.aauth_interceptor import get_signing_keypair
-from aauth import parse_aauth_header
+from aauth import HEADER_AAUTH_REQUIREMENT, parse_aauth_header
 from app.tracing_config import add_event, set_attribute, span
 
 logger = logging.getLogger(__name__)
@@ -124,7 +124,8 @@ class AAuthTokenService:
         if self.signature_scheme == "jwks_uri":
             agent_id = os.getenv("BACKEND_AGENT_URL", f"http://{settings.host}:{settings.port}")
             kid = self.public_jwk.get("kid", "backend-key-1")
-            sign_kwargs = {"id": agent_id, "kid": kid}
+            dwk = os.getenv("AAUTH_AGENT_DWK", "aauth-agent.json")
+            sign_kwargs = {"id": agent_id, "kid": kid, "dwk": dwk}
 
         return sign_request(
             method=method,
@@ -174,10 +175,19 @@ class AAuthTokenService:
             raise ValueError("Pending response missing Location header")
 
         retry_after = int(response.headers.get("Retry-After", "0"))
-        aauth_header = response.headers.get("AAuth", "")
+        aauth_header = (
+            response.headers.get(HEADER_AAUTH_REQUIREMENT)
+            or response.headers.get("AAuth-Requirement")
+            or response.headers.get("AAuth", "")
+            or response.headers.get("Signature-Requirement", "")
+        )
         parsed_header = parse_aauth_header(aauth_header) if aauth_header else None
-        require = body.get("require") or (parsed_header.require if parsed_header else None)
-        code = body.get("code") or (parsed_header.code if parsed_header else None)
+        require = body.get("require")
+        if require is None and parsed_header is not None:
+            require = parsed_header.get("requirement") or parsed_header.get("require")
+        code = body.get("code")
+        if code is None and parsed_header is not None:
+            code = parsed_header.get("code")
 
         result = {
             "status": "approval_pending" if require == "approval" else "interaction_required",
