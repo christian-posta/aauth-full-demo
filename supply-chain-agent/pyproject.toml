@@ -20,7 +20,7 @@ dependencies = [
     "opentelemetry-sdk>=1.20.0",
     "opentelemetry-instrumentation-httpx>=0.40b0",
     "opentelemetry-exporter-otlp-proto-grpc>=1.20.0",
-    "aauth",
+    "aauth==0.3.2",
 ]
 
 [tool.hatch.metadata]
@@ -33,5 +33,3 @@ packages = ["."]
 requires = ["hatchling"]
 build-backend = "hatchling.build"
 
-[tool.uv.sources]
-aauth = { path = "../../../dev/code/aauth", editable = true }
