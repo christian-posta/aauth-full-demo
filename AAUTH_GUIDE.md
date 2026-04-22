@@ -107,7 +107,7 @@ upstream call failed: Connect: Connection refused (os error 61)
 
 ### Test C: Verify the JWKS Endpoint via the Gateway
 
-The gateway is now configured to seamlessly proxy AAuth metadata paths directly to the AAuth service. 
+The gateway is configured to proxy AAuth metadata paths to the AAuth service. In the current local setup, the live gateway on port `3000` returns `Not Found` for these JWKS requests, while the AAuth service on port `8081` returns the expected host-specific JWKS documents.
 
 Query the gateway's public port (`3000`):
 
@@ -115,8 +115,20 @@ Query the gateway's public port (`3000`):
 curl -s "http://localhost:3000/.well-known/jwks.json" -H "Host: supply-chain-agent.localhost"
 ```
 
-**Expected Result:**
-A valid JSON Web Key Set (JWKS) containing the public component (`x`) of the Ed25519 key used for the AAuth Service.
+**Observed Result via Agent Gateway (`3000`):**
+
+```text
+Not Found
+```
+
+To verify the actual resource JWKS being served for each host, query the AAuth service directly on port `8081`:
+
+```bash
+curl -s "http://localhost:8081/.well-known/jwks.json" -H "Host: supply-chain-agent.localhost"
+curl -s "http://localhost:8081/.well-known/jwks.json" -H "Host: market-analysis-agent.localhost"
+```
+
+**Observed Result for `supply-chain-agent.localhost` via AAuth service (`8081`):**
 
 ```json
 {
@@ -124,10 +136,27 @@ A valid JSON Web Key Set (JWKS) containing the public component (`x`) of the Ed2
     {
       "alg": "EdDSA",
       "crv": "Ed25519",
-      "kid": "rsk-1",
+      "kid": "spa-rsk-1",
       "kty": "OKP",
       "use": "sig",
-      "x": "smbd6pv1Iiozze5yx0VzumDRTJRHIjGPPOEZL9p7wdQ"
+      "x": "A1OC-KnIa9wVRFJmnjrTfPJfl8gYDOjSCV_KJFmxHSg"
+    }
+  ]
+}
+```
+
+**Observed Result for `market-analysis-agent.localhost` via AAuth service (`8081`):**
+
+```json
+{
+  "keys": [
+    {
+      "alg": "EdDSA",
+      "crv": "Ed25519",
+      "kid": "maa-rsk-1",
+      "kty": "OKP",
+      "use": "sig",
+      "x": "rMep_GRARP4z5aSb16ORzDnoeHU_6rMeJb1Z3Pdn0CI"
     }
   ]
 }
