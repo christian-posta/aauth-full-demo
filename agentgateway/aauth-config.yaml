@@ -1,0 +1,50 @@
+listen:
+  grpc: ":7070"
+  http: ":8081"
+
+jwks_cache:
+  success_ttl: 5m
+  error_ttl: 30s
+  max_entries: 1000
+
+resources:
+  - id: mcp-api
+    issuer: http://localhost:8081
+    hosts:
+      - localhost:8081
+      - localhost:3001
+      - localhost
+    signing_key:
+      kid: rsk-1
+      alg: EdDSA
+      private_key_file: resource_key.pem
+    signature_window: 60s
+    allow_pseudonymous: true
+    policy:
+      name: default
+
+  - id: supply-chain-api
+    issuer: http://localhost:8081
+    hosts:
+      - "supply-chain-agent.localhost"
+    signing_key:
+      kid: rsk-1
+      alg: EdDSA
+      private_key_file: resource_key.pem
+    signature_window: 60s
+    allow_pseudonymous: true
+    policy:
+      name: default
+
+  - id: market-analysis-api
+    issuer: http://localhost:8081
+    hosts:
+      - "market-analysis-agent.localhost"
+    signing_key:
+      kid: rsk-1
+      alg: EdDSA
+      private_key_file: resource_key.pem
+    signature_window: 60s
+    allow_pseudonymous: true
+    policy:
+      name: default

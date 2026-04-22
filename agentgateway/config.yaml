@@ -36,12 +36,21 @@ binds:
   listeners:
   - hostname: "supply-chain-agent.localhost"
     routes:
+    - name: aauth-discovery
+      matches:
+      - path:
+          pathPrefix: /.well-known/
+      backends:
+      - host: localhost:8081
+    - name: aauth-token
+      matches:
+      - path:
+          pathPrefix: /resource/
+      backends:
+      - host: localhost:8081
     - policies:
-        aauth:
-          mode: optional
-          requiredScheme: jwks
-          timestampTolerance: 60    
-          allowInsecureHttpIssuer: true
+        extAuthz:
+          host: "localhost:7070"
         # Mark this route as a2a traffic
         a2a: {}
         backendAuth:
@@ -56,13 +65,22 @@ binds:
 
   - hostname: "market-analysis-agent.localhost"
     routes:
+    - name: aauth-discovery
+      matches:
+      - path:
+          pathPrefix: /.well-known/
+      backends:
+      - host: localhost:8081
+    - name: aauth-token
+      matches:
+      - path:
+          pathPrefix: /resource/
+      backends:
+      - host: localhost:8081
     - policies:
         # Mark this route as a2a traffic
-        aauth:
-          mode: optional
-          requiredScheme: jwks
-          timestampTolerance: 60     
-          allowInsecureHttpIssuer: true       
+        extAuthz:
+          host: "localhost:7070"       
         a2a: {}
         backendAuth:
           passthrough: {}             
