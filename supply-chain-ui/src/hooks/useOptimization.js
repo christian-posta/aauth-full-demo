@@ -55,31 +55,6 @@ export const useOptimization = () => {
       setRequestId(response.request_id);
       console.log('Optimization started:', response);
 
-      if (response.interaction_required && response.interaction_endpoint && response.interaction_code && response.callback_url) {
-        setIsRunning(false);
-        console.log('User interaction required for agent authorization');
-        
-        const stateToPreserve = {
-          activities: activitiesRef.current,
-          promptText: customPrompt,
-          timestamp: new Date().toISOString()
-        };
-        sessionStorage.setItem('aauth_preserved_state', JSON.stringify(stateToPreserve));
-        console.log('💾 Saved UI state before consent redirect:', stateToPreserve);
-        console.log('💾 Activities count:', activitiesRef.current.length);
-
-        const redirectUrl = new URL(response.interaction_endpoint);
-        redirectUrl.searchParams.set('code', response.interaction_code);
-        redirectUrl.searchParams.set('callback', response.callback_url);
-        window.location.href = redirectUrl.toString();
-        return;
-      }
-
-      if (response.approval_pending) {
-        console.log('Approval pending at auth server; staying on page and polling progress');
-        return;
-      }
-
       // Poll for progress
       const progressInterval = setInterval(async () => {
         try {
@@ -297,182 +272,25 @@ export const useOptimization = () => {
   }, []);
 
   useEffect(() => {
-    console.log('[useOptimization] 🔄 Post-consent useEffect running');
-    console.log('[useOptimization] Module polling state:', JSON.stringify({
-      isPolling: modulePollingState.isPolling,
-      requestId: modulePollingState.requestId,
-      hasInterval: !!modulePollingState.intervalId,
-      hasTimeout: !!modulePollingState.timeoutId,
-    }));
-
-    // Restore preserved state from before consent redirect
-    // Check module-level cache first (for remounts), then sessionStorage
-    let preservedState = modulePollingState.restoredState;
-    
-    if (!preservedState) {
-      const preservedStateJson = sessionStorage.getItem('aauth_preserved_state');
-      if (preservedStateJson) {
-        try {
-          preservedState = JSON.parse(preservedStateJson);
-          // Cache in module-level state for subsequent remounts
-          modulePollingState.restoredState = preservedState;
-          console.log('🔄 Restoring preserved UI state from sessionStorage:', preservedState);
-        } catch (err) {
-          console.error('Failed to parse preserved state:', err);
-        }
-      }
-    } else {
-      console.log('🔄 Restoring preserved UI state from module cache:', preservedState);
-    }
-    
-    if (preservedState) {
-      if (preservedState.activities && preservedState.activities.length > 0) {
-        setActivities(preservedState.activities);
-        console.log('📋 Restored', preservedState.activities.length, 'activities');
-      }
-      
-      if (preservedState.promptText) {
-        setPromptText(preservedState.promptText);
-        console.log('✏️ Restored prompt text:', preservedState.promptText);
-      }
-      
-      modulePollingState.hasRestoredOnce = true;
-    }
-
-    const params = new URLSearchParams(window.location.search);
-    const urlError = params.get('aauth_error');
-    const storedError = sessionStorage.getItem('aauth_error');
-    const storedErrorDesc = sessionStorage.getItem('aauth_error_description');
-    if (urlError === '1' || storedError) {
-      const errCode = params.get('error') || storedError || 'unknown';
-      const errDesc = params.get('error_description') || storedErrorDesc || 'AAuth consent flow failed';
-      console.log('[useOptimization] ⚠️ AAuth error detected:', errCode, errDesc);
-      setError(`AAuth consent failed: ${errDesc} (${errCode})`);
-      setIsRunning(false);
-      // Clear URL params and sessionStorage
-      const url = new URL(window.location.href);
-      url.searchParams.delete('aauth_error');
-      url.searchParams.delete('error');
-      url.searchParams.delete('error_description');
-      url.searchParams.delete('request_id');
-      window.history.replaceState({}, '', url.pathname + (url.search || ''));
-      sessionStorage.removeItem('aauth_error');
-      sessionStorage.removeItem('aauth_error_description');
-      sessionStorage.removeItem('aauth_error_request_id');
+    if (!modulePollingState.isPolling) {
       return;
     }
-    
-    if (modulePollingState.isPolling) {
-      console.log('[useOptimization] 🔗 Reconnecting to existing polling session');
-      // Update the callback to use current component's setState functions
-      modulePollingState.onComplete = (data) => {
-        console.log('[useOptimization] 🔗 Reconnected callback received data');
-        if (data.activities) {
-          // Merge new activities with existing ones (to preserve restored activities)
-          setActivities(prevActivities => {
-            const existingMap = new Map();
-            prevActivities.forEach(act => {
-              const key = `${act.id}_${act.timestamp}`;
-              existingMap.set(key, act);
-            });
-            
-            data.activities.forEach(act => {
-              const key = `${act.id}_${act.timestamp}`;
-              if (!existingMap.has(key)) {
-                existingMap.set(key, act);
-              }
-            });
-            
-            return Array.from(existingMap.values()).sort(
-              (a, b) => new Date(b.timestamp) - new Date(a.timestamp)
-            );
-          });
-        }
-        if (data.progress !== undefined) setProgress(data.progress);
-        if (data.results) {
-          setResults(data.results);
-          setShowResults(true);
-        }
-        if (data.error) setError(data.error);
-        if (data.isRunning !== undefined) setIsRunning(data.isRunning);
-      };
-      // Sync current state
-      setRequestId(modulePollingState.requestId);
-      setIsRunning(true);
-      return;
-    }
-    
-    const urlAuthorized = params.get('aauth_authorized');
-    const urlRequestId = params.get('request_id');
-    
-    console.log('[useOptimization] Current URL:', window.location.href);
-    console.log('[useOptimization] URL aauth_authorized:', urlAuthorized);
-    console.log('[useOptimization] URL request_id:', urlRequestId);
-    
-    let rid = urlAuthorized === '1' ? urlRequestId : null;
-    console.log('[useOptimization] rid from URL:', rid);
-    
-    if (!rid) {
-      // Check sessionStorage (index.js may have saved it before Keycloak redirected)
-      rid = sessionStorage.getItem('aauth_return_request_id');
-      console.log('[useOptimization] rid from sessionStorage:', rid);
-    }
-    
-    // Also check the pending flag
-    const pendingFlag = sessionStorage.getItem('aauth_return_pending');
-    console.log('[useOptimization] aauth_return_pending flag:', pendingFlag);
-    
-    if (!rid) {
-      console.log('[useOptimization] ❌ No request_id found, skipping consent return handling');
-      return;
-    }
-
-    console.log('[useOptimization] ✅ Found request_id for consent return:', rid);
-    
-    // Clear the request_id from sessionStorage
-    sessionStorage.removeItem('aauth_return_request_id');
-    sessionStorage.removeItem('aauth_return_pending');
-    
-    // Clear params from URL
-    const url = new URL(window.location.href);
-    url.searchParams.delete('aauth_authorized');
-    url.searchParams.delete('request_id');
-    window.history.replaceState({}, '', url.pathname + (url.search || ''));
-    console.log('[useOptimization] Cleared URL params and sessionStorage request_id');
-
-    // Set up module-level polling state
-    modulePollingState.isPolling = true;
-    modulePollingState.requestId = rid;
-    
-    // Set up callback for state updates
     modulePollingState.onComplete = (data) => {
-      console.log('[useOptimization] Callback received data:', data);
       if (data.activities) {
-        // Merge new activities with existing ones (to preserve restored activities)
-        setActivities(prevActivities => {
-          console.log('[useOptimization] Merging activities. Previous:', prevActivities.length, 'New:', data.activities.length);
-          
-          // Create a map of existing activities by ID+timestamp for deduplication
+        setActivities((prevActivities) => {
           const existingMap = new Map();
-          prevActivities.forEach(act => {
-            const key = `${act.id}_${act.timestamp}`;
-            existingMap.set(key, act);
+          prevActivities.forEach((act) => {
+            existingMap.set(`${act.id}_${act.timestamp}`, act);
           });
-          
-          // Add new activities that don't exist yet
-          data.activities.forEach(act => {
+          data.activities.forEach((act) => {
             const key = `${act.id}_${act.timestamp}`;
             if (!existingMap.has(key)) {
               existingMap.set(key, act);
             }
           });
-          
-          // Convert back to array and sort
-          const mergedActivities = Array.from(existingMap.values()).sort(
+          return Array.from(existingMap.values()).sort(
             (a, b) => new Date(b.timestamp) - new Date(a.timestamp)
           );
-          console.log('[useOptimization] Merged activities count:', mergedActivities.length);
-          return mergedActivities;
         });
       }
       if (data.progress !== undefined) setProgress(data.progress);
@@ -483,108 +301,8 @@ export const useOptimization = () => {
       if (data.error) setError(data.error);
       if (data.isRunning !== undefined) setIsRunning(data.isRunning);
     };
-
-    console.log('[useOptimization] Setting state: requestId, isRunning=true');
-    setRequestId(rid);
+    setRequestId(modulePollingState.requestId);
     setIsRunning(true);
-    setProgress(0);
-    setError(null);
-
-    console.log('[useOptimization] Starting 1.5s delay before polling...');
-    
-    modulePollingState.timeoutId = setTimeout(() => {
-      console.log('[useOptimization] 🚀 Starting progress polling for:', rid);
-      
-      modulePollingState.intervalId = setInterval(async () => {
-        console.log('[useOptimization] 📊 Polling progress for:', rid);
-        try {
-          const progressData = await apiService.getOptimizationProgress(rid);
-          console.log('[useOptimization] Progress response:', progressData);
-          
-          // Update progress via callback
-          if (modulePollingState.onComplete) {
-            modulePollingState.onComplete({ progress: progressData.progress_percentage ?? 0 });
-          }
-          
-          if (progressData.activities?.length) {
-            console.log('[useOptimization] Activities received:', progressData.activities.length);
-            if (modulePollingState.onComplete) {
-              // Sort activities by timestamp (most recent first)
-              const sortedActivities = [...progressData.activities].sort(
-                (a, b) => new Date(b.timestamp) - new Date(a.timestamp)
-              );
-              modulePollingState.onComplete({ activities: sortedActivities });
-            }
-          }
-          
-          const status = (progressData.status || '').toLowerCase();
-          console.log('[useOptimization] Status:', status);
-          
-          if (status === 'completed') {
-            console.log('[useOptimization] ✅ Optimization completed!');
-            if (modulePollingState.intervalId) {
-              clearInterval(modulePollingState.intervalId);
-              modulePollingState.intervalId = null;
-            }
-            
-            if (modulePollingState.onComplete) {
-              modulePollingState.onComplete({ isRunning: false, progress: 100 });
-            }
-            
-            const reqId = progressData.request_id || rid;
-            console.log('[useOptimization] Fetching results for:', reqId);
-            
-            setTimeout(async () => {
-              try {
-                const resultsData = await apiService.getOptimizationResults(reqId);
-                console.log('[useOptimization] Results received:', resultsData);
-                if (modulePollingState.onComplete) {
-                  modulePollingState.onComplete({ results: resultsData });
-                }
-              } catch (resErr) {
-                console.error('[useOptimization] Error fetching results after consent:', resErr);
-              }
-              // Clean up module state
-              modulePollingState.isPolling = false;
-              modulePollingState.requestId = null;
-              modulePollingState.restoredState = null;
-              modulePollingState.hasRestoredOnce = false;
-              // Also clear from sessionStorage
-              sessionStorage.removeItem('aauth_preserved_state');
-            }, 1000);
-            
-          } else if (status === 'failed') {
-            console.log('[useOptimization] ❌ Optimization failed');
-            if (modulePollingState.intervalId) {
-              clearInterval(modulePollingState.intervalId);
-              modulePollingState.intervalId = null;
-            }
-            if (modulePollingState.onComplete) {
-              modulePollingState.onComplete({
-                isRunning: false,
-                error: 'Optimization failed: ' + (progressData.error || 'Unknown error')
-              });
-            }
-            // Clean up module state
-            modulePollingState.isPolling = false;
-            modulePollingState.requestId = null;
-            modulePollingState.restoredState = null;
-            modulePollingState.hasRestoredOnce = false;
-            // Also clear from sessionStorage
-            sessionStorage.removeItem('aauth_preserved_state');
-          }
-        } catch (err) {
-          console.error('[useOptimization] Error polling progress after consent:', err);
-        }
-      }, 2000);
-    }, 1500);
-
-    // Cleanup: DON'T clear the module-level polling on unmount!
-    // The polling needs to survive Dashboard unmount/remount cycles.
-    return () => {
-      console.log('[useOptimization] Cleanup called, but NOT clearing module polling');
-      // Don't clear timeouts/intervals - they need to survive remounts
-    };
   }, []);
 
   return {

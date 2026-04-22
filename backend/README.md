@@ -257,13 +257,9 @@ The backend supports two signature schemes (configurable via `AAUTH_SIGNATURE_SC
 
 ### Learning AAuth
 
-To understand how AAuth works in this project:
-
-1. **Start here**: `app/services/aauth_interceptor.py` - See how requests are signed
-2. **Key generation**: Lines 23-26 show keypair creation
-3. **Signing logic**: Lines 149-189 show scheme selection and signing
-4. **JWKS endpoints**: `app/main.py` lines 89-110 show key discovery endpoints
-5. **Downstream verification**: See `supply-chain-agent/agent_executor.py` for how signatures are verified
+1. **Outbound signing**: `app/services/aauth_interceptor.py`, `app/services/a2a_service.py`
+2. **JWKS / metadata**: `app/main.py`
+3. **Spec**: [../SPEC.md](../SPEC.md)
 
 ### AAuth Library Reference
 
@@ -325,62 +321,8 @@ backend/
 - **`app/services/a2a_service.py`** - Uses `AAuthSigningInterceptor` for agent calls
 
 
-## Additional notes:
+## Path B: agent-to-agent policy
 
+This demo’s backend **signs** outbound A2A calls (HWK or `jwks_uri`) and does **not** implement 401 + `resource_token` → Keycloak AAuth `auth_token` + `scheme=jwt` retries. For **which agents may call which** and **required signature schemes**, configure **agentgateway** ([/agentgateway/config-policy.yaml](../agentgateway/config-policy.yaml)).
 
-Checking the Keycloak AAuth support:
-
-```bash
-curl localhost:8080/realms/aauth-test/.well-known/aauth-issuer | jq
-
-{
-  "issuer": "http://localhost:8080/realms/aauth-test",
-  "jwks_uri": "http://localhost:8080/realms/aauth-test/protocol/aauth/certs",
-  "agent_token_endpoint": "http://localhost:8080/realms/aauth-test/protocol/aauth/agent/token",
-  "agent_auth_endpoint": "http://localhost:8080/realms/aauth-test/protocol/aauth/agent/auth",
-  "agent_signing_algs_supported": [
-    "RSA-OAEP",
-    "RS256"
-  ],
-  "request_types_supported": [
-    "auth"
-  ],
-  "scopes_supported": []
-}
-```
-
-
-```bash
-curl http://supply-chain-agent.localhost:3000/.well-known/aauth-agent.json | jq
-
-{
-  "agent": "http://supply-chain-agent.localhost:3000",
-  "jwks_uri": "http://supply-chain-agent.localhost:3000/jwks.json"
-}
-```
-
-Test full flow from the backend API:
-
-```bash
-TOKEN="your-keycloak-jwt-token"
-
-curl -X POST "http://localhost:8000/optimization/start" \
-     -H "Authorization: Bearer $TOKEN" \
-     -H "Content-Type: application/json" \
-     -d '{
-       "optimization_type": "laptop_supply_chain",
-       "scenario": "laptop_procurement",
-       "custom_prompt": "optimize laptop supply chain",
-       "constraints": {
-         "budget_limit": 500000,
-         "delivery_time": "2 weeks",
-         "quality_requirement": "enterprise_grade"
-       }
-     }'
-```
-
-Trying to call supply-chain-agent directly to review 401 response:
-
-```bash
-
-```
+Keycloak’s **OIDC** endpoints serve **human** login for the UI. The realm may still expose AAuth **metadata** (for example `/.well-known/aauth-issuer`); that is separate from the Python services’ signing-only Path B behavior.

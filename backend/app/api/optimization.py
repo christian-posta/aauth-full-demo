@@ -1,6 +1,4 @@
-import asyncio
 import logging
-import os
 from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from typing import List, Any
@@ -40,20 +38,14 @@ async def run_optimization_workflow(
     user_id: str,
     request: OptimizationRequest,
     trace_context: Any = None,
-    auth_token: str = None,
     precomputed_response: Any = None,
 ):
-    """Background task to run the optimization workflow using A2A agent with tracing support.
-    
-    If precomputed_response is set (e.g. from a sync user-delegated A2A call), skips the A2A
-    call and applies success/error handling from that response.
-    """
+    """Background task to run the optimization workflow using a single signed A2A call."""
     with span("optimization_api.run_optimization_workflow", {
         "request_id": request_id,
         "user_id": user_id,
         "request_type": request.optimization_type,
         "has_trace_context": trace_context is not None,
-        "has_auth_token": auth_token is not None,
         "has_precomputed_response": precomputed_response is not None,
     }, parent_context=trace_context) as span_obj:
         
@@ -83,11 +75,12 @@ async def run_optimization_workflow(
                     logger.debug("📨 Using precomputed A2A response")
                 add_event("using_precomputed_a2a_response")
             else:
-                # Get response from A2A agent with tracing context and auth token
                 if settings.debug:
                     logger.debug("🤖 Calling A2A service...")
                 add_event("calling_a2a_service")
-                response = await a2a_service.optimize_supply_chain(request, user_id, trace_context, auth_token)
+                response = await a2a_service.optimize_supply_chain(
+                    request, user_id, trace_context, request_id=request_id
+                )
             
             if settings.debug:
                 logger.debug(f"📨 A2A service response: {response}")
@@ -187,12 +180,7 @@ async def start_optimization(
     current_user: dict = Depends(get_current_user),
     http_request: Request = None,
 ):
-    """Start a new optimization request with tracing support.
-    
-    Always performs a synchronous A2A call first. The flow is determined by Keycloak's response:
-    - If Keycloak returns request_token (user consent required), returns consent_url to the frontend
-    - If Keycloak returns auth_token (direct grant), proceeds with the optimization workflow
-    """
+    """Start a new optimization: one synchronous signed A2A call, then background workflow for results."""
     
     try:
         # Debug: Log the raw request data
@@ -230,12 +218,6 @@ async def start_optimization(
                     add_event("trace_context_extracted_from_headers")
                     set_attribute("tracing.context_extracted", True)
             
-            # Note: We do NOT pass the OIDC token as AAuth auth_token
-            # The AAuth auth_token is obtained separately from Keycloak's AAuth endpoint
-            # after receiving a resource_token challenge from the supply-chain-agent
-            # Pass None here - the A2A service will handle the AAuth flow automatically
-            aauth_auth_token = None
-            
             if settings.debug:
                 print(f"🚀 Starting optimization for user: {current_user['payload'].get('sub')}")
                 print(f"📝 Request: {request}")
@@ -257,78 +239,13 @@ async def start_optimization(
 
             add_event("a2a_sync_call_start", {"request_id": request_id})
             result = await a2a_service.optimize_supply_chain(
-                request, user_id, trace_context, aauth_auth_token, request_id=request_id
+                request, user_id, trace_context, request_id=request_id
             )
-            
-            if result.get("type") == "interaction_required":
-                callback_url = (
-                    f"{(os.getenv('BACKEND_AGENT_URL') or f'http://{settings.host}:{settings.port}').rstrip('/')}"
-                    f"/auth/aauth/callback?request_id={request_id}"
-                )
-                optimization_service.set_pending_aauth_request(
-                    request_id,
-                    user_id,
-                    request,
-                    trace_context,
-                    pending_url=result.get("pending_url"),
-                    interaction_code=result.get("interaction_code"),
-                    interaction_endpoint=result.get("interaction_endpoint"),
-                    callback_url=callback_url,
-                    requirement="interaction",
-                    polling_started=True,
-                )
-                optimization_service.optimizations[request_id].status = OptimizationStatus.INTERACTION_REQUIRED
-                optimization_service.update_progress(request_id, 0.0, "User interaction required for AAuth")
-                add_event("consent_required_returned_to_api", {"request_id": request_id})
-                # Start polling immediately so we can handle clarification questions
-                # while the user is on the consent page (spec §11.4).
-                # The callback from Keycloak is a UX hint for the frontend, not the poll trigger.
-                from app.api.auth import _resume_pending_request
-
-                asyncio.create_task(_resume_pending_request(request_id))
-                logger.info(
-                    "AAuth: scheduled pending-URL poll (interaction_required) for request_id=%s",
-                    request_id,
-                )
-                return {
-                    "status": "interaction_required",
-                    "interaction_required": True,
-                    "interaction_endpoint": result.get("interaction_endpoint", ""),
-                    "interaction_code": result.get("interaction_code", ""),
-                    "callback_url": callback_url,
-                    "request_id": request_id,
-                }
-
-            if result.get("type") == "approval_pending":
-                optimization_service.set_pending_aauth_request(
-                    request_id,
-                    user_id,
-                    request,
-                    trace_context,
-                    pending_url=result.get("pending_url"),
-                    requirement="approval",
-                    polling_started=True,
-                )
-                optimization_service.optimizations[request_id].status = OptimizationStatus.APPROVAL_PENDING
-                optimization_service.update_progress(request_id, 5.0, "Waiting for approval from AAuth server")
-                # Schedule poll immediately (do not rely on BackgroundTasks; default None was skipping the task)
-                from app.api.auth import _resume_pending_request
-
-                asyncio.create_task(_resume_pending_request(request_id))
-                logger.info(
-                    "AAuth: scheduled pending-URL poll (approval_pending) for request_id=%s",
-                    request_id,
-                )
-                return {
-                    "status": "approval_pending",
-                    "approval_pending": True,
-                    "request_id": request_id,
-                }
             
             if result.get("type") == "success":
                 await run_optimization_workflow(
                     request_id, user_id, request, trace_context,
-                    aauth_auth_token, precomputed_response=result
+                    precomputed_response=result
                 )
                 return {
                     "request_id": request_id,
@@ -600,11 +517,9 @@ async def test_a2a_connection(
                     add_event("trace_context_extracted_from_headers")
                     set_attribute("tracing.context_extracted", True)
             
-            # Note: We do NOT pass the OIDC token as AAuth auth_token
-            # The AAuth auth_token is obtained separately via the challenge/response flow
             add_event("a2a_connection_test_requested", {"user_id": current_user["payload"].get("sub")})
             
-            connection_status = await a2a_service.test_connection(auth_token=None)
+            connection_status = await a2a_service.test_connection()
             
             add_event("a2a_connection_test_completed", {"status": connection_status.get("status")})
             return connection_status

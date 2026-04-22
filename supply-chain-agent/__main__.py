@@ -4,9 +4,8 @@ Supply Chain Agent - A2A HTTP Server
 
 CLI options (parsed before .env load; override env vars):
   --signature-scheme {hwk,jwks_uri}       Override AAUTH_SIGNATURE_SCHEME
-  --authorization-scheme {autonomous,user-delegated,signature-only}  Override AAUTH_AUTHORIZATION_SCHEME
 
-Example: uv run . --signature-scheme jwks_uri --authorization-scheme signature-only
+Example: uv run . --signature-scheme jwks_uri
 """
 import argparse
 import os
@@ -18,16 +17,9 @@ parser.add_argument(
     choices=["hwk", "jwks_uri"],
     help="AAuth signature scheme (overrides AAUTH_SIGNATURE_SCHEME env)",
 )
-parser.add_argument(
-    "--authorization-scheme",
-    choices=["autonomous", "user-delegated", "signature-only"],
-    help="AAuth authorization scheme (overrides AAUTH_AUTHORIZATION_SCHEME env)",
-)
 args, _ = parser.parse_known_args()
 if args.signature_scheme:
     os.environ["AAUTH_SIGNATURE_SCHEME"] = args.signature_scheme
-if args.authorization_scheme:
-    os.environ["AAUTH_AUTHORIZATION_SCHEME"] = args.authorization_scheme
 
 import uvicorn
 from dotenv import load_dotenv

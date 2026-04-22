@@ -8,7 +8,6 @@ from tracing_config import span, add_event, set_attribute
 
 class AgentSTSService:
     # Legacy OAuth token-exchange helper kept for compatibility/testing.
-    # Primary AAuth flows use aauth_token_service.py.
     """Service for exchanging tokens with the Agent STS service"""
     
     def __init__(self):

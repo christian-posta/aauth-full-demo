@@ -7,9 +7,8 @@ The agent provides market analysis capabilities for laptop demand forecasting an
 
 CLI options (parsed before .env load; override env vars):
   --signature-scheme {hwk,jwks_uri}       Override AAUTH_SIGNATURE_SCHEME
-  --authorization-scheme {autonomous,user-delegated,signature-only}  Override AAUTH_AUTHORIZATION_SCHEME
 
-Example: uv run . --signature-scheme jwks_uri --authorization-scheme signature-only
+Example: uv run . --signature-scheme jwks_uri
 """
 import argparse
 import os
@@ -21,16 +20,9 @@ parser.add_argument(
     choices=["hwk", "jwks_uri"],
     help="AAuth signature scheme (overrides AAUTH_SIGNATURE_SCHEME env)",
 )
-parser.add_argument(
-    "--authorization-scheme",
-    choices=["autonomous", "user-delegated", "signature-only"],
-    help="AAuth authorization scheme (overrides AAUTH_AUTHORIZATION_SCHEME env)",
-)
 args, _ = parser.parse_known_args()
 if args.signature_scheme:
     os.environ["AAUTH_SIGNATURE_SCHEME"] = args.signature_scheme
-if args.authorization_scheme:
-    os.environ["AAUTH_AUTHORIZATION_SCHEME"] = args.authorization_scheme
 
 # Load environment variables FIRST, before any imports that read env vars
 # This is critical because http_headers_middleware reads MARKET_ANALYSIS_AGENT_ID_URL at module load time
@@ -208,7 +200,7 @@ if __name__ == '__main__':
 
     @app.route("/jwks.json", methods=["GET"])
     async def jwks_endpoint(request):
-        """JWKS endpoint for AAuth signature verification and resource token validation."""
+        """JWKS endpoint for AAuth: public keys for this agent's HTTP message signatures."""
         _, _, public_jwk = get_signing_keypair()
         jwks = generate_jwks([public_jwk])
         return JSONResponse(jwks)

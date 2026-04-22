@@ -1,10 +1,8 @@
 from a2a.server.agent_execution import AgentExecutor, RequestContext
 from a2a.server.events import EventQueue
 from a2a.utils import new_agent_text_message
-import json
 import logging
 import os
-import base64
 from typing import Dict, Any, List, Optional
 from business_policies import business_policies
 import httpx
@@ -16,14 +14,8 @@ from tracing_config import (
     span, add_event, set_attribute, extract_context_from_headers, 
     inject_context_to_headers, initialize_tracing
 )
-from http_headers_middleware import get_current_request_headers, get_current_request_info
-from starlette.exceptions import HTTPException
+from http_headers_middleware import get_current_request_headers
 from aauth_interceptor import AAuthSigningInterceptor, get_signing_keypair
-from aauth_protocol import parse_aauth_header
-from aauth_token_service import AAuthTokenService
-from aauth_metadata import get_aauth_jwks_url
-from starlette.responses import Response
-import re
 
 # Configure logging
 logger = logging.getLogger(__name__)
@@ -83,362 +75,131 @@ class SupplyChainOptimizerAgent:
         self.market_analysis_client = None
         # Note: JWT/OBO token exchange removed - now using AAuth HWK signing
 
-    async def _get_market_analysis_client(self, auth_token: Optional[str] = None):
-        """Get or create the market analysis agent client with AAuth signing.
-        
-        Args:
-            auth_token: Optional auth token for scheme=jwt. When provided, uses
-                       JWT scheme; otherwise uses HWK/JWKS scheme.
-        """
-        # If auth_token is provided, always create a new client with it
-        # Otherwise, reuse existing client if available
-        if auth_token is None and self.market_analysis_client is not None:
+    async def _get_market_analysis_client(self):
+        """Get or create the market analysis agent client with AAuth request signing (HWK or jwks_uri)."""
+        if self.market_analysis_client is not None:
             return self.market_analysis_client
-        
-        # Create new client (either first time or with auth_token)
-        if auth_token:
-            logger.info(f"🔐 Creating MAA client with auth_token (scheme=jwt)")
-        else:
-            logger.info(f"🔐 Creating MAA client with {os.getenv('AAUTH_SIGNATURE_SCHEME', 'hwk')} signing")
-        
-        if True:  # Always create (or recreate with auth_token)
-            try:
-                add_event("creating_market_analysis_client")
-                set_attribute("market_analysis.url", self.market_analysis_url)
-                set_attribute("market_analysis.auth_method", "aauth_hwk")
-                
-                # Create httpx client for the market analysis agent with extended timeout
-                # Timeouts can be configured via environment variables
-                connect_timeout = float(os.getenv("MARKET_ANALYSIS_CONNECT_TIMEOUT", "30.0"))
-                read_timeout = float(os.getenv("MARKET_ANALYSIS_READ_TIMEOUT", "120.0"))
-                write_timeout = float(os.getenv("MARKET_ANALYSIS_WRITE_TIMEOUT", "30.0"))
-                pool_timeout = float(os.getenv("MARKET_ANALYSIS_POOL_TIMEOUT", "30.0"))
-                
-                httpx_client = httpx.AsyncClient(
-                    timeout=httpx.Timeout(
-                        connect=connect_timeout,      # Connection timeout
-                        read=read_timeout,           # Read timeout (for long-running operations)
-                        write=write_timeout,         # Write timeout
-                        pool=pool_timeout            # Pool timeout
-                    )
-                )
-                
-                # Log the configured timeouts (only in debug mode)
-                if DEBUG:
-                    logger.debug(f"⏱️  Market Analysis Client Timeouts: connect={connect_timeout}s, read={read_timeout}s")
-                
-                # Create client configuration
-                config = ClientConfig(
-                    httpx_client=httpx_client,
-                    supported_transports=[TransportProtocol.jsonrpc],
-                    streaming=False
-                )
-                
-                # Create AAuth signing interceptor for market analysis agent calls
-                # If auth_token is provided, use scheme=jwt; otherwise use HWK/JWKS
-                aauth_interceptor = AAuthSigningInterceptor(auth_token=auth_token)
-                if auth_token:
-                    logger.info(f"🔐 AAuth: Using JWT scheme for market-analysis-agent calls")
-                else:
-                    logger.info(f"🔐 AAuth: Using {os.getenv('AAUTH_SIGNATURE_SCHEME', 'hwk').upper()} signing for market-analysis-agent calls")
-                add_event("aauth_interceptor_added_to_market_analysis_client")
-                set_attribute("market_analysis.aauth_interceptor_added", True)
-                
-                # Create client factory
-                factory = ClientFactory(config)
-                
-                # Create minimal agent card for market analysis agent
-                from a2a.client import minimal_agent_card
-                market_analysis_card = minimal_agent_card(
-                    url=self.market_analysis_url,
-                    transports=["JSONRPC"]
-                )
-                
-                # Create client with AAuth interceptor
-                client = factory.create(market_analysis_card, interceptors=[aauth_interceptor])
-                if auth_token:
-                    logger.info(f"✅ Market analysis client created with AAuth JWT signing")
-                else:
-                    logger.info(f"✅ Market analysis client created with AAuth {os.getenv('AAUTH_SIGNATURE_SCHEME', 'hwk').upper()} signing")
-                    # Only cache client if no auth_token (first time)
-                    self.market_analysis_client = client
-                
-                add_event("market_analysis_client_created")
-                set_attribute("market_analysis.client_ready", True)
-                
-                return client
-                
-            except Exception as e:
-                add_event("market_analysis_client_creation_failed", {"error": str(e)})
-                set_attribute("market_analysis.client_error", str(e))
-                logger.error(f"Warning: Could not create market analysis client: {e}")
-                if auth_token is None:
-                    self.market_analysis_client = None
-                raise
+        try:
+            add_event("creating_market_analysis_client")
+            set_attribute("market_analysis.url", self.market_analysis_url)
+            set_attribute("market_analysis.auth_method", "aauth")
 
-    async def _get_market_analysis(self, request_text: str, trace_context: Any, upstream_auth_token: Optional[str] = None) -> str:
-        """Get market analysis from the market analysis agent.
-        
-        Args:
-            request_text: The request text for market analysis
-            trace_context: Tracing context
-            upstream_auth_token: Optional upstream auth_token from incoming request (for token exchange)
-        """
-        with span("supply_chain_agent.get_market_analysis", {
-            "request.text": request_text[:100],  # Truncate for attribute limits
-            "market_analysis.requested": True,
-            "has_upstream_token": bool(upstream_auth_token)
-        }, parent_context=trace_context) as span_obj:
-            
+            connect_timeout = float(os.getenv("MARKET_ANALYSIS_CONNECT_TIMEOUT", "30.0"))
+            read_timeout = float(os.getenv("MARKET_ANALYSIS_READ_TIMEOUT", "120.0"))
+            write_timeout = float(os.getenv("MARKET_ANALYSIS_WRITE_TIMEOUT", "30.0"))
+            pool_timeout = float(os.getenv("MARKET_ANALYSIS_POOL_TIMEOUT", "30.0"))
+
+            httpx_client = httpx.AsyncClient(
+                timeout=httpx.Timeout(
+                    connect=connect_timeout,
+                    read=read_timeout,
+                    write=write_timeout,
+                    pool=pool_timeout,
+                )
+            )
+
+            if DEBUG:
+                logger.debug(
+                    f"⏱️  Market Analysis Client Timeouts: connect={connect_timeout}s, read={read_timeout}s"
+                )
+
+            config = ClientConfig(
+                httpx_client=httpx_client,
+                supported_transports=[TransportProtocol.jsonrpc],
+                streaming=False,
+            )
+
+            aauth_interceptor = AAuthSigningInterceptor()
+            logger.info(
+                f"🔐 AAuth: Using {os.getenv('AAUTH_SIGNATURE_SCHEME', 'hwk').upper()} signing for market-analysis-agent calls"
+            )
+            add_event("aauth_interceptor_added_to_market_analysis_client")
+            set_attribute("market_analysis.aauth_interceptor_added", True)
+
+            factory = ClientFactory(config)
+
+            from a2a.client import minimal_agent_card
+
+            market_analysis_card = minimal_agent_card(
+                url=self.market_analysis_url,
+                transports=["JSONRPC"],
+            )
+
+            client = factory.create(market_analysis_card, interceptors=[aauth_interceptor])
+            self.market_analysis_client = client
+            add_event("market_analysis_client_created")
+            set_attribute("market_analysis.client_ready", True)
+            return client
+
+        except Exception as e:
+            add_event("market_analysis_client_creation_failed", {"error": str(e)})
+            set_attribute("market_analysis.client_error", str(e))
+            logger.error(f"Warning: Could not create market analysis client: {e}")
+            self.market_analysis_client = None
+            raise
+
+    def _ma_event_text(self, event: Any) -> str:
+        """Extract text content from an A2A event."""
+        if hasattr(event, "content") and event.content:
+            if isinstance(event.content, str):
+                return event.content
+            if isinstance(event.content, dict) and "content" in event.content:
+                return event.content["content"]
+        if hasattr(event, "text"):
+            return event.text
+        if hasattr(event, "parts") and event.parts:
+            for part in event.parts:
+                if hasattr(part, "root") and hasattr(part.root, "text"):
+                    return part.root.text
+        return ""
+
+    async def _get_market_analysis(self, request_text: str, trace_context: Any) -> str:
+        """Get market analysis from the market analysis agent in one signed A2A call."""
+        with span(
+            "supply_chain_agent.get_market_analysis",
+            {
+                "request.text": request_text[:100],
+                "market_analysis.requested": True,
+            },
+            parent_context=trace_context,
+        ) as span_obj:
             try:
                 add_event("market_analysis_requested", {"request_text": request_text})
-                
-                if DEBUG:
-                    logger.debug(f"🔄 Getting market analysis client...")
-                client = await self._get_market_analysis_client(auth_token=None)  # First attempt without auth_token
+
+                client = await self._get_market_analysis_client()
                 if client is None:
                     add_event("market_analysis_client_unavailable")
                     set_attribute("market_analysis.client_available", False)
-                    if DEBUG:
-                        logger.debug(f"❌ No market analysis client available")
                     return "No market analysis provided"
-                
+
                 add_event("market_analysis_client_ready")
                 set_attribute("market_analysis.client_available", True)
-                if DEBUG:
-                    logger.debug(f"✅ Market analysis client ready")
-                
-                # Create message for market analysis
+
                 message = create_text_message_object(
-                    role=Role.user, 
-                    content=f"Please provide market analysis for: {request_text}"
+                    role=Role.user,
+                    content=f"Please provide market analysis for: {request_text}",
                 )
-                
                 add_event("market_analysis_message_created", {"message_content": str(message)[:100]})
-                if DEBUG:
-                    logger.debug(f"📤 Sending message to market analysis agent: {message}")
-                
-                # Get response from market analysis agent
+
                 market_response = ""
-                agent_auth_header = None
-                
                 try:
                     async for event in client.send_message(message):
                         add_event("market_analysis_response_received", {"event_type": str(type(event))})
-                        if DEBUG:
-                            logger.debug(f"📥 Received event: {type(event)}")
-                        if hasattr(event, 'content') and event.content:
-                            if isinstance(event.content, str):
-                                market_response += event.content
-                                if DEBUG:
-                                    logger.debug(f"📝 String content: {event.content[:50]}...")
-                            elif isinstance(event.content, dict) and 'content' in event.content:
-                                market_response += event.content['content']
-                                if DEBUG:
-                                    logger.debug(f"📝 Dict content: {event.content['content'][:50]}...")
-                        elif hasattr(event, 'text'):
-                            market_response += event.text
-                            if DEBUG:
-                                logger.debug(f"📝 Text attribute: {event.text[:50]}...")
-                        elif hasattr(event, 'parts') and event.parts:
-                            # Handle parts structure
-                            for part in event.parts:
-                                if hasattr(part, 'root') and hasattr(part.root, 'text'):
-                                    market_response += part.root.text
-                                    if DEBUG:
-                                        logger.debug(f"📝 Part text: {part.root.text[:50]}...")
-                        
-                        # Just get the first response for now
+                        market_response = self._ma_event_text(event)
                         break
                 except httpx.HTTPStatusError as e:
-                    # Check if this is a 401 with AAuth header
                     if e.response.status_code == 401:
-                        token_logger.info(f"🔐 401 from market-analysis-agent: headers={dict(e.response.headers)}")
-                        agent_auth_header = e.response.headers.get("AAuth")
-                        if agent_auth_header:
-                            logger.info(f"🔐 Received 401 with AAuth challenge from MAA")
-                            add_event("maa_agent_auth_challenge_received", {
-                                "has_agent_auth": True
-                            })
-                        else:
-                            # 401 without AAuth - re-raise
-                            raise
-                    else:
-                        # Other HTTP error - re-raise
-                        raise
-                except Exception as e:
-                    # The A2A client library may wrap httpx exceptions in its own exception type.
-                    # Check the exception chain (__cause__) for the original httpx.HTTPStatusError
-                    # to extract the AAuth header for 401 responses.
-                    original_exc = e.__cause__
-                    if original_exc and isinstance(original_exc, httpx.HTTPStatusError):
-                        if original_exc.response.status_code == 401:
-                            token_logger.info(f"🔐 401 from market-analysis-agent: headers={dict(original_exc.response.headers)}")
-                            agent_auth_header = original_exc.response.headers.get("AAuth")
-                            if agent_auth_header:
-                                logger.info(f"🔐 Received 401 with AAuth challenge from MAA (via exception chain)")
-                                add_event("maa_agent_auth_challenge_received", {
-                                    "has_agent_auth": True,
-                                    "via_exception_chain": True
-                                })
-                                # Don't re-raise - let the token exchange logic handle it
-                            else:
-                                logger.warning(f"⚠️ 401 error without AAuth header: {e}")
-                                raise
-                        else:
-                            # Non-401 HTTP error - re-raise
-                            raise
-                    elif "401" in str(e) or "Unauthorized" in str(e):
-                        # Check if the exception has a 'response' attribute directly (some A2A client wrappers)
-                        response = getattr(e, 'response', None)
-                        if response is not None and hasattr(response, 'headers'):
-                            token_logger.info(f"🔐 401 from market-analysis-agent: headers={dict(response.headers)}")
-                            agent_auth_header = response.headers.get("AAuth")
-                            if agent_auth_header:
-                                logger.info(f"🔐 Received 401 with AAuth challenge from MAA (via exception.response)")
-                                add_event("maa_agent_auth_challenge_received", {
-                                    "has_agent_auth": True,
-                                    "via_exception_response": True
-                                })
-                            else:
-                                logger.warning(f"⚠️ 401 error without AAuth header (from response attr): {e}")
-                                raise
-                        else:
-                            logger.warning(f"⚠️ Possible 401 error but cannot extract AAuth header: {e}")
-                            raise
-                    else:
-                        raise
-                
-                # Handle AAuth challenge if present
-                if agent_auth_header:
-                    logger.info(f"🔐 Processing AAuth challenge from MAA")
-                    add_event("processing_maa_agent_auth_challenge")
-                    parsed_header = parse_aauth_header(agent_auth_header)
-                    resource_token = parsed_header.resource_token
-                    auth_server = parsed_header.auth_server
-                    if resource_token:
-                        token_logger.info(f"🔐 Received resource_token from MAA 401")
-                    
-                    if resource_token and upstream_auth_token:
-                        token_logger.info(f"🔐 Token exchange: upstream_auth_token={upstream_auth_token}, resource_token={resource_token}")
-                        logger.info(f"🔐 Exchanging upstream auth_token for MAA token")
-                        if DEBUG:
-                            logger.debug(f"🔐 Resource token length: {len(resource_token)}")
-                            logger.debug(f"🔐 Upstream auth_token length: {len(upstream_auth_token)}")
-                            if auth_server:
-                                logger.debug(f"🔐 Auth server: {auth_server}")
-                        
-                        add_event("token_exchange_started", {
-                            "has_resource_token": bool(resource_token),
-                            "has_upstream_token": bool(upstream_auth_token),
-                            "has_auth_server": bool(auth_server)
-                        })
-                        
-                        try:
-                            # Create token exchange service
-                            token_service = AAuthTokenService()
-                            
-                            # Exchange token
-                            exchange_result = await token_service.exchange_token(
-                                upstream_auth_token=upstream_auth_token,
-                                resource_token=resource_token,
-                                auth_server_url=auth_server
-                            )
-                            exchange_status = exchange_result.get("status", "success")
-                            if exchange_status in ("interaction_required", "approval_pending"):
-                                pending_url = exchange_result.get("pending_url")
-                                retry_after = exchange_result.get("retry_after", 0)
-                                interaction_code = exchange_result.get("interaction_code")
-                                require_value = exchange_result.get("require") or (
-                                    "interaction" if exchange_status == "interaction_required" else "approval"
-                                )
-                                pending_headers: Dict[str, str] = {
-                                    "Location": pending_url or "",
-                                    "Retry-After": str(retry_after),
-                                    "Cache-Control": "no-store",
-                                }
-                                if require_value == "interaction" and interaction_code:
-                                    pending_headers["AAuth"] = f'require=interaction; code="{interaction_code}"'
-                                else:
-                                    pending_headers["AAuth"] = "require=approval"
-                                raise HTTPException(
-                                    status_code=202,
-                                    detail=json.dumps({
-                                        "status": "pending",
-                                        "location": pending_url,
-                                        "require": require_value,
-                                        **({"code": interaction_code} if interaction_code else {}),
-                                    }),
-                                    headers=pending_headers,
-                                )
+                        token_logger.info(
+                            "401 from market-analysis-agent (configure policy on agentgateway): %s",
+                            e.response.url,
+                        )
+                        return "No market analysis provided (downstream returned HTTP 401)"
+                    raise
 
-                            exchanged_auth_token = exchange_result.get("auth_token")
-                            expires_in = exchange_result.get("expires_in", 3600)
-                            
-                            if exchanged_auth_token:
-                                token_logger.info(f"🔐 Token exchange result: exchanged_auth_token={exchanged_auth_token}")
-                                logger.info(f"✅ Token exchange successful, retrying MAA request with exchanged token")
-                                logger.info(f"🔐 Exchanged auth_token (length: {len(exchanged_auth_token)}): {exchanged_auth_token[:100]}...{exchanged_auth_token[-50:]}")
-                                logger.info(f"🔐 Exchanged auth_token expires in: {expires_in} seconds")
-                                if DEBUG:
-                                    logger.debug(f"🔐 Full exchanged auth_token: {exchanged_auth_token}")
-                                    logger.debug(f"🔐 Upstream auth_token (for comparison): {upstream_auth_token[:100]}...{upstream_auth_token[-50:]}")
-                                
-                                add_event("token_exchange_success", {
-                                    "expires_in": expires_in
-                                })
-                                
-                                # Create new client with exchanged auth_token
-                                client = await self._get_market_analysis_client(auth_token=exchanged_auth_token)
-                                
-                                # Retry the request
-                                logger.info(f"🔄 Retrying MAA request with exchanged auth_token (scheme=jwt)")
-                                add_event("retrying_maa_request_with_exchanged_token")
-                                
-                                market_response = ""
-                                async for event in client.send_message(message):
-                                    if hasattr(event, 'content') and event.content:
-                                        if isinstance(event.content, str):
-                                            market_response += event.content
-                                        elif isinstance(event.content, dict) and 'content' in event.content:
-                                            market_response += event.content['content']
-                                    elif hasattr(event, 'text'):
-                                        market_response += event.text
-                                    elif hasattr(event, 'parts') and event.parts:
-                                        for part in event.parts:
-                                            if hasattr(part, 'root') and hasattr(part.root, 'text'):
-                                                market_response += part.root.text
-                                                break
-                                    break
-                            else:
-                                logger.error(f"❌ Token exchange did not return auth_token")
-                                add_event("token_exchange_failed", {"reason": "no_auth_token"})
-                                return "No market analysis provided (token exchange failed)"
-                        except HTTPException:
-                            raise
-                        except Exception as exchange_error:
-                            logger.error(f"❌ Token exchange failed: {exchange_error}")
-                            if DEBUG:
-                                import traceback
-                                logger.debug(traceback.format_exc())
-                            add_event("token_exchange_failed", {"error": str(exchange_error)})
-                            return "No market analysis provided (token exchange failed)"
-                    else:
-                        logger.warning(f"⚠️ Cannot exchange token: resource_token={bool(resource_token)}, upstream_auth_token={bool(upstream_auth_token)}")
-                        add_event("token_exchange_skipped", {
-                            "has_resource_token": bool(resource_token),
-                            "has_upstream_token": bool(upstream_auth_token)
-                        })
-                        return "No market analysis provided (token exchange not possible)"
-                
                 add_event("market_analysis_completed", {"response_length": len(market_response)})
                 set_attribute("market_analysis.response_length", len(market_response))
-                if DEBUG:
-                    logger.debug(f"📊 Final market response: {market_response[:100]}...")
                 return market_response if market_response else "No market analysis provided"
-                
-            except HTTPException:
-                raise
+
             except Exception as e:
                 add_event("market_analysis_error", {"error": str(e)})
                 set_attribute("market_analysis.error", str(e))
@@ -448,7 +209,7 @@ class SupplyChainOptimizerAgent:
                     logger.debug(traceback.format_exc())
                 return "No market analysis provided"
 
-    async def invoke(self, request_text: str = "", trace_context: Any = None, upstream_auth_token: Optional[str] = None) -> str:
+    async def invoke(self, request_text: str = "", trace_context: Any = None) -> str:
         """Main entry point for supply chain optimization requests."""
         with span("supply_chain_agent.invoke", {
             "request.text": request_text[:100],
@@ -475,7 +236,7 @@ class SupplyChainOptimizerAgent:
                 set_attribute("market_analysis.requested", True)
                 if DEBUG:
                     logger.debug(f"🔍 Market analysis requested for: {request_text}")
-                market_analysis = await self._get_market_analysis(request_text, trace_context, upstream_auth_token=upstream_auth_token)
+                market_analysis = await self._get_market_analysis(request_text, trace_context)
                 if DEBUG:
                     logger.debug(f"📊 Market analysis result: {market_analysis[:100]}...")
             else:
@@ -834,35 +595,12 @@ class SupplyChainOptimizerExecutor(AgentExecutor):
             logger.debug(f"🔍 Executor: Final request_text: '{request_text}'")
         
         try:
-            # Extract upstream auth_token from Signature-Key header if scheme=jwt
-            # Get headers from middleware context (same as in execute method)
-            headers = get_current_request_headers()
-            upstream_auth_token = None
-            if headers:
-                sig_key_header = next((v for k, v in headers.items() if k.lower() == 'signature-key'), '')
-                if sig_key_header and 'scheme=jwt' in sig_key_header.lower():
-                    # Extract auth_token from Signature-Key header
-                    # Format: sig1=(scheme=jwt jwt="<auth-token>")
-                    jwt_match = re.search(r'jwt="([^"]+)"', sig_key_header)
-                    if jwt_match:
-                        upstream_auth_token = jwt_match.group(1)
-                        logger.info(f"🔐 Extracted upstream auth_token for token exchange (length: {len(upstream_auth_token)})")
-                        if DEBUG:
-                            logger.debug(f"🔐 Upstream auth_token (first 50 chars): {upstream_auth_token[:50]}...")
-                        add_event("upstream_auth_token_extracted", {"has_token": True})
-                        set_attribute("auth.upstream_token.extracted", True)
-            
-            # Note: JWT/STS token exchange removed - market-analysis-agent calls now use AAuth signing
-            # The AAuthSigningInterceptor handles authentication via HTTP Message Signatures
-            # Check which scheme is configured
             sig_scheme = os.getenv("AAUTH_SIGNATURE_SCHEME", "hwk").lower()
             logger.info(f"🔐 Using AAuth {sig_scheme.upper()} signing for downstream agent calls")
-            if upstream_auth_token:
-                logger.info(f"🔐 Upstream auth_token available for token exchange if needed")
-            add_event("aauth_auth_method", {"scheme": sig_scheme, "has_upstream_token": bool(upstream_auth_token)})
+            add_event("aauth_auth_method", {"scheme": sig_scheme})
             set_attribute("auth.method", f"aauth_{sig_scheme}")
-            
-            result = await self.agent.invoke(request_text, trace_context, upstream_auth_token=upstream_auth_token)
+
+            result = await self.agent.invoke(request_text, trace_context)
             add_event("agent_invoke_successful")
             await event_queue.enqueue_event(new_agent_text_message(result))
         except Exception as e:

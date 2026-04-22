@@ -100,7 +100,7 @@ def _aauth_agent_metadata_payload() -> dict:
         agent_id=agent_url,
         jwks_uri=jwks_uri,
         client_name="Supply Chain Backend",
-        callback_endpoint=f"{agent_url.rstrip('/')}/auth/aauth/callback",
+        callback_endpoint=None,
         localhost_callback_allowed=True,
         clarification_supported=True,
     )

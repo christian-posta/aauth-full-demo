@@ -8,7 +8,7 @@ jwks_cache:
   max_entries: 1000
 
 resources:
-  - id: supply-chain-api
+  - id: supply-chain-agent
     issuer: http://localhost:8081
     # hosts: no longer needed — aauth_resource_id is set in agentgateway context
     # hosts:
@@ -24,7 +24,7 @@ resources:
     policy:
       name: default
 
-  - id: market-analysis-api
+  - id: market-analysis-agent
     issuer: http://localhost:8081
     # hosts: no longer needed — aauth_resource_id is set in agentgateway context
     # hosts:

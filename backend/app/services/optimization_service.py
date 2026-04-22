@@ -13,42 +13,6 @@ class OptimizationService:
     def __init__(self):
         self.optimizations: Dict[str, OptimizationProgress] = {}
         self.results: Dict[str, OptimizationResults] = {}
-        self._pending_aauth: Dict[str, Dict[str, Any]] = {}
-
-    def set_pending_aauth_request(
-        self,
-        request_id: str,
-        user_id: str,
-        request: OptimizationRequest,
-        trace_context: Optional[Any] = None,
-        pending_url: Optional[str] = None,
-        interaction_code: Optional[str] = None,
-        interaction_endpoint: Optional[str] = None,
-        callback_url: Optional[str] = None,
-        requirement: Optional[str] = None,
-        polling_started: bool = False,
-    ) -> None:
-        self._pending_aauth[request_id] = {
-            "user_id": user_id,
-            "request": request,
-            "trace_context": trace_context,
-            "pending_url": pending_url,
-            "interaction_code": interaction_code,
-            "interaction_endpoint": interaction_endpoint,
-            "callback_url": callback_url,
-            "requirement": requirement,
-            "polling_started": polling_started,
-        }
-
-    def get_pending_aauth_request(self, request_id: str) -> Optional[Dict[str, Any]]:
-        return self._pending_aauth.get(request_id)
-
-    def mark_pending_aauth_polling_started(self, request_id: str) -> None:
-        if request_id in self._pending_aauth:
-            self._pending_aauth[request_id]["polling_started"] = True
-
-    def clear_pending_aauth_request(self, request_id: str) -> Optional[Dict[str, Any]]:
-        return self._pending_aauth.pop(request_id, None)
     
     def create_optimization_request(self, request: OptimizationRequest, user_id: str) -> str:
         """Create a new optimization request with tracing support"""

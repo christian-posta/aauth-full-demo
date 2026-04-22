@@ -36,34 +36,33 @@ binds:
   listeners:
   - hostname: "supply-chain-agent.localhost"
     routes:
-    - name: aauth-discovery
+    - name: a2a-authed
       matches:
       - path:
-          pathPrefix: /.well-known/
-      policies:
-        urlRewrite:
-          authority:
-            full: supply-chain-agent.localhost
-      backends:
-      - host: localhost:8081
-    - name: aauth-token
-      matches:
+          exact: /
+        method: "POST"
       - path:
-          pathPrefix: /resource/
+          exact: /agent/authenticatedExtendedCard
       policies:
-        urlRewrite:
-          authority:
-            full: supply-chain-agent.localhost
-      backends:
-      - host: localhost:8081
-    - policies:
         extAuthz:
           host: "localhost:7070"
           protocol:
             grpc:
               context:
-                aauth_resource_id: "supply-chain-api"
-        # Mark this route as a2a traffic
+                aauth_resource_id: "supply-chain-agent"
+        a2a: {}
+        backendAuth:
+          passthrough: {}
+        cors:
+          allowOrigins:
+            - "*"
+          allowHeaders:
+            - "*"
+      backends:
+      - host: localhost:9999
+
+    - name: a2a-default
+      policies:
         a2a: {}
         backendAuth:
           passthrough: {}
@@ -77,34 +76,20 @@ binds:
 
   - hostname: "market-analysis-agent.localhost"
     routes:
-    - name: aauth-discovery
+    - name: a2a-authed
       matches:
       - path:
-          pathPrefix: /.well-known/
-      policies:
-        urlRewrite:
-          authority:
-            full: market-analysis-agent.localhost
-      backends:
-      - host: localhost:8081
-    - name: aauth-token
-      matches:
+          exact: /
+        method: "POST"
       - path:
-          pathPrefix: /resource/
+          exact: /agent/authenticatedExtendedCard
       policies:
-        urlRewrite:
-          authority:
-            full: market-analysis-agent.localhost
-      backends:
-      - host: localhost:8081
-    - policies:
-        # Mark this route as a2a traffic
         extAuthz:
           host: "localhost:7070"
           protocol:
             grpc:
               context:
-                aauth_resource_id: "market-analysis-api"
+                aauth_resource_id: "market-analysis-agent"
         a2a: {}
         backendAuth:
           passthrough: {}
@@ -114,7 +99,20 @@ binds:
           allowHeaders:
             - "*"
       backends:
-      - host: localhost:9998      
+      - host: localhost:9998
+
+    - name: a2a-default
+      policies:
+        a2a: {}
+        backendAuth:
+          passthrough: {}
+        cors:
+          allowOrigins:
+            - "*"
+          allowHeaders:
+            - "*"
+      backends:
+      - host: localhost:9998
 
   - routes:
     - name: general-mcp

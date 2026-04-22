@@ -1,7 +1,6 @@
 import asyncio
 import json
 import uuid
-import os
 import logging
 from typing import AsyncGenerator, Dict, Any, Optional
 import httpx
@@ -16,27 +15,10 @@ from app.config import settings
 from app.models import OptimizationRequest, OptimizationProgress, OptimizationResults
 from app.tracing_config import span, add_event, set_attribute, extract_context_from_headers
 from app.services.aauth_interceptor import AAuthSigningInterceptor
-from aauth import HEADER_AAUTH_REQUIREMENT, parse_aauth_header
-from app.services.aauth_token_service import aauth_token_service
 
 # Configure logging
 logger = logging.getLogger(__name__)
 token_logger = logging.getLogger("aauth.tokens")  # For token/challenge visibility - not suppressed
-
-
-def aauth_requirement_value_from_response(response: httpx.Response) -> str | None:
-    """Read AAuth challenge from response (prefer ``AAuth-Requirement``, then legacy ``AAuth``)."""
-    h = response.headers
-    for key in (
-        HEADER_AAUTH_REQUIREMENT,
-        "AAuth-Requirement",
-        "AAuth",
-        "Signature-Requirement",
-    ):
-        v = h.get(key)
-        if v:
-            return v
-    return None
 
 
 class A2AService:
@@ -50,57 +32,23 @@ class A2AService:
             write=30.0,        # 30 seconds to write request
             pool=30.0          # 30 seconds for connection pool
         )
-        self._last_401_response = None
     
-    async def _create_client(self, trace_context: Any = None, auth_token: str = None) -> tuple[Any, httpx.AsyncClient]:
-        """Create A2A client and HTTP client with AAuth signing.
-        
-        Args:
-            trace_context: Optional trace context for distributed tracing
-            auth_token: Optional auth token for scheme=jwt (if provided, will use JWT scheme)
-        """
+    async def _create_client(self, trace_context: Any = None) -> tuple[Any, httpx.AsyncClient]:
+        """Create A2A client and HTTP client with AAuth request signing (HWK or jwks_uri)."""
         with span("a2a_service.create_client", {
             "agent_url": self.agent_url,
             "has_trace_context": trace_context is not None,
-            "has_auth_token": auth_token is not None
         }) as span_obj:
             
             if settings.debug:
                 logger.debug(f"🔧 Creating A2A client for URL: {self.agent_url}")
-                if auth_token:
-                    logger.debug(f"🔐 Using AAuth JWT signing with auth_token")
-                else:
-                    logger.debug(f"🔐 Using AAuth signature signing (will trigger challenge if needed)")
+                logger.debug(f"🔐 Using AAuth HTTP message signing")
             add_event("creating_a2a_client", {
                 "agent_url": self.agent_url,
-                "has_auth_token": auth_token is not None
             })
-            
-            # Create httpx client with event hook to intercept 401 responses
-            service_instance = self  # Capture self for use in closure
-            async def response_hook(response: httpx.Response):
-                """Hook to intercept HTTP responses and extract AAuth header from 401."""
-                if response.status_code == 401:
-                    agent_auth_header = aauth_requirement_value_from_response(response)
-                    token_logger.info(
-                        f"🔐 401 from supply-chain-agent (url={response.url}): "
-                        f"AAuth_challenge_header_present={bool(agent_auth_header)} "
-                        f"header_names={list(response.headers.keys())}"
-                    )
-                    if agent_auth_header:
-                        service_instance._last_401_response = response
-                        add_event("agent_auth_challenge_received", {
-                            "has_agent_auth": bool(agent_auth_header)
-                        })
-                    else:
-                        token_logger.warning(
-                            "🔐 401 but no AAuth-Requirement (or legacy AAuth) — cannot exchange resource_token. "
-                            "If traffic goes through a gateway, ensure these headers are forwarded from upstream."
-                        )
             
             httpx_client = httpx.AsyncClient(
                 timeout=self.timeout,
-                event_hooks={"response": [response_hook]}
             )
             if settings.debug:
                 logger.debug("✅ HTTPX client created")
@@ -131,15 +79,7 @@ class A2AService:
                 logger.debug(f"✅ Agent card created: {agent_card}")
             add_event("agent_card_created", {"agent_url": self.agent_url})
             
-            # Create AAuth signing interceptor
-            # IMPORTANT: On first attempt, auth_token MUST be None to use JWKS and trigger 401 challenge
-            # Only on retry after getting auth_token should we pass it here
-            if settings.debug:
-                if auth_token:
-                    logger.debug(f"🔐 Creating interceptor WITH auth_token (retry after challenge)")
-                else:
-                    logger.debug(f"🔐 Creating interceptor WITHOUT auth_token (first attempt - will use JWKS)")
-            aauth_interceptor = AAuthSigningInterceptor(auth_token=auth_token)
+            aauth_interceptor = AAuthSigningInterceptor()
             if settings.debug:
                 logger.debug("🔐 AAuth signing interceptor created")
             add_event("aauth_interceptor_created")
@@ -153,27 +93,18 @@ class A2AService:
             return client, httpx_client
     
     async def optimize_supply_chain(
-                self,
-        request: OptimizationRequest, 
+        self,
+        request: OptimizationRequest,
         user_id: str,
         trace_context: Any = None,
-        auth_token: str = None,
         request_id: Optional[str] = None,
     ) -> Dict[str, Any]:
-        """Optimize supply chain using A2A agent with tracing support.
-        
-        Note: auth_token parameter is for AAuth auth_token (obtained from Keycloak AAuth endpoint),
-        NOT the OIDC token. The OIDC token should NOT be passed here.
-        
-        Returns direct success, or an interaction/approval pending state when the
-        auth server defers token issuance.
-        """
+        """Optimize supply chain using a single signed A2A call to the supply-chain agent."""
         
         with span("a2a_service.optimize_supply_chain", {
             "user_id": user_id,
             "request_type": request.effective_optimization_type,
             "has_trace_context": trace_context is not None,
-            "has_aauth_auth_token": auth_token is not None
         }, parent_context=trace_context) as span_obj:
             
             client, httpx_client = None, None
@@ -188,15 +119,9 @@ class A2AService:
                     "request_type": request.effective_optimization_type
                 })
                 
-                # Create A2A client with tracing
-                # auth_token is provided in two valid cases:
-                # 1. Retry after 401 challenge (autonomous flow, same request)
-                # 2. User-delegated flow: callback runs workflow with auth_token from consent
-                if settings.debug:
-                    logger.debug(f"🔐 auth_token={'present' if auth_token else 'None'}, scheme={'jwt' if auth_token else 'JWKS'}")
                 if settings.debug:
                     logger.debug("🔧 Creating A2A client...")
-                client, httpx_client = await self._create_client(trace_context, auth_token)
+                client, httpx_client = await self._create_client(trace_context)
                 if settings.debug:
                     logger.debug("✅ A2A client created successfully")
                 add_event("a2a_client_created_successfully")
@@ -228,157 +153,52 @@ class A2AService:
                 
                 response_content = None
                 response_count = 0
-                agent_auth_header = None
-                
+
+                def _content_from_event(event: Any) -> None:
+                    nonlocal response_content
+                    if hasattr(event, "content") and event.content:
+                        if isinstance(event.content, str):
+                            response_content = event.content
+                        elif isinstance(event.content, dict) and "content" in event.content:
+                            response_content = event.content["content"]
+                    elif hasattr(event, "text"):
+                        response_content = event.text
+                    elif hasattr(event, "parts") and event.parts:
+                        for part in event.parts:
+                            if hasattr(part, "root") and hasattr(part.root, "text"):
+                                response_content = part.root.text
+                                break
+
                 try:
                     async for event in client.send_message(message):
                         response_count += 1
                         if settings.debug:
                             logger.debug(f"📨 Received event #{response_count}: {event}")
-                            logger.debug(f"📨 Event type: {type(event)}")
-                            logger.debug(f"📨 Event attributes: {dir(event)}")
-                        
                         add_event("agent_response_received", {
                             "event_number": response_count,
                             "event_type": str(type(event))
                         })
-                        
-                        # Get the response content from the A2A message structure
-                        if hasattr(event, 'content') and event.content:
-                            if isinstance(event.content, str):
-                                response_content = event.content
-                                if settings.debug:
-                                    logger.debug(f"📝 String content: {response_content[:100]}...")
-                            elif isinstance(event.content, dict) and 'content' in event.content:
-                                response_content = event.content['content']
-                                if settings.debug:
-                                    logger.debug(f"📝 Dict content: {response_content[:100]}...")
-                        elif hasattr(event, 'text'):
-                            response_content = event.text
-                            if settings.debug:
-                                logger.debug(f"📝 Text attribute: {response_content[:100]}...")
-                        elif hasattr(event, 'parts') and event.parts:
-                            # Handle parts structure
-                            for part in event.parts:
-                                if hasattr(part, 'root') and hasattr(part.root, 'text'):
-                                    response_content = part.root.text
-                                    if settings.debug:
-                                        logger.debug(f"📝 Part text: {response_content[:100]}...")
-                                    break
-                        
-                        # Just get the first response for now
+                        _content_from_event(event)
                         break
                 except httpx.HTTPStatusError as e:
-                    if e.response.status_code == 401:
-                        agent_auth_header = aauth_requirement_value_from_response(e.response)
-                        if agent_auth_header:
-                            add_event("agent_auth_challenge_received", {
-                                "has_agent_auth": True
-                            })
-                        else:
-                            # 401 without AAuth - re-raise
-                            raise
-                    else:
-                        # Other HTTP error - re-raise
-                        raise
-                except Exception as e:
-                    if self._last_401_response:
-                        agent_auth_header = aauth_requirement_value_from_response(self._last_401_response)
-                        if agent_auth_header:
-                            add_event("agent_auth_challenge_detected", {
-                                "has_agent_auth": True
-                            })
-                            self._last_401_response = None
-                        else:
-                            raise
-                    else:
-                        raise
-                
-                if agent_auth_header:
-                    add_event("processing_agent_auth_challenge")
-                    parsed_header = parse_aauth_header(agent_auth_header)
-                    resource_token = parsed_header.get("resource_token")
-                    auth_server = parsed_header.get("auth_server")
-
-                    if resource_token:
-                        add_event("resource_token_extracted", {
-                            "has_resource_token": bool(resource_token),
-                            "has_auth_server": bool(auth_server)
-                        })
-
+                    if httpx_client:
                         try:
-                            token_result = await aauth_token_service.request_auth_token(
-                                resource_token=resource_token,
-                                purpose=request.custom_prompt or request.effective_optimization_type,
-                                auth_server_url=auth_server,
-                            )
-
-                            if token_result.get("status") == "interaction_required":
-                                await httpx_client.aclose()
-                                return {
-                                    "type": "interaction_required",
-                                    "request_id": request_id,
-                                    "pending_url": token_result.get("pending_url"),
-                                    "interaction_code": token_result.get("interaction_code"),
-                                    "interaction_endpoint": token_result.get("interaction_endpoint"),
-                                    "retry_after": token_result.get("retry_after", 0),
-                                }
-
-                            if token_result.get("status") == "approval_pending":
-                                await httpx_client.aclose()
-                                return {
-                                    "type": "approval_pending",
-                                    "request_id": request_id,
-                                    "pending_url": token_result.get("pending_url"),
-                                    "retry_after": token_result.get("retry_after", 0),
-                                }
-
-                            auth_token = token_result.get("auth_token")
-                            expires_in = token_result.get("expires_in", 3600)
-
-                            if auth_token:
-                                add_event("auth_token_received", {
-                                    "has_auth_token": True,
-                                    "expires_in": expires_in
-                                })
-                                agent_id = os.getenv("BACKEND_AGENT_URL", f"http://{settings.host}:{settings.port}")
-                                scope = "supply-chain:optimize"
-                                aauth_token_service.cache_token(
-                                    agent_id=agent_id,
-                                    scope=scope,
-                                    auth_token=auth_token,
-                                    expires_in=expires_in
-                                )
-
-                            add_event("retrying_request_with_auth_token")
                             await httpx_client.aclose()
-                            client, httpx_client = await self._create_client(trace_context, auth_token)
-
-                            async for event in client.send_message(message):
-                                response_count += 1
-                                add_event("agent_response_received_retry", {
-                                    "event_number": response_count
-                                })
-                                if hasattr(event, 'content') and event.content:
-                                    if isinstance(event.content, str):
-                                        response_content = event.content
-                                    elif isinstance(event.content, dict) and 'content' in event.content:
-                                        response_content = event.content['content']
-                                elif hasattr(event, 'text'):
-                                    response_content = event.text
-                                elif hasattr(event, 'parts') and event.parts:
-                                    for part in event.parts:
-                                        if hasattr(part, 'root') and hasattr(part.root, 'text'):
-                                            response_content = part.root.text
-                                            break
-                                
-                                break
-                        except Exception as token_error:
-                            add_event("auth_token_request_failed", {"error": str(token_error)})
-                            raise Exception(f"Failed to get auth_token: {token_error}")
-                    else:
-                        add_event("agent_auth_missing_resource_token")
-                        raise Exception("AAuth header missing resource-token")
+                        except Exception:
+                            pass
+                    if e.response.status_code == 401:
+                        token_logger.info(
+                            "401 from supply-chain-agent: configure policy on agentgateway or fix signatures (%s)",
+                            e.response.url,
+                        )
+                        add_event("a2a_http_error", {"status_code": 401})
+                        return {
+                            "type": "error",
+                            "message": "A2A request failed: HTTP 401 (use agentgateway for policy; verify request signing).",
+                            "timestamp": datetime.now().isoformat(),
+                        }
+                    add_event("a2a_http_error", {"status_code": e.response.status_code})
+                    raise
                 
                 if response_content:
                     if settings.debug:
@@ -553,12 +373,8 @@ class A2AService:
         
         return False
     
-    async def test_connection(self, auth_token: str = None) -> Dict[str, Any]:
-        """Test connection to the A2A agent with AAuth HWK signing.
-        
-        Note: auth_token parameter is kept for API compatibility but is no longer
-        used. Authentication is handled via AAuth HWK request signing.
-        """
+    async def test_connection(self) -> Dict[str, Any]:
+        """Test connection to the A2A agent with AAuth request signing."""
         with span("a2a_service.test_connection", {
             "agent_url": self.agent_url,
             "auth_method": "aauth_hwk"

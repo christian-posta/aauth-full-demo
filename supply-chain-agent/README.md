@@ -20,11 +20,10 @@ The agent can be configured using environment variables. Copy `env.example` to `
 cp env.example .env
 ```
 
-Preset env files for different AAuth configurations:
-- `env.hwk` – HWK signature scheme, signature-only authorization
-- `env.jwks` – JWKS signature scheme, signature-only authorization
-- `env.jwt-autonomous` – JWKS_URI scheme, autonomous authorization
-- `env.user-delegated` – JWKS_URI scheme, user-delegated authorization (Keycloak consent flow)
+Preset env files for different AAuth signing modes:
+- `env.hwk` – HWK signature scheme
+- `env.jwks` – JWKS_URI signature scheme
+- `env.jwt-autonomous` / `env.user-delegated` – preset names kept for compatibility; policy is enforced in **agentgateway**
 
 ```bash
 cp env.jwks .env   # Example: use JWKS + signature-only
@@ -35,8 +34,7 @@ cp env.jwks .env   # Example: use JWKS + signature-only
 - **`MARKET_ANALYSIS_AGENT_URL`**: URL for the market analysis agent (default: `http://localhost:9998/`)
 - **`SUPPLY_CHAIN_AGENT_PORT`**: Port for this agent to run on (default: `9999`)
 - **`SUPPLY_CHAIN_AGENT_URL`**: External URL for this agent (default: `http://localhost:{port}/`)
-- **`AAUTH_SIGNATURE_SCHEME`**: AAuth signature scheme - `"hwk"` (pseudonymous) or `"jwks"` (identified agent). Default: `hwk`
-- **`AAUTH_AUTHORIZATION_SCHEME`**: AAuth authorization scheme - `"autonomous"`, `"user-delegated"`, or `"signature-only"`. Default: `autonomous`
+- **`AAUTH_SIGNATURE_SCHEME`**: AAuth signature scheme - `"hwk"` (pseudonymous) or `"jwks_uri"` (identified agent). Default: `hwk`
 - **`SUPPLY_CHAIN_AGENT_ID_URL`**: Agent identifier for JWKS_URI scheme (HTTPS URL). Used in Signature-Key header when signing outgoing requests. Also used to derive canonical authority for signature verification (per SPEC 10.3.1). Canonical authority format: `host:port` (if port is non-default) or just `host` (if default port). If not set, derived from `SUPPLY_CHAIN_AGENT_URL` or `agent_card.url`
 
 ### Tracing Configuration
@@ -82,13 +80,9 @@ uv run .
 
 **CLI options** (override env vars when using `uv run .`):
 ```bash
-uv run . --signature-scheme jwks_uri                    # Use JWKS_URI scheme
-uv run . --signature-scheme hwk                     # Use HWK scheme
-uv run . --authorization-scheme signature-only       # Accept valid signatures only
-uv run . --authorization-scheme user-delegated       # Require user consent flow
-uv run . --authorization-scheme autonomous           # Autonomous auth
-uv run . --signature-scheme jwks_uri --authorization-scheme signature-only
-uv run . --help                                     # Show all options
+uv run . --signature-scheme jwks_uri   # Use JWKS_URI scheme
+uv run . --signature-scheme hwk         # Use HWK scheme
+uv run . --help                         # Show all options
 ```
 
 The agent will start on `http://localhost:9999` and serve:
@@ -149,15 +143,9 @@ AAUTH_SIGNATURE_SCHEME=jwks_uri
 SUPPLY_CHAIN_AGENT_ID_URL=http://supply-chain-agent.localhost:3000
 ```
 
-**CLI override**: When using `uv run .`, you can override both settings without editing `.env`:
-```bash
-uv run . --signature-scheme jwks_uri --authorization-scheme signature-only
-```
-CLI options take precedence over environment variables.
+**CLI override**: `--signature-scheme` overrides `AAUTH_SIGNATURE_SCHEME` for that process.
 
-For **user-delegated AAuth** (resource tokens, JWT verification, token exchange to Market Analysis Agent), see [docs/USER_DELEGATED_AAUTH.md](../docs/USER_DELEGATED_AAUTH.md) and [docs/AAUTH_CONFIGURATION.md](../docs/AAUTH_CONFIGURATION.md). Key variables: `AAUTH_AUTHORIZATION_SCHEME`, `KEYCLOAK_AAUTH_ISSUER_URL`.
-
-For **signature-only mode** (`AAUTH_AUTHORIZATION_SCHEME=signature-only`): accept requests with valid JWKS_URI or HWK signatures without requiring auth_token or resource_token. Useful when using `AAUTH_SIGNATURE_SCHEME=jwks_uri` and you only need proof-of-possession, not full authorization.
+Authorization policy (required schemes, identity) is configured on **agentgateway** ([/agentgateway/config-policy.yaml](../agentgateway/config-policy.yaml)), not in this agent’s environment.
 
 ### Code Locations
 

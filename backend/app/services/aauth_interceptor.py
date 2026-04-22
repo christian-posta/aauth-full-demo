@@ -61,26 +61,17 @@ class AAuthSigningInterceptor(ClientCallInterceptor):
     - Signature-Key: Contains the public key (scheme=hwk)
     """
     
-    def __init__(self, trace_headers: Optional[Dict[str, str]] = None, auth_token: Optional[str] = None):
+    def __init__(self, trace_headers: Optional[Dict[str, str]] = None):
         """Initialize the AAuth signing interceptor.
         
         Args:
             trace_headers: Optional additional headers to inject (e.g., for tracing)
-            auth_token: Optional auth token to use for scheme=jwt
-                       IMPORTANT: Must be None on first attempt to use JWKS and trigger 401 challenge
-                       Only provide on retry after getting auth_token from challenge flow
         """
         self.trace_headers = trace_headers or {}
         self.private_key = _PRIVATE_KEY
         self.public_key = _PUBLIC_KEY
-        self.auth_token = auth_token  # Store auth_token for this interceptor instance
-        
-        # Log what we received (auth_token is valid for retry or user-delegated callback flow)
         if settings.debug:
-            if auth_token:
-                logger.debug(f"🔐 AAuthSigningInterceptor initialized WITH auth_token (length: {len(auth_token)})")
-            else:
-                logger.debug(f"🔐 AAuthSigningInterceptor initialized WITHOUT auth_token (will use JWKS)")
+            logger.debug("🔐 AAuthSigningInterceptor initialized (HWK or JWKS per AAUTH_SIGNATURE_SCHEME)")
     
     async def intercept(
         self,
@@ -196,28 +187,8 @@ class AAuthSigningInterceptor(ClientCallInterceptor):
         # Sign the request if we have a URL
         if url:
             try:
-                # Determine signature scheme from environment variable (default: hwk)
-                # For first attempt, MUST use JWKS (or HWK) to trigger 401 challenge
                 sig_scheme = _signature_scheme_from_env()
-                
-                # Check if we should use scheme=jwt (requires auth_token)
-                # IMPORTANT: Only use scheme=jwt if auth_token is explicitly provided (retry after challenge)
-                # First attempt MUST use JWKS/HWK to trigger 401 and get resource_token
-                auth_token = self.auth_token  # Use instance-level auth_token if provided
-                
-                if auth_token:
-                    # Auth token provided (retry after challenge or user-delegated callback)
-                    sig_scheme = "jwt"
-                    if settings.debug:
-                        logger.debug(f"🔐 AAuth: Using auth_token for scheme=jwt")
-                    if settings.debug:
-                        logger.debug(f"🔐 AAuth: Auth token length: {len(auth_token)}")
-                else:
-                    # No auth_token provided - MUST use signature scheme (JWKS/HWK) for first attempt
-                    # This will trigger a 401 challenge with AAuth header containing resource-token
-                    logger.info(f"🔐 AAuth: First attempt - using signature scheme: {sig_scheme.upper()} (will trigger 401 challenge)")
-                    if settings.debug:
-                        logger.debug(f"🔐 AAuth: Will trigger challenge to obtain auth_token")
+                logger.info(f"🔐 AAuth: Signing with signature scheme: {sig_scheme.upper()}")
                 
                 # Ensure Content-Digest is NOT in headers if it's not in signature-input
                 # The aauth library will only include it if it's in signature-input
@@ -234,22 +205,7 @@ class AAuthSigningInterceptor(ClientCallInterceptor):
                 sign_kwargs = {}
                 agent_id = None
                 kid = None
-                
-                if sig_scheme == "jwt":
-                    # For JWT scheme, include auth_token in Signature-Key header
-                    if auth_token:
-                        sign_kwargs = {
-                            "jwt": auth_token
-                        }
-                        logger.info(f"🔐 AAuth: Signing request to {url} with JWT scheme (auth_token present)")
-                        logger.info(f"🔐 AAuth: Auth token length: {len(auth_token)}, first 50 chars: {auth_token[:50]}...")
-                        if settings.debug:
-                            logger.debug(f"🔐 AAuth: Auth token: {auth_token[:50]}...")
-                    else:
-                        # Fallback to signature scheme if no auth_token
-                        logger.warning(f"⚠️ AAuth: JWT scheme requested but no auth_token available, falling back to {sig_scheme}")
-                        sig_scheme = _signature_scheme_from_env()
-                
+
                 if sig_scheme == "jwks_uri":
                     # For JWKS scheme: id, kid, dwk (well-known doc name) per SIG-Key jwks_uri + SPEC aauth-agent.json
                     agent_id = os.getenv("BACKEND_AGENT_URL", f"http://{settings.host}:{settings.port}")
@@ -269,10 +225,7 @@ class AAuthSigningInterceptor(ClientCallInterceptor):
                 elif sig_scheme == "hwk":
                     # Default to HWK scheme
                     logger.info(f"🔐 AAuth: Signing with HWK scheme")
-                elif sig_scheme == "jwt":
-                    # JWT scheme - already logged above
-                    pass
-                
+
                 if settings.debug:
                     logger.debug(f"🔐 AAuth: Method: {method}, Body length: {len(body) if body else 0}")
                     logger.debug(f"🔐 AAuth: Signing with headers: {list(headers.keys())}")
@@ -307,12 +260,6 @@ class AAuthSigningInterceptor(ClientCallInterceptor):
                 target_uri = str(url)
                 logger.info(f"🔐 SIGNING with: method={method}, target_uri={target_uri!r}")
                 
-                # Log before signing (especially important for JWT retry)
-                if sig_scheme == "jwt":
-                    logger.info(f"🔐 JWT RETRY: About to sign with JWT scheme")
-                    logger.info(f"🔐 JWT RETRY: method={method}, target_uri={target_uri!r}")
-                    logger.info(f"🔐 JWT RETRY: headers keys: {list(headers.keys())}")
-                
                 sig_headers = sign_request(
                     method=method,
                     target_uri=target_uri,
@@ -325,13 +272,7 @@ class AAuthSigningInterceptor(ClientCallInterceptor):
                 
                 # Add signature headers to the request
                 headers.update(sig_headers)
-                
-                # Log signature details (especially for JWT)
-                if sig_scheme == "jwt":
-                    logger.info(f"🔐 JWT RETRY: Generated Signature-Input: {sig_headers.get('Signature-Input', '')[:200]}")
-                    logger.info(f"🔐 JWT RETRY: Generated Signature-Key (first 150): {sig_headers.get('Signature-Key', '')[:150]}...")
-                    logger.info(f"🔐 JWT RETRY: Generated Signature (first 100): {sig_headers.get('Signature', '')[:100]}...")
-                
+
                 if settings.debug:
                     logger.debug(f"🔐 AAuth: Generated Signature-Input: {sig_headers.get('Signature-Input', '')[:150]}")
                     logger.debug(f"🔐 AAuth: Generated Signature-Key: {sig_headers.get('Signature-Key', '')[:100]}")
@@ -340,7 +281,6 @@ class AAuthSigningInterceptor(ClientCallInterceptor):
                     logger.debug(f"🔐 AAuth: Signature-Input: {sig_headers.get('Signature-Input', '')[:100]}...")
                     logger.debug(f"🔐 AAuth: Signature-Key: {sig_headers.get('Signature-Key', '')[:100]}...")
                 
-                # Only include agent_id/kid in event if present (JWT scheme doesn't use them)
                 event_attrs = {
                     "method": method,
                     "url": str(url),
