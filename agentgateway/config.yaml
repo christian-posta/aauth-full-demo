@@ -59,6 +59,10 @@ binds:
     - policies:
         extAuthz:
           host: "localhost:7070"
+          protocol:
+            grpc:
+              context:
+                aauth_resource_id: "supply-chain-api"
         # Mark this route as a2a traffic
         a2a: {}
         backendAuth:
@@ -96,10 +100,14 @@ binds:
     - policies:
         # Mark this route as a2a traffic
         extAuthz:
-          host: "localhost:7070"       
+          host: "localhost:7070"
+          protocol:
+            grpc:
+              context:
+                aauth_resource_id: "market-analysis-api"
         a2a: {}
         backendAuth:
-          passthrough: {}             
+          passthrough: {}
         cors:
           allowOrigins:
             - "*"

@@ -10,9 +10,11 @@ jwks_cache:
 resources:
   - id: supply-chain-api
     issuer: http://localhost:8081
-    hosts:
-      - "supply-chain-agent.localhost:3000"
-      - "supply-chain-agent.localhost"
+    # hosts: no longer needed — aauth_resource_id is set in agentgateway context
+    # hosts:
+    #   - "supply-chain-agent.localhost:3000"
+    #   - "supply-chain-agent.localhost"
+    authority_override: "supply-chain-agent.localhost:3000"
     signing_key:
       kid: spa-rsk-1
       alg: EdDSA
@@ -24,9 +26,11 @@ resources:
 
   - id: market-analysis-api
     issuer: http://localhost:8081
-    hosts:
-      - "market-analysis-agent.localhost:3000"
-      - "market-analysis-agent.localhost"
+    # hosts: no longer needed — aauth_resource_id is set in agentgateway context
+    # hosts:
+    #   - "market-analysis-agent.localhost:3000"
+    #   - "market-analysis-agent.localhost"
+    authority_override: "market-analysis-agent.localhost:3000"
     signing_key:
       kid: maa-rsk-1
       alg: EdDSA

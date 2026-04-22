@@ -2,21 +2,10 @@
 from dotenv import load_dotenv
 load_dotenv()
 
-import logging
-
 from app.config import settings
+from app.logging_config import configure_logging
 
-# Suppress verbose third-party and app logging when DEBUG is off
-if not settings.debug:
-    logging.getLogger("aauth.signing").setLevel(logging.WARNING)
-    logging.getLogger("a2a").setLevel(logging.WARNING)
-    logging.getLogger("httpx").setLevel(logging.WARNING)
-    logging.getLogger("app.services.aauth_token_service").setLevel(logging.WARNING)
-    logging.getLogger("app.services.aauth_interceptor").setLevel(logging.WARNING)
-    logging.getLogger("app.tracing_config").setLevel(logging.WARNING)
-    # Token exchange + pending-URL polling (separate logger name, not under aauth_token_service)
-    logging.getLogger("aauth.tokens").setLevel(logging.INFO)
-    logging.getLogger("app.api.auth").setLevel(logging.INFO)
+configure_logging()
 
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
@@ -119,6 +108,16 @@ def _aauth_agent_metadata_payload() -> dict:
 
 @app.get("/.well-known/aauth-agent.json")
 async def aauth_agent_metadata():
+    return _aauth_agent_metadata_payload()
+
+
+@app.get("/aauth-agent.json")
+async def aauth_agent_metadata_nonstandard_path():
+    """Same document as ``/.well-known/aauth-agent.json``.
+
+    Some verifiers incorrectly resolve ``{agent_id}/{dwk}`` instead of
+    ``{agent_id}/.well-known/{dwk}``; this path keeps those clients working.
+    """
     return _aauth_agent_metadata_payload()
 
 

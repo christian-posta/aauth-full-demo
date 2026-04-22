@@ -20,6 +20,15 @@ from aauth import generate_ed25519_keypair, sign_request, public_key_to_jwk
 # Configure logging
 logger = logging.getLogger(__name__)
 
+
+def _signature_scheme_from_env() -> str:
+    """AAUTH_SIGNATURE_SCHEME from env; ``jwks`` is treated as alias for ``jwks_uri``."""
+    raw = os.getenv("AAUTH_SIGNATURE_SCHEME", "hwk").lower().strip()
+    if raw in ("jwks", "jwks_uri"):
+        return "jwks_uri"
+    return raw
+
+
 # Generate ephemeral keypair at module load
 # This keypair will be used for the lifetime of the backend process
 _PRIVATE_KEY, _PUBLIC_KEY = generate_ed25519_keypair()
@@ -189,7 +198,7 @@ class AAuthSigningInterceptor(ClientCallInterceptor):
             try:
                 # Determine signature scheme from environment variable (default: hwk)
                 # For first attempt, MUST use JWKS (or HWK) to trigger 401 challenge
-                sig_scheme = os.getenv("AAUTH_SIGNATURE_SCHEME", "hwk").lower()
+                sig_scheme = _signature_scheme_from_env()
                 
                 # Check if we should use scheme=jwt (requires auth_token)
                 # IMPORTANT: Only use scheme=jwt if auth_token is explicitly provided (retry after challenge)
@@ -239,7 +248,7 @@ class AAuthSigningInterceptor(ClientCallInterceptor):
                     else:
                         # Fallback to signature scheme if no auth_token
                         logger.warning(f"⚠️ AAuth: JWT scheme requested but no auth_token available, falling back to {sig_scheme}")
-                        sig_scheme = os.getenv("AAUTH_SIGNATURE_SCHEME", "hwk").lower()
+                        sig_scheme = _signature_scheme_from_env()
                 
                 if sig_scheme == "jwks_uri":
                     # For JWKS scheme: id, kid, dwk (well-known doc name) per SIG-Key jwks_uri + SPEC aauth-agent.json

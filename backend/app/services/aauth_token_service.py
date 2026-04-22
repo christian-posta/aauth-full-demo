@@ -19,7 +19,6 @@ from app.tracing_config import add_event, set_attribute, span
 logger = logging.getLogger(__name__)
 token_logger = logging.getLogger("aauth.tokens")
 
-DEBUG = os.getenv("DEBUG", "false").lower() == "true"
 _token_cache: Dict[str, Dict[str, Any]] = {}
 
 # Hardcoded demo reply for AAuth clarification chat (consent screen Q&A).
@@ -57,7 +56,9 @@ class AAuthTokenService:
         self.default_wait_seconds = int(os.getenv("AAUTH_PREFER_WAIT_SECONDS", "45"))
 
         self.private_key, self.public_key, self.public_jwk = get_signing_keypair()
-        self.signature_scheme = os.getenv("AAUTH_SIGNATURE_SCHEME", "hwk").lower()
+        self.signature_scheme = os.getenv("AAUTH_SIGNATURE_SCHEME", "hwk").lower().strip()
+        if self.signature_scheme == "jwks":
+            self.signature_scheme = "jwks_uri"
         if self.signature_scheme not in ["hwk", "jwks_uri"]:
             self.signature_scheme = "hwk"
 
@@ -76,7 +77,7 @@ class AAuthTokenService:
                     return _normalize_aauth_metadata(raw)
                 except Exception as e:
                     last_exc = e
-                    if DEBUG:
+                    if settings.debug:
                         logger.debug("AAuth metadata fetch failed for %s: %s", url, e)
         raise ValueError(
             f"AAuth issuer metadata not found for {issuer_url} (tried {paths})"
