@@ -40,12 +40,20 @@ binds:
       matches:
       - path:
           pathPrefix: /.well-known/
+      policies:
+        urlRewrite:
+          authority:
+            full: supply-chain-agent.localhost
       backends:
       - host: localhost:8081
     - name: aauth-token
       matches:
       - path:
           pathPrefix: /resource/
+      policies:
+        urlRewrite:
+          authority:
+            full: supply-chain-agent.localhost
       backends:
       - host: localhost:8081
     - policies:
@@ -69,12 +77,20 @@ binds:
       matches:
       - path:
           pathPrefix: /.well-known/
+      policies:
+        urlRewrite:
+          authority:
+            full: market-analysis-agent.localhost
       backends:
       - host: localhost:8081
     - name: aauth-token
       matches:
       - path:
           pathPrefix: /resource/
+      policies:
+        urlRewrite:
+          authority:
+            full: market-analysis-agent.localhost
       backends:
       - host: localhost:8081
     - policies:

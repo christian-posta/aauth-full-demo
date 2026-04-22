@@ -15,6 +15,28 @@ All relevant configurations live inside the `agentgateway/` folder. Ensure you a
 2. **`agentgateway/aauth-config.yaml`**: The policy engine configuration. Notice the `hosts` mappings, which the AAuth service uses to match requests to specific resource IDs (`supply-chain-api` and `market-analysis-api`).
 3. **`agentgateway/resource_key.pem`**: The EdDSA Ed25519 private key the AAuth service uses to sign tokens.
 
+### Local Prerequisites
+
+This repo does **not** include the `agentgateway/agw` binary. You need two local binaries before starting:
+
+1. **AAuth service binary** from the local `extauth-aauth-resource` checkout:
+
+```bash
+ls ~/go/src/github.com/christian-posta/extauth-aauth-resource/aauth-service
+ls ~/go/src/github.com/christian-posta/extauth-aauth-resource/sign-request
+```
+
+2. **Agentgateway binary** in this repo's `agentgateway/` directory.
+
+For Apple Silicon Macs (`uname -m` returns `arm64`), download the `darwin-arm64` build:
+
+```bash
+curl -L -o agentgateway/agw https://github.com/christian-posta/agentgateway/releases/download/v0.11.4/agentgateway-darwin-arm64
+chmod +x agentgateway/agw
+```
+
+For Intel Macs, use the `darwin-amd64` asset instead.
+
 ---
 
 ## 3. Running the Services
@@ -107,21 +129,50 @@ upstream call failed: Connect: Connection refused (os error 61)
 
 ### Test C: Verify the JWKS Endpoint via the Gateway
 
-The gateway is configured to proxy AAuth metadata paths to the AAuth service. In the current local setup, the live gateway on port `3000` returns `Not Found` for these JWKS requests, while the AAuth service on port `8081` returns the expected host-specific JWKS documents.
+The gateway is configured to proxy AAuth metadata paths to the AAuth service while preserving the public host identity for the resource. This means clients can fetch JWKS and other AAuth metadata from the gateway on port `3000` without needing to know the AAuth service is running on `8081`.
 
 Query the gateway's public port (`3000`):
 
 ```bash
 curl -s "http://localhost:3000/.well-known/jwks.json" -H "Host: supply-chain-agent.localhost"
+curl -s "http://localhost:3000/.well-known/jwks.json" -H "Host: market-analysis-agent.localhost"
 ```
 
-**Observed Result via Agent Gateway (`3000`):**
+**Expected Result via Agent Gateway (`3000`) for `supply-chain-agent.localhost`:**
 
-```text
-Not Found
+```json
+{
+  "keys": [
+    {
+      "alg": "EdDSA",
+      "crv": "Ed25519",
+      "kid": "spa-rsk-1",
+      "kty": "OKP",
+      "use": "sig",
+      "x": "A1OC-KnIa9wVRFJmnjrTfPJfl8gYDOjSCV_KJFmxHSg"
+    }
+  ]
+}
 ```
 
-To verify the actual resource JWKS being served for each host, query the AAuth service directly on port `8081`:
+**Expected Result via Agent Gateway (`3000`) for `market-analysis-agent.localhost`:**
+
+```json
+{
+  "keys": [
+    {
+      "alg": "EdDSA",
+      "crv": "Ed25519",
+      "kid": "maa-rsk-1",
+      "kty": "OKP",
+      "use": "sig",
+      "x": "rMep_GRARP4z5aSb16ORzDnoeHU_6rMeJb1Z3Pdn0CI"
+    }
+  ]
+}
+```
+
+If you want to verify the upstream service directly, query the AAuth service on port `8081`:
 
 ```bash
 curl -s "http://localhost:8081/.well-known/jwks.json" -H "Host: supply-chain-agent.localhost"
