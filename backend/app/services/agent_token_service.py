@@ -117,16 +117,70 @@ class AgentTokenService:
         )
 
         base = settings.agent_server_base.rstrip("/")
-        async with httpx.AsyncClient(timeout=HTTP_TIMEOUT) as client:
-            await self._discover(client, base)
-            await self._register_or_poll(client, base)
-
+        await self._startup_with_retry(base)
         logger.info("Agent Server registration complete; agent token acquired")
+
+    async def _startup_with_retry(self, base: str) -> None:
+        """Connect to agent server with exponential backoff retries."""
+        max_attempts = 10
+        attempt = 0
+        backoff_seconds = 1
+
+        while attempt < max_attempts:
+            attempt += 1
+            try:
+                async with httpx.AsyncClient(timeout=HTTP_TIMEOUT) as client:
+                    await self._discover(client, base)
+                    await self._register_or_poll(client, base)
+                return
+            except (httpx.ConnectError, httpx.TimeoutException, httpx.HTTPStatusError) as e:
+                if attempt == 1:
+                    # First failure: alert user
+                    print("\n" + "=" * 80)
+                    print("❌ Unable to reach Agent Server")
+                    print(f"   URL: {base}/.well-known/aauth-agent.json")
+                    print(f"   Error: {type(e).__name__}: {str(e)[:100]}")
+                    print("\n⏳ Retrying with exponential backoff...")
+                    print("   (Start the agent server or press Ctrl+C to abort)")
+                    print("=" * 80 + "\n")
+                    logger.warning(
+                        "Agent Server not available at %s; will retry with backoff: %s",
+                        base,
+                        str(e)[:200],
+                    )
+
+                if attempt < max_attempts:
+                    logger.info(
+                        "Attempt %d/%d: retrying in %d seconds...",
+                        attempt,
+                        max_attempts,
+                        backoff_seconds,
+                    )
+                    await asyncio.sleep(backoff_seconds)
+                    backoff_seconds = min(backoff_seconds * 2, 60)  # Cap at 60 seconds
+                else:
+                    logger.error(
+                        "Failed to connect to Agent Server after %d attempts",
+                        max_attempts,
+                    )
+                    raise RuntimeError(
+                        f"Could not connect to Agent Server at {base} after {max_attempts} attempts"
+                    ) from e
 
     async def _discover(self, client: httpx.AsyncClient, base: str) -> None:
         wh_url = f"{base}/.well-known/aauth-agent.json"
-        r = await client.get(wh_url)
-        r.raise_for_status()
+        try:
+            r = await client.get(wh_url)
+            r.raise_for_status()
+        except httpx.HTTPStatusError as e:
+            raise httpx.HTTPStatusError(
+                f"Agent Server discovery failed at {wh_url}: {e}",
+                request=e.request,
+                response=e.response,
+            ) from e
+        except (httpx.ConnectError, httpx.TimeoutException) as e:
+            raise e
+
         self._meta = r.json()
         self._issuer = self._meta.get("issuer")
         if not self._issuer:
