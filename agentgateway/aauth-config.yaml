@@ -14,6 +14,8 @@ resources:
     # hosts:
     #   - "supply-chain-agent.localhost:3000"
     #   - "supply-chain-agent.localhost"
+    # we will need the following override: until we get this in: https://github.com/agentgateway/agentgateway/pull/1641
+    # once that PR is in, we can comment this out:
     authority_override: "supply-chain-agent.localhost:3000"
     signing_key:
       kid: spa-rsk-1
@@ -30,6 +32,8 @@ resources:
     # hosts:
     #   - "market-analysis-agent.localhost:3000"
     #   - "market-analysis-agent.localhost"
+    # we will need the following override: until we get this in: https://github.com/agentgateway/agentgateway/pull/1641
+    # once that PR is in, we can comment this out:
     authority_override: "market-analysis-agent.localhost:3000"
     signing_key:
       kid: maa-rsk-1
