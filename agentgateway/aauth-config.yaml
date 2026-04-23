@@ -23,6 +23,10 @@ resources:
       private_key_file: spa-resource-key.pem
     signature_window: 60s
     allow_pseudonymous: true
+    allowed_signature_key_schemes:
+      - jwt
+    allowed_jwt_types:
+      - aa-agent+jwt      
     policy:
       name: default
 
@@ -41,5 +45,9 @@ resources:
       private_key_file: maa-resource-key.pem
     signature_window: 60s
     allow_pseudonymous: true
+    allowed_signature_key_schemes:
+      - jwt    
+    allowed_jwt_types:
+      - aa-agent+jwt    
     policy:
       name: default

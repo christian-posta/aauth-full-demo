@@ -25,6 +25,10 @@ supply-chain-ui/dist/
 .env.production.local
 .env.*.local
 
+# Backend AAuth stable identity (Agent Server client)
+backend/backend-stable.key
+backend/backend-stable.pub
+
 # Python
 __pycache__/
 *.py[cod]

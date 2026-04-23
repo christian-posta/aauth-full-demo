@@ -1,4 +1,5 @@
 # Load environment variables from .env file FIRST, before any other imports
+from contextlib import asynccontextmanager
 from dotenv import load_dotenv
 load_dotenv()
 
@@ -12,9 +13,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from app.api import auth, agents, optimization
 from app.tracing_config import initialize_tracing
-from app.config import settings
-from app.services.aauth_interceptor import get_signing_keypair
-from aauth import generate_jwks, generate_agent_metadata
+from app.services.agent_token_service import agent_token_service
 import os
 
 # Initialize tracing before creating the FastAPI app
@@ -36,10 +35,18 @@ initialize_tracing(
     enable_console_exporter=enable_console_exporter
 )
 
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    await agent_token_service.startup()
+    yield
+
+
 app = FastAPI(
     title="Supply Chain Agent API",
     description="Backend API for supply chain optimization with agent workflows",
-    version="1.0.0"
+    version="1.0.0",
+    lifespan=lifespan,
 )
 
 # Configure CORS
@@ -92,54 +99,22 @@ async def root():
 async def health_check():
     return {"status": "healthy", "service": "supply-chain-api"}
 
-def _aauth_agent_metadata_payload() -> dict:
-    """Agent server metadata at /.well-known/aauth-agent.json (spec)."""
-    agent_url = os.getenv("BACKEND_AGENT_URL", f"http://{settings.host}:{settings.port}")
-    jwks_uri = f"{agent_url}/jwks.json"
-    return generate_agent_metadata(
-        agent_id=agent_url,
-        jwks_uri=jwks_uri,
-        client_name="Supply Chain Backend",
-        callback_endpoint=None,
-        localhost_callback_allowed=True,
-        clarification_supported=True,
-    )
-
-
-@app.get("/.well-known/aauth-agent.json")
-async def aauth_agent_metadata():
-    return _aauth_agent_metadata_payload()
-
-
-@app.get("/aauth-agent.json")
-async def aauth_agent_metadata_nonstandard_path():
-    """Same document as ``/.well-known/aauth-agent.json``.
-
-    Some verifiers incorrectly resolve ``{agent_id}/{dwk}`` instead of
-    ``{agent_id}/.well-known/{dwk}``; this path keeps those clients working.
-    """
-    return _aauth_agent_metadata_payload()
-
-
-@app.get("/jwks.json")
-async def jwks_endpoint():
-    """JWKS endpoint for AAuth signature verification.
-    
-    Returns JSON Web Key Set containing the backend's public signing key.
-    """
-    _, _, public_jwk = get_signing_keypair()
-    jwks = generate_jwks([public_jwk])
-    return jwks
-
 def main():
-    """Main function to run the FastAPI server with uvicorn"""
+    """Main function to run the FastAPI server with uvicorn.
+
+    Auto-reload is off by default so Ctrl+C reliably stops the process (reload spawns a
+    supervisor + worker and often leaves extra PIDs or a stuck listener). Enable with
+    ``UVICORN_RELOAD=1`` when developing.
+    """
     import uvicorn
+
+    reload = os.getenv("UVICORN_RELOAD", "").lower() in ("1", "true", "yes")
     uvicorn.run(
         "app.main:app",
         host=settings.host,
         port=settings.port,
-        reload=True,
-        log_level="info"
+        reload=reload,
+        log_level="info",
     )
 
 if __name__ == "__main__":

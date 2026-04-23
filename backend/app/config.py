@@ -1,5 +1,15 @@
 import os
+from pathlib import Path
 from typing import List
+
+_BACKEND_ROOT = Path(__file__).resolve().parent.parent
+
+
+def _agent_server_base_from_env() -> str:
+    """Agent Server origin; default ``http://127.0.0.1:8765``."""
+    raw = (os.environ.get("AGENT_SERVER_BASE") or "").strip()
+    return raw or "http://127.0.0.1:8765"
+
 
 class Settings:
     # API Configuration
@@ -26,6 +36,12 @@ class Settings:
     
     # A2A Configuration
     supply_chain_agent_url: str = os.getenv("SUPPLY_CHAIN_AGENT_URL", "http://supply-chain-agent.localhost:3000")
+
+    # Agent Server (aa-agent+jwt for outbound A2A). Stable keys: ``backend-stable.key`` /
+    # ``backend-stable.pub`` in the backend package root (created on first run).
+    agent_server_base: str = _agent_server_base_from_env()
+    agent_name: str = os.getenv("BACKEND_AGENT_NAME", "supply-chain-backend")
+    stable_identity_dir: Path = _BACKEND_ROOT
     
     # Agent STS Configuration
     agent_sts_url: str = os.getenv("AGENT_STS_URL", "http://localhost:8081")

@@ -35,10 +35,6 @@ This is the Python FastAPI backend for the Supply Chain Agent system. This backe
 - `GET /optimization/test-agent-sts-connection` - Test connection to Agent STS service
 - `GET /optimization/test-a2a-connection` - Test connection to A2A supply-chain agent (requires Bearer token)
 
-### AAuth Endpoints (for JWKS signature scheme)
-- `GET /.well-known/aauth-agent` - AAuth agent metadata endpoint (returns agent identifier and JWKS URI)
-- `GET /jwks.json` - JSON Web Key Set (JWKS) endpoint (returns public signing keys)
-
 ## Setup
 
 1. **Install uv** (if not already installed):
@@ -54,26 +50,14 @@ This is the Python FastAPI backend for the Supply Chain Agent system. This backe
    ```
    Edit `.env` to set Keycloak URLs, AAuth settings, etc. The app loads `.env` automatically at startup via `python-dotenv`.
 
-   Preset env files for different AAuth signature schemes:
-   - `env.hwk` – HWK (pseudonymous) scheme
-   - `env.jwks` – JWKS (identified agent) scheme
-   ```bash
-   cp env.jwks .env   # Use JWKS_URI scheme
-   ```
+   Optional presets with Agent Server defaults: `env.hwk`, `env.jwks` (same layout; copy either to `.env`).
 
 3. **Run the server**:
    ```bash
    cd backend
    uv run .
    ```
-   This is the recommended way. It uses `__main__.py` and supports CLI options.
-
-   **CLI options** (when using `uv run .`):
-   ```bash
-   uv run . --signature-scheme jwks_uri   # Use JWKS_URI scheme (overrides .env)
-   uv run . --signature-scheme hwk    # Use HWK scheme (overrides .env)
-   uv run . --help                    # Show all options
-   ```
+   This is the recommended way (`__main__.py` delegates to `app.main`).
 
    Other ways to run:
    ```bash
@@ -117,161 +101,15 @@ curl -X POST "http://localhost:8000/optimization/start" \
      }'
 ```
 
-### Test AAuth JWKS Endpoints
+## AAuth outbound (Agent Server client)
 
-```bash
-# Get agent metadata
-curl http://localhost:8000/.well-known/aauth-agent.json
+Outbound calls to the supply-chain A2A agent use HTTP Message Signatures (RFC 9421) with an **`aa-agent+jwt`** in `Signature-Key` (`sig=jwt`) and proof-of-possession using the ephemeral key in the token’s `cnf.jwk`, per [../SPEC.md](../SPEC.md).
 
-{
-  "agent": "http://backend.localhost:8000",
-  "jwks_uri": "http://backend.localhost:8000/jwks.json"
-}
+1. On startup the backend loads or creates **`backend-stable.key`** / **`backend-stable.pub`** in the package root and registers with the **Agent Server** (default `http://127.0.0.1:8765`; override with `AGENT_SERVER_BASE`).
+2. **`app/services/agent_token_service.py`** handles discovery, `POST /register`, polling if needed, and `POST /refresh` before expiry.
+3. **`app/services/aauth_interceptor.py`** calls `aauth.sign_request(..., sig_scheme="jwt", jwt=<agent_token>)` for each A2A request.
 
-
-# Get JWKS
-curl http://localhost:8000/jwks.json
-
-{
-  "keys": [
-    {
-      "kty": "OKP",
-      "crv": "Ed25519",
-      "x": "WgfO9jYudTVrCa6qJVaFmWRLfuad3xWKJprmXwRiNp0",
-      "kid": "backend-ephemeral-1"
-    }
-  ]
-}
-
-```
-
-## AAuth (Agent-to-Agent Authentication) Implementation
-
-This backend implements AAuth signature-based authentication for agent-to-agent communication using the JWKS (JSON Web Key Set) scheme. This provides cryptographic proof-of-possession and agent identity verification per the [AAuth specification](SPEC.md).
-
-### How AAuth Works
-
-AAuth uses HTTP Message Signatures (RFC 9421) to sign every request cryptographically. When using the JWKS_URI scheme:
-
-1. **Signing (Outgoing Requests)**: The backend signs requests to downstream agents (like supply-chain-agent) with its identity
-2. **Verification (Incoming Requests)**: Downstream agents verify signatures by fetching the backend's JWKS and validating the signature
-
-### Configuration
-
-Set these environment variables in your `.env` file (or use preset `env.hwk` / `env.jwks`):
-
-```bash
-# AAuth signature scheme: "hwk" (pseudonymous) or "jwks_uri" (identified agent)
-AAUTH_SIGNATURE_SCHEME=jwks_uri
-
-# Agent identifier for JWKS_URI scheme (HTTPS URL)
-# Used in Signature-Key header: scheme=jwks_uri id="<BACKEND_AGENT_URL>" kid="..."
-BACKEND_AGENT_URL=http://backend.localhost:8000
-```
-
-**CLI override**: When using `uv run .`, you can override the signature scheme without editing `.env`:
-```bash
-uv run . --signature-scheme jwks_uri
-uv run . --signature-scheme hwk
-```
-The CLI option takes precedence over the environment variable.
-
-For **user-delegated AAuth** (consent flow, auth tokens, callback), see [docs/USER_DELEGATED_AAUTH.md](../docs/USER_DELEGATED_AAUTH.md) and [docs/AAUTH_CONFIGURATION.md](../docs/AAUTH_CONFIGURATION.md). Key backend variables: `AAUTH_CALLBACK_URL`, `AAUTH_FRONTEND_REDIRECT_URL`, `KEYCLOAK_AAUTH_ISSUER_URL`, `KEYCLOAK_AAUTH_AGENT_AUTH_ENDPOINT`.
-
-### Code Locations
-
-#### 1. Signing Implementation (Outgoing Requests)
-
-**File**: `app/services/aauth_interceptor.py`
-
-This is where outgoing requests to agents are signed. The `AAuthSigningInterceptor` class:
-
-- Generates an ephemeral Ed25519 keypair at module load
-- Intercepts all A2A client requests
-- Signs requests using the configured scheme (HWK or JWKS)
-- Adds signature headers (`Signature-Input`, `Signature`, `Signature-Key`) to requests
-
-**Key Code Sections**:
-- **Lines 23-26**: Keypair generation using `generate_ed25519_keypair()` and `public_key_to_jwk()`
-- **Lines 149-189**: Signing logic that reads `AAUTH_SIGNATURE_SCHEME` and calls `sign_request()` with appropriate parameters
-
-**AAuth Library Functions Used**:
-- `generate_ed25519_keypair()` - Generates Ed25519 keypair for signing
-- `public_key_to_jwk()` - Converts public key to JWK format with key ID
-- `sign_request()` - Signs HTTP requests with HTTP Message Signatures
-
-**Example for JWKS_URI scheme**:
-```python
-sig_headers = sign_request(
-    method=method,
-    target_uri=str(url),
-    headers=headers,
-    body=body,
-    private_key=self.private_key,
-    sig_scheme="jwks_uri",
-    id=agent_id,  # Agent identifier URL
-    kid=kid      # Key identifier
-)
-```
-
-#### 2. JWKS Endpoints (Key Discovery)
-
-**File**: `app/main.py`
-
-These endpoints allow other agents to discover and fetch the backend's public keys:
-
-- **Lines 89-100**: `/.well-known/aauth-agent.json` - Returns agent metadata with `agent` identifier and `jwks_uri`
-- **Lines 102-110**: `/jwks.json` - Returns the JSON Web Key Set containing public signing keys
-
-**AAuth Library Functions Used**:
-- `generate_jwks()` - Generates JWKS document from list of JWKs
-
-**How it works**:
-1. When another agent receives a request signed with `scheme=jwks_uri`, it extracts the `id` parameter from the `Signature-Key` header
-2. It fetches `{id}/.well-known/aauth-agent` to get metadata
-3. It extracts `jwks_uri` from the metadata
-4. It fetches the JWKS from `jwks_uri`
-5. It matches the key by `kid` and verifies the signature
-
-#### 3. Key Management
-
-**File**: `app/services/aauth_interceptor.py`
-
-- **Lines 25-26**: Ephemeral keypair generated at module load (in-memory only, per SPEC Appendix B)
-- **Lines 33-39**: `get_signing_keypair()` function exposes the keypair for JWKS endpoint
-- Keys are stored in module-level variables and persist for the lifetime of the process
-
-### Signature Schemes
-
-The backend supports two signature schemes (configurable via `AAUTH_SIGNATURE_SCHEME` env var or `--signature-scheme` CLI option):
-
-1. **HWK (Header Web Key)** - Pseudonymous authentication
-   - Public key embedded directly in `Signature-Key` header
-   - No identity verification, just proof-of-possession
-   - Default scheme for backward compatibility
-
-2. **JWKS (JSON Web Key Set)** - Identified agent authentication
-   - Agent identifier (`id`) and key ID (`kid`) in `Signature-Key` header
-   - Receivers fetch JWKS from agent's metadata endpoint
-   - Provides agent identity verification
-
-### Learning AAuth
-
-1. **Outbound signing**: `app/services/aauth_interceptor.py`, `app/services/a2a_service.py`
-2. **JWKS / metadata**: `app/main.py`
-3. **Spec**: [../SPEC.md](../SPEC.md)
-
-### AAuth Library Reference
-
-The project uses the `aauth` Python library. Key functions:
-
-- `generate_ed25519_keypair()` - Generate Ed25519 signing keypair
-- `public_key_to_jwk(public_key, kid)` - Convert public key to JWK format
-- `sign_request(method, target_uri, headers, body, private_key, sig_scheme, **kwargs)` - Sign HTTP request
-  - For JWKS: pass `sig_scheme="jwks_uri"`, `id=agent_url`, `kid=key_id`
-  - For HWK: pass `sig_scheme="hwk"` (no additional kwargs)
-- `generate_jwks([jwk1, jwk2, ...])` - Generate JWKS document from JWK list
-- `verify_signature(...)` - Verify HTTP Message Signature (used by receiving agents)
+For **user-delegated AAuth** (consent, callbacks), see [docs/USER_DELEGATED_AAUTH.md](../docs/USER_DELEGATED_AAUTH.md) and [docs/AAUTH_CONFIGURATION.md](../docs/AAUTH_CONFIGURATION.md).
 
 ## Development
 
@@ -286,10 +124,10 @@ The backend uses:
 
 ```
 backend/
-├── __main__.py              # Entry point for `uv run .` (parses CLI options)
+├── __main__.py              # Entry point for `uv run .`
 ├── app/
 │   ├── __init__.py
-│   ├── main.py              # FastAPI application + AAuth JWKS endpoints
+│   ├── main.py              # FastAPI application
 │   ├── config.py            # Configuration settings
 │   ├── models.py            # Pydantic data models
 │   ├── api/                 # API routes
@@ -302,27 +140,27 @@ backend/
 │       ├── auth_service.py  # Authentication service
 │       ├── agent_service.py # Agent workflow service
 │       ├── optimization_service.py # Optimization service
-│       ├── aauth_interceptor.py  # AAuth signing interceptor (OUTGOING)
+│       ├── aauth_interceptor.py  # AAuth agent-token signing (OUTGOING)
+│       ├── agent_token_service.py # Agent Server register / refresh
 │       ├── a2a_service.py  # A2A client service
 │       └── keycloak_service.py # Keycloak integration
 ├── env.example              # Example env file (copy to .env)
-├── env.hwk                  # Preset for HWK signature scheme
-├── env.jwks                 # Preset for JWKS signature scheme
+├── env.hwk                  # Preset env (Agent Server defaults)
+├── env.jwks                 # Preset env (same; optional copy to .env)
 ├── pyproject.toml           # Dependencies and project config
 ├── run_server.py            # Alternative entry (no CLI options)
 ├── uv.lock                  # Locked dependencies
 └── README.md
 ```
 
-### Key Files for AAuth
+### Key Files for AAuth outbound
 
-- **`app/services/aauth_interceptor.py`** - Signs outgoing requests to agents
-- **`app/main.py`** - Exposes JWKS endpoints (`/.well-known/aauth-agent.json`, `/jwks.json`)
-- **`app/services/a2a_service.py`** - Uses `AAuthSigningInterceptor` for agent calls
-
+- **`app/services/agent_token_service.py`** – Agent Server registration and token refresh
+- **`app/services/aauth_interceptor.py`** – Signs A2A requests with the agent token
+- **`app/services/a2a_service.py`** – A2A client with signing interceptor
 
 ## Path B: agent-to-agent policy
 
-This demo’s backend **signs** outbound A2A calls (HWK or `jwks_uri`) and does **not** implement 401 + `resource_token` → Keycloak AAuth `auth_token` + `scheme=jwt` retries. For **which agents may call which** and **required signature schemes**, configure **agentgateway** ([/agentgateway/config-policy.yaml](../agentgateway/config-policy.yaml)).
+This backend does **not** implement 401 + `resource_token` → Keycloak AAuth `auth_token` retries. For **which agents may call which**, configure **agentgateway** ([/agentgateway/config-policy.yaml](../agentgateway/config-policy.yaml)).
 
 Keycloak’s **OIDC** endpoints serve **human** login for the UI. The realm may still expose AAuth **metadata** (for example `/.well-known/aauth-issuer`); that is separate from the Python services’ signing-only Path B behavior.

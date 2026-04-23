@@ -1,78 +1,33 @@
 #!/usr/bin/env python3
-"""AAuth signing interceptor for A2A client calls.
-
-This interceptor signs outgoing HTTP requests using AAuth HWK (Header Web Key)
-scheme per the AAuth specification. Each request is signed with HTTP Message
-Signatures (RFC 9421) providing proof-of-possession without identity verification.
-"""
+"""AAuth signing interceptor for A2A client calls using Agent Server tokens."""
 
 import logging
-import os
-from typing import Dict, Any, Optional
-from urllib.parse import urlparse
+from typing import Any, Dict, Optional
+from urllib.parse import urlparse, urlunparse
+
 from a2a.client.middleware import ClientCallInterceptor, ClientCallContext
-from app.tracing_config import inject_context_to_headers, add_event, set_attribute
+from aauth import sign_request
+
 from app.config import settings
+from app.services.agent_token_service import AgentTokenService
+from app.tracing_config import inject_context_to_headers, add_event, set_attribute
 
-# Import aauth library for signing
-from aauth import generate_ed25519_keypair, sign_request, public_key_to_jwk
-
-# Configure logging
 logger = logging.getLogger(__name__)
 
 
-def _signature_scheme_from_env() -> str:
-    """AAUTH_SIGNATURE_SCHEME from env; ``jwks`` is treated as alias for ``jwks_uri``."""
-    raw = os.getenv("AAUTH_SIGNATURE_SCHEME", "hwk").lower().strip()
-    if raw in ("jwks", "jwks_uri"):
-        return "jwks_uri"
-    return raw
-
-
-# Generate ephemeral keypair at module load
-# This keypair will be used for the lifetime of the backend process
-_PRIVATE_KEY, _PUBLIC_KEY = generate_ed25519_keypair()
-_PUBLIC_JWK = public_key_to_jwk(_PUBLIC_KEY, kid="backend-ephemeral-1")
-
-if settings.debug:
-    logger.debug("🔐 AAuth: Generated ephemeral Ed25519 keypair for request signing")
-    logger.debug(f"🔐 AAuth: Public key JWK: {_PUBLIC_JWK}")
-
-
-def get_signing_keypair():
-    """Get the module-level signing keypair.
-    
-    Returns:
-        Tuple of (private_key, public_key, public_jwk)
-    """
-    return _PRIVATE_KEY, _PUBLIC_KEY, _PUBLIC_JWK
-
-
 class AAuthSigningInterceptor(ClientCallInterceptor):
-    """Interceptor that signs HTTP requests using AAuth HWK scheme.
-    
-    This interceptor adds HTTP Message Signature headers to all outgoing
-    requests, providing cryptographic proof-of-possession without requiring
-    identity verification (pseudonymous authentication).
-    
-    Per AAuth SPEC.md Section 10, the following headers are added:
-    - Signature-Input: Describes which components are covered by the signature
-    - Signature: The actual cryptographic signature
-    - Signature-Key: Contains the public key (scheme=hwk)
-    """
-    
-    def __init__(self, trace_headers: Optional[Dict[str, str]] = None):
-        """Initialize the AAuth signing interceptor.
-        
-        Args:
-            trace_headers: Optional additional headers to inject (e.g., for tracing)
-        """
+    """Signs outbound A2A requests with ``sig=jwt`` (``aa-agent+jwt``) + ephemeral PoP."""
+
+    def __init__(
+        self,
+        agent_token_service: AgentTokenService,
+        trace_headers: Optional[Dict[str, str]] = None,
+    ):
         self.trace_headers = trace_headers or {}
-        self.private_key = _PRIVATE_KEY
-        self.public_key = _PUBLIC_KEY
+        self.agent_token_service = agent_token_service
         if settings.debug:
-            logger.debug("🔐 AAuthSigningInterceptor initialized (HWK or JWKS per AAUTH_SIGNATURE_SCHEME)")
-    
+            logger.debug("🔐 AAuthSigningInterceptor initialized (agent JWT)")
+
     async def intercept(
         self,
         method_name: str,
@@ -81,247 +36,183 @@ class AAuthSigningInterceptor(ClientCallInterceptor):
         agent_card: Any | None,
         context: ClientCallContext | None,
     ) -> tuple[dict[str, Any], dict[str, Any]]:
-        """Sign the HTTP request with AAuth HWK scheme.
-        
-        This method:
-        1. Extracts URL, method, and body from http_kwargs or agent_card
-        2. Signs the request using aauth.sign_request() with scheme=hwk
-        3. Adds signature headers to the outgoing request
-        4. Injects trace context headers
-        """
         if settings.debug:
-            logger.debug(f"🔐 AAuthSigningInterceptor.intercept() called for {method_name}")
-            logger.debug(f"🔍   request_payload keys: {list(request_payload.keys()) if request_payload else 'None'}")
-            logger.debug(f"🔍   http_kwargs keys: {list(http_kwargs.keys())}")
-            if agent_card and hasattr(agent_card, 'url'):
-                logger.debug(f"🔍   agent_card.url: {agent_card.url}")
-        
-        headers = http_kwargs.get('headers', {})
-        
-        # Add custom trace headers if provided
+            logger.debug("🔐 AAuthSigningInterceptor.intercept() called for %s", method_name)
+            logger.debug(
+                "🔍   request_payload keys: %s",
+                list(request_payload.keys()) if request_payload else "None",
+            )
+            logger.debug("🔍   http_kwargs keys: %s", list(http_kwargs.keys()))
+            if agent_card and hasattr(agent_card, "url"):
+                logger.debug("🔍   agent_card.url: %s", agent_card.url)
+
+        headers = http_kwargs.get("headers", {})
+
         if self.trace_headers:
             headers.update(self.trace_headers)
-        
-        # Inject current trace context into headers
+
         headers = inject_context_to_headers(headers)
-        
-        # Extract request details for signing
-        # Try to get URL from http_kwargs first, then fall back to agent_card
-        url = http_kwargs.get('url', '')
+
+        url = http_kwargs.get("url", "")
         if settings.debug:
-            logger.debug(f"🔍   http_kwargs.get('url'): {url}")
-            logger.debug(f"🔍   http_kwargs keys: {list(http_kwargs.keys())}")
-        if not url and agent_card and hasattr(agent_card, 'url'):
+            logger.debug("🔍   http_kwargs.get('url'): %s", url)
+        if not url and agent_card and hasattr(agent_card, "url"):
             url = agent_card.url
             if settings.debug:
-                logger.debug(f"🔍   Using URL from agent_card: {url}")
-        
-        # Normalize URL path: ensure path is always present (empty path becomes '/')
-        # This matches what the verifier will reconstruct (request.url.path or "/")
+                logger.debug("🔍   Using URL from agent_card: %s", url)
+
         original_url = url
         if url:
-            from urllib.parse import urlparse, urlunparse
             parsed = urlparse(url)
-            # If path is empty, normalize to '/'
-            normalized_path = parsed.path if parsed.path else '/'
-            url = urlunparse((
-                parsed.scheme,
-                parsed.netloc,
-                normalized_path,
-                parsed.params,
-                parsed.query,
-                parsed.fragment
-            ))
+            normalized_path = parsed.path if parsed.path else "/"
+            url = urlunparse(
+                (
+                    parsed.scheme,
+                    parsed.netloc,
+                    normalized_path,
+                    parsed.params,
+                    parsed.query,
+                    parsed.fragment,
+                )
+            )
             if original_url != url:
-                logger.info(f"🔐 URL normalized for signing: {original_url} -> {url}")
+                logger.info("🔐 URL normalized for signing: %s -> %s", original_url, url)
             if settings.debug:
-                logger.debug(f"🔍   Normalized URL path: {url}")
-        
+                logger.debug("🔍   Normalized URL path: %s", url)
+
         if settings.debug:
-            logger.debug(f"🔍   Final URL used for signing: {url}")
+            logger.debug("🔍   Final URL used for signing: %s", url)
         else:
-            # Always log the URL being used for signing (even without DEBUG)
-            logger.info(f"🔐 Signing request to: {url}")
-        
-        method = http_kwargs.get('method', 'POST').upper()
-        
-        # Get body if present
-        # The A2A SDK may pass body in different ways
+            logger.info("🔐 Signing request to: %s", url)
+
+        method = http_kwargs.get("method", "POST").upper()
+
         body = None
-        if 'content' in http_kwargs:
-            body = http_kwargs['content']
+        if "content" in http_kwargs:
+            body = http_kwargs["content"]
             if isinstance(body, str):
-                body = body.encode('utf-8')
-        elif 'data' in http_kwargs:
-            body = http_kwargs['data']
+                body = body.encode("utf-8")
+        elif "data" in http_kwargs:
+            body = http_kwargs["data"]
             if isinstance(body, str):
-                body = body.encode('utf-8')
-        elif 'json' in http_kwargs:
+                body = body.encode("utf-8")
+        elif "json" in http_kwargs:
             import json
-            # Serialize JSON ourselves to ensure exact bytes match what we sign
-            # Then pass as 'content' instead of 'json' so httpx doesn't re-serialize
-            body = json.dumps(http_kwargs['json'], separators=(',', ':'), ensure_ascii=True).encode('utf-8')
-            # Replace 'json' with 'content' to prevent httpx from re-serializing
-            http_kwargs['content'] = body
-            del http_kwargs['json']
-            if 'Content-Type' not in headers:
-                headers['Content-Type'] = 'application/json'
+
+            body = json.dumps(
+                http_kwargs["json"], separators=(",", ":"), ensure_ascii=True
+            ).encode("utf-8")
+            http_kwargs["content"] = body
+            del http_kwargs["json"]
+            if "Content-Type" not in headers:
+                headers["Content-Type"] = "application/json"
         elif request_payload:
-            # A2A SDK passes the JSON-RPC payload in request_payload
-            # Serialize JSON ourselves to ensure exact bytes match what we sign
             import json
-            body = json.dumps(request_payload, separators=(',', ':'), ensure_ascii=True).encode('utf-8')
-            # Ensure httpx uses our serialized bytes, not re-serialize
-            # If 'json' is in http_kwargs, replace it with 'content'
-            if 'json' in http_kwargs:
-                http_kwargs['content'] = body
-                del http_kwargs['json']
+
+            body = json.dumps(
+                request_payload, separators=(",", ":"), ensure_ascii=True
+            ).encode("utf-8")
+            if "json" in http_kwargs:
+                http_kwargs["content"] = body
+                del http_kwargs["json"]
             else:
-                # If no 'json' key, add 'content' so httpx uses our bytes
-                http_kwargs['content'] = body
-            if 'Content-Type' not in headers:
-                headers['Content-Type'] = 'application/json'
+                http_kwargs["content"] = body
+            if "Content-Type" not in headers:
+                headers["Content-Type"] = "application/json"
             if settings.debug:
-                logger.debug(f"🔍   Using request_payload as body, length: {len(body)}")
-        
-        # Sign the request if we have a URL
+                logger.debug("🔍   Using request_payload as body, length: %s", len(body))
+
         if url:
             try:
-                sig_scheme = _signature_scheme_from_env()
-                logger.info(f"🔐 AAuth: Signing with signature scheme: {sig_scheme.upper()}")
-                
-                # Ensure Content-Digest is NOT in headers if it's not in signature-input
-                # The aauth library will only include it if it's in signature-input
-                # But we should remove it from headers to be safe
-                if 'Content-Digest' in headers or 'content-digest' in headers:
-                    # Check if it will be in signature-input - if not, remove it
-                    # For now, since signature-input doesn't include content-digest, remove it
-                    headers.pop('Content-Digest', None)
-                    headers.pop('content-digest', None)
-                    if settings.debug:
-                        logger.debug(f"🔐 AAuth: Removed Content-Digest from headers (not in signature-input)")
-                
-                # Prepare signing parameters
-                sign_kwargs = {}
-                agent_id = None
-                kid = None
+                await self.agent_token_service.ensure_valid_token()
+                signing_priv, agent_jwt = (
+                    self.agent_token_service.get_http_signing_private_key_and_token()
+                )
+                sig_scheme = "jwt"
+                sign_kwargs = {"jwt": agent_jwt}
+                logger.info("🔐 AAuth: Signing with agent token (aa-agent+jwt in Signature-Key)")
 
-                if sig_scheme == "jwks_uri":
-                    # For JWKS scheme: id, kid, dwk (well-known doc name) per SIG-Key jwks_uri + SPEC aauth-agent.json
-                    agent_id = os.getenv("BACKEND_AGENT_URL", f"http://{settings.host}:{settings.port}")
-                    # Extract kid from the public JWK
-                    kid = _PUBLIC_JWK.get("kid", "backend-key-1")
-                    dwk = os.getenv("AAUTH_AGENT_DWK", "aauth-agent.json")
-                    sign_kwargs = {
-                        "id": agent_id,
-                        "kid": kid,
-                        "dwk": dwk,
-                    }
-                    logger.info(
-                        f"🔐 AAuth: Signing with JWKS_URI scheme (agent: {agent_id}, kid: {kid}, dwk: {dwk})"
+                if "Content-Digest" in headers or "content-digest" in headers:
+                    headers.pop("Content-Digest", None)
+                    headers.pop("content-digest", None)
+
+                if settings.debug:
+                    logger.debug(
+                        "🔐 AAuth: Method: %s, Body length: %s",
+                        method,
+                        len(body) if body else 0,
                     )
-                    if settings.debug:
-                        logger.debug(f"🔐 AAuth: Agent ID: {agent_id}, Kid: {kid}")
-                elif sig_scheme == "hwk":
-                    # Default to HWK scheme
-                    logger.info(f"🔐 AAuth: Signing with HWK scheme")
-
-                if settings.debug:
-                    logger.debug(f"🔐 AAuth: Method: {method}, Body length: {len(body) if body else 0}")
-                    logger.debug(f"🔐 AAuth: Signing with headers: {list(headers.keys())}")
-                    for k, v in headers.items():
-                        if k.lower() in ['content-type', 'content-digest', 'signature-key']:
-                            logger.debug(f"🔐 AAuth:   {k}: {v[:100] if len(v) > 100 else v}")
-                
-                if settings.debug:
-                    from urllib.parse import urlparse
                     parsed_url = urlparse(str(url))
-                    logger.debug(f"🔐 SIGNING - URL breakdown:")
-                    logger.debug(f"🔐   Full URL: {url}")
-                    logger.debug(f"🔐   Scheme: {parsed_url.scheme}")
-                    logger.debug(f"🔐   Netloc: {parsed_url.netloc}")
-                    logger.debug(f"🔐   Path: {parsed_url.path or '/'}")
-                    logger.debug(f"🔐   Query: {parsed_url.query}")
-                    logger.debug(f"🔐   Method: {method}")
-                    logger.debug(f"🔐   Body length: {len(body) if body else 0}")
+                    logger.debug("🔐 SIGNING - Full URL: %s", url)
                     if body:
-                        import hashlib
                         import base64
+                        import hashlib
+
                         digest = hashlib.sha256(body).digest()
-                        digest_b64 = base64.b64encode(digest).decode('ascii')
-                        expected_digest = f"sha-256=:{digest_b64}:"
-                        logger.debug(f"🔐   Expected Content-Digest: {expected_digest}")
-                
-                # Note: body=None is fine even if Content-Digest is in signature-input
-                # The library uses Content-Digest value from headers (not computed from body)
-                # If Content-Digest is in signature-input, make sure it's in headers before signing
-                
-                # Log the exact target_uri we pass to sign_request (critical for signature verification debugging)
+                        digest_b64 = base64.b64encode(digest).decode("ascii")
+                        logger.debug(
+                            "🔐   Expected Content-Digest: sha-256=:%s:", digest_b64
+                        )
+
                 target_uri = str(url)
-                logger.info(f"🔐 SIGNING with: method={method}, target_uri={target_uri!r}")
-                
+                logger.info(
+                    "🔐 SIGNING with: method=%s, target_uri=%r", method, target_uri
+                )
+
                 sig_headers = sign_request(
                     method=method,
                     target_uri=target_uri,
                     headers=headers,
-                    body=None,  # Library uses Content-Digest from headers if in signature-input
-                    private_key=self.private_key,
+                    body=None,
+                    private_key=signing_priv,
                     sig_scheme=sig_scheme,
-                    **sign_kwargs
+                    **sign_kwargs,
                 )
-                
-                # Add signature headers to the request
+
                 headers.update(sig_headers)
 
-                if settings.debug:
-                    logger.debug(f"🔐 AAuth: Generated Signature-Input: {sig_headers.get('Signature-Input', '')[:150]}")
-                    logger.debug(f"🔐 AAuth: Generated Signature-Key: {sig_headers.get('Signature-Key', '')[:100]}")
-                    logger.debug(f"🔐 AAuth: Generated Signature: {sig_headers.get('Signature', '')[:100]}")
-                    logger.debug(f"🔐 AAuth: Added signature headers to request")
-                    logger.debug(f"🔐 AAuth: Signature-Input: {sig_headers.get('Signature-Input', '')[:100]}...")
-                    logger.debug(f"🔐 AAuth: Signature-Key: {sig_headers.get('Signature-Key', '')[:100]}...")
-                
-                event_attrs = {
-                    "method": method,
-                    "url": str(url),
-                    "scheme": sig_scheme,
-                    "has_body": body is not None,
-                }
-                if agent_id:
-                    event_attrs["agent_id"] = agent_id
-                if kid:
-                    event_attrs["kid"] = kid
-                add_event("aauth.request_signed", event_attrs)
+                add_event(
+                    "aauth.request_signed",
+                    {
+                        "method": method,
+                        "url": str(url),
+                        "scheme": sig_scheme,
+                        "has_body": body is not None,
+                    },
+                )
                 set_attribute("aauth.signed", True)
                 set_attribute("aauth.scheme", sig_scheme)
-                
+
             except Exception as e:
-                logger.error(f"❌ AAuth: Failed to sign request: {e}")
+                logger.error("❌ AAuth: Failed to sign request: %s", e)
                 if settings.debug:
                     import traceback
+
                     logger.debug(traceback.format_exc())
                 add_event("aauth.signing_failed", {"error": str(e)})
                 set_attribute("aauth.signed", False)
         else:
-            logger.warning(f"⚠️ AAuth: No URL available, skipping signing")
+            logger.warning("⚠️ AAuth: No URL available, skipping signing")
             add_event("aauth.signing_skipped", {"reason": "no_url"})
-        
-        # Update http_kwargs with modified headers
-        http_kwargs['headers'] = headers
-        
-        # Add tracing events
-        add_event("a2a_client.interceptor.headers_injected", {
-            "method_name": method_name,
-            "headers_count": len(headers),
-            "trace_headers": list(self.trace_headers.keys()) if self.trace_headers else [],
-            "has_aauth_signature": 'Signature' in headers
-        })
-        
+
+        http_kwargs["headers"] = headers
+
+        add_event(
+            "a2a_client.interceptor.headers_injected",
+            {
+                "method_name": method_name,
+                "headers_count": len(headers),
+                "trace_headers": list(self.trace_headers.keys()) if self.trace_headers else [],
+                "has_aauth_signature": "Signature" in headers,
+            },
+        )
+
         set_attribute("a2a_client.interceptor.method", method_name)
         set_attribute("a2a_client.interceptor.headers_count", len(headers))
-        set_attribute("a2a_client.interceptor.has_aauth_signature", 'Signature' in headers)
-        
-        if settings.debug:
-            logger.debug(f"🔗 AAuth: Injected {len(headers)} headers for {method_name}")
-        return request_payload, http_kwargs
+        set_attribute(
+            "a2a_client.interceptor.has_aauth_signature", "Signature" in headers
+        )
 
+        if settings.debug:
+            logger.debug("🔗 AAuth: Injected %s headers for %s", len(headers), method_name)
+        return request_payload, http_kwargs

@@ -1,6 +1,8 @@
 """Central logging levels for the backend process.
 
-``DEBUG`` only affects the ``app`` logger tree (this service's code).
+When ``DEBUG`` is true, the ``app`` tree and root use ``DEBUG``. When false, ``LOG_LEVEL``
+(default **INFO**) applies to both root and ``app`` so startup logs (e.g. stable / ephemeral
+JWK from the Agent Server client) are visible without ``DEBUG=true``.
 
 AAuth-related **Python logging** (library + ``aauth.tokens`` in app code) is controlled by:
 
@@ -58,8 +60,16 @@ def _resolve_aauth_library_log_level() -> int:
 
 def configure_logging() -> None:
     """Apply logger levels. Call once at process startup after ``load_dotenv()``."""
-    app_level = logging.DEBUG if settings.debug else logging.WARNING
+    if settings.debug:
+        app_level = logging.DEBUG
+    else:
+        # Default INFO so Agent Server startup (stable / ephemeral keys) is visible; quiet with LOG_LEVEL=WARNING.
+        app_level = _parse_log_level("LOG_LEVEL", logging.INFO)
     logging.getLogger("app").setLevel(app_level)
+    # Root defaults to WARNING; align so ``app.*`` records can reach process handlers after propagation.
+    root = logging.getLogger()
+    if root.level == logging.NOTSET or root.level > app_level:
+        root.setLevel(app_level)
 
     aauth_level = _resolve_aauth_library_log_level()
     logging.getLogger("aauth").setLevel(aauth_level)

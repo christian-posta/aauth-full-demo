@@ -15,6 +15,7 @@ from app.config import settings
 from app.models import OptimizationRequest, OptimizationProgress, OptimizationResults
 from app.tracing_config import span, add_event, set_attribute, extract_context_from_headers
 from app.services.aauth_interceptor import AAuthSigningInterceptor
+from app.services.agent_token_service import agent_token_service
 
 # Configure logging
 logger = logging.getLogger(__name__)
@@ -34,7 +35,7 @@ class A2AService:
         )
     
     async def _create_client(self, trace_context: Any = None) -> tuple[Any, httpx.AsyncClient]:
-        """Create A2A client and HTTP client with AAuth request signing (HWK or jwks_uri)."""
+        """Create A2A client and HTTP client with AAuth agent-token signing."""
         with span("a2a_service.create_client", {
             "agent_url": self.agent_url,
             "has_trace_context": trace_context is not None,
@@ -79,7 +80,9 @@ class A2AService:
                 logger.debug(f"✅ Agent card created: {agent_card}")
             add_event("agent_card_created", {"agent_url": self.agent_url})
             
-            aauth_interceptor = AAuthSigningInterceptor()
+            aauth_interceptor = AAuthSigningInterceptor(
+                agent_token_service=agent_token_service
+            )
             if settings.debug:
                 logger.debug("🔐 AAuth signing interceptor created")
             add_event("aauth_interceptor_created")
