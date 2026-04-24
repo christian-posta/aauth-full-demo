@@ -1,4 +1,5 @@
 # yaml-language-server: $schema=../../schema/local.json
+# yaml-language-server: $schema=../../schema/local.json
 config:
   tracing:
     otlpEndpoint: http://localhost:4317
@@ -25,28 +26,44 @@ config:
         aauth_scheme: 'aauth.scheme'
         aauth_agent_identity: 'aauth.agent'
         sig_key: 'request.headers["signature-key"]'
-# CEL / authorization – You can use the same aauth fields in CEL, e.g.:
-# aauth.scheme == "Jwt"
-# aauth.agent == "https://agent.example.com"
-# aauth.agent_delegate (user/sub for auth+jwt)
-# aauth.jwt_claims (full JWT claims when scheme is JWT).        
+     
 
 binds:
 - port: 3000
   listeners:
   - hostname: "supply-chain-agent.localhost"
     routes:
-    - policies:
-        aauth:
-          mode: optional
-          requiredScheme: jwt
-          timestampTolerance: 60    
+    - name: a2a-authed
+      matches:
+      - path:
+          exact: /
+        method: "POST"
+      - path:
+          exact: /agent/authenticatedExtendedCard
+      policies:
         authorization:
           rules:
-          - "aauth.agent == 'http://backend.localhost:8000' && (!has(aauth.jwt_claims) || (has(aauth.jwt_claims.aud) && aauth.jwt_claims.aud == 'http://supply-chain-agent.localhost:3000' && aauth.jwt_claims.scope.contains('supply-chain:optimize')))"
-          - "request.path.startsWith('/.well-known/')"
-          - "request.path.startsWith('/jwks.json')"
+          - "extauthz.act.sub == extauthz.agent"  
+          - 'extauthz.agent.endsWith("agent-server.example")'
+        extAuthz:
+          host: "localhost:7070"
+          protocol:
+            grpc:
+              context:
+                aauth_resource_id: "supply-chain-agent"
+        a2a: {}
+        backendAuth:
+          passthrough: {}
+        cors:
+          allowOrigins:
+            - "*"
+          allowHeaders:
+            - "*"
+      backends:
+      - host: localhost:9999
 
+    - name: a2a-default
+      policies:
         a2a: {}
         backendAuth:
           passthrough: {}
@@ -60,22 +77,43 @@ binds:
 
   - hostname: "market-analysis-agent.localhost"
     routes:
-    - policies:
-        # Mark this route as a2a traffic
-        aauth:
-          mode: optional
-          requiredScheme: jwt
-          timestampTolerance: 60            
+    - name: a2a-authed
+      matches:
+      - path:
+          exact: /
+        method: "POST"
+      - path:
+          exact: /agent/authenticatedExtendedCard
+      policies:
+        extAuthz:
+          host: "localhost:7070"
+          protocol:
+            grpc:
+              context:
+                aauth_resource_id: "market-analysis-agent"
         a2a: {}
         backendAuth:
-          passthrough: {}             
+          passthrough: {}
         cors:
           allowOrigins:
             - "*"
           allowHeaders:
             - "*"
       backends:
-      - host: localhost:9998      
+      - host: localhost:9998
+
+    - name: a2a-default
+      policies:
+        a2a: {}
+        backendAuth:
+          passthrough: {}
+        cors:
+          allowOrigins:
+            - "*"
+          allowHeaders:
+            - "*"
+      backends:
+      - host: localhost:9998
 
   - routes:
     - name: general-mcp
@@ -104,3 +142,5 @@ binds:
               cmd: npx
               args: ["@modelcontextprotocol/server-sequential-thinking"]              
     
+
+
