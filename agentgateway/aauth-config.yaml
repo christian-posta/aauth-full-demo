@@ -22,11 +22,20 @@ resources:
       alg: EdDSA
       private_key_file: spa-resource-key.pem
     signature_window: 60s
-    allow_pseudonymous: true
+    allow_pseudonymous: false
+    access:
+      require: auth-token
+    person_server:
+      issuer: http://127.0.0.1:8765
+      jwks_uri: http://127.0.0.1:8765/.well-known/jwks.json      
+    # auth_servers:
+    #   - issuer: http://127.0.0.1:8765
+    #     jwks_uri: http://127.0.0.1:8765/.well-known/jwks.json      
     allowed_signature_key_schemes:
       - jwt
     allowed_jwt_types:
-      - aa-agent+jwt      
+      - aa-agent+jwt     
+      - aa-auth+jwt 
     policy:
       name: default
 

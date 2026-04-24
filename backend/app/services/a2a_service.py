@@ -1,12 +1,14 @@
 import asyncio
 import json
+import re
 import uuid
 import logging
-from typing import AsyncGenerator, Dict, Any, Optional
+from typing import AsyncGenerator, Dict, Any, List, Optional, Tuple
 import httpx
 from datetime import datetime
 
 from a2a.client import ClientFactory, ClientConfig
+from a2a.client.errors import A2AClientHTTPError
 from a2a.types import TransportProtocol, Message, Role
 from a2a.client.helpers import create_text_message_object
 from a2a.client import minimal_agent_card
@@ -20,6 +22,78 @@ from app.services.agent_token_service import agent_token_service
 # Configure logging
 logger = logging.getLogger(__name__)
 token_logger = logging.getLogger("aauth.tokens")  # For token/challenge visibility - not suppressed
+
+# SPEC / docs: 401 with `AAuth` (or `aauth`) e.g. require=auth-token; resource-token="…"
+_AAUTH_RESOURCE_TOKEN_RE = re.compile(
+    r"resource-token\s*=\s*\"(?P<tok>[^\"]+)\"",
+    re.IGNORECASE,
+)
+
+
+def _httpx_response_for_a2a_http_error(
+    e: A2AClientHTTPError | httpx.HTTPStatusError,
+) -> Optional[httpx.Response]:
+    """A2A JSON-RPC wraps `HTTPStatusError` in `A2AClientHTTPError` with the cause chained."""
+    if isinstance(e, A2AClientHTTPError) and e.__cause__ and isinstance(
+        e.__cause__, httpx.HTTPStatusError
+    ):
+        return e.__cause__.response
+    if isinstance(e, httpx.HTTPStatusError):
+        return e.response
+    return None
+
+
+def _aauth_headers_from_response(response: httpx.Response) -> List[Tuple[str, str]]:
+    return [
+        (k, v) for k, v in response.headers.items() if "aauth" in k.lower()
+    ]
+
+
+def _log_and_collect_aauth_401(
+    e: A2AClientHTTPError | httpx.HTTPStatusError,
+) -> Dict[str, Any]:
+    """Log 401 AAuth / resource-token (SPEC §6) from response headers; return compact telemetry fields."""
+    out: Dict[str, Any] = {
+        "aauth_header_present": False,
+        "resource_token_in_challenge": False,
+        "resource_token_len": 0,
+    }
+    r = _httpx_response_for_a2a_http_error(e)
+    if r is None:
+        token_logger.info(
+            "401: no httpx response on exception chain; cannot list AAuth headers (expected "
+            "A2AClientHTTPError from JSON-RPC with chained HTTPStatusError)"
+        )
+        return out
+    aauth = _aauth_headers_from_response(r)
+    if not aauth:
+        token_logger.info(
+            "401: no AAuth / aauth response header. Header names: %s",
+            list(r.headers.keys()),
+        )
+        if settings.debug and r.text:
+            token_logger.debug("401 response body (debug): %s", r.text[:2000])
+        return out
+    out["aauth_header_present"] = True
+    max_len = 20000 if settings.debug else 1200
+    for k, v in aauth:
+        vis = v if len(v) <= max_len else v[: max_len - 3] + "…"
+        token_logger.info("401 AAuth / aauth | %s: %s", k, vis)
+        logger.info("401 AAuth challenge header | %s: %s", k, vis)
+    for _, v in aauth:
+        m = _AAUTH_RESOURCE_TOKEN_RE.search(v)
+        if m:
+            raw = m.group("tok")
+            out["resource_token_in_challenge"] = True
+            out["resource_token_len"] = len(raw)
+            if len(raw) > 48:
+                preview = f"{raw[:24]}…{raw[-16:]} (len={len(raw)})"
+            else:
+                preview = raw
+            token_logger.info("401 parsed resource_token from AAuth: %s", preview)
+            logger.info("401 resource_token (from challenge): %s", preview)
+            return out
+    return out
 
 
 class A2AService:
@@ -183,24 +257,37 @@ class A2AService:
                         })
                         _content_from_event(event)
                         break
-                except httpx.HTTPStatusError as e:
+                # JSON-RPC transport wraps httpx failures as A2AClientHTTPError (see
+                # a2a.client.transports.jsonrpc.JsonRpcTransport._send_request), so a gateway
+                # 401 is never an httpx.HTTPStatusError at this call site.
+                except (A2AClientHTTPError, httpx.HTTPStatusError) as e:
                     if httpx_client:
                         try:
                             await httpx_client.aclose()
                         except Exception:
                             pass
-                    if e.response.status_code == 401:
+                    if isinstance(e, A2AClientHTTPError):
+                        status_code = e.status_code
+                        err_detail = e.message
+                    else:
+                        status_code = e.response.status_code
+                        err_detail = str(e.response.url)
+                    if status_code == 401:
                         token_logger.info(
                             "401 from supply-chain-agent: configure policy on agentgateway or fix signatures (%s)",
-                            e.response.url,
+                            err_detail,
                         )
-                        add_event("a2a_http_error", {"status_code": 401})
+                        logger.warning(
+                            "A2A supply-chain HTTP 401 (agentgateway or signing): %s", err_detail
+                        )
+                        aauth_401 = _log_and_collect_aauth_401(e)
+                        add_event("a2a_http_error", {"status_code": 401, **aauth_401})
                         return {
                             "type": "error",
                             "message": "A2A request failed: HTTP 401 (use agentgateway for policy; verify request signing).",
                             "timestamp": datetime.now().isoformat(),
                         }
-                    add_event("a2a_http_error", {"status_code": e.response.status_code})
+                    add_event("a2a_http_error", {"status_code": status_code})
                     raise
                 
                 if response_content:
