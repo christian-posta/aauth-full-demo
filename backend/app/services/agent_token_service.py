@@ -7,7 +7,7 @@ import base64
 import json
 import logging
 import time
-from typing import Any
+from typing import Any, cast
 from urllib.parse import urljoin
 
 import httpx
@@ -118,6 +118,15 @@ class AgentTokenService:
 
         base = settings.agent_server_base.rstrip("/")
         await self._startup_with_retry(base)
+        if self._agent_token:
+            startup_claims = cast(
+                dict[str, Any],
+                pyjwt.decode(self._agent_token, options={"verify_signature": False}),
+            )
+            print(
+                "aa-agent+jwt claims (startup):\n"
+                + json.dumps(startup_claims, indent=2, default=str, sort_keys=True)
+            )
         logger.info("Agent Server registration complete; agent token acquired")
 
     async def _startup_with_retry(self, base: str) -> None:

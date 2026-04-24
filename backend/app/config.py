@@ -40,7 +40,8 @@ class Settings:
     # Agent Server (aa-agent+jwt for outbound A2A). Stable keys: ``backend-stable.key`` /
     # ``backend-stable.pub`` in the backend package root (created on first run).
     agent_server_base: str = _agent_server_base_from_env()
-    agent_name: str = os.getenv("BACKEND_AGENT_NAME", "supply-chain-backend")
+    # Required on POST /register per CLIENTS.md (display name, 1–256 chars after trim).
+    agent_name: str = (os.getenv("BACKEND_AGENT_NAME") or "Backend App").strip() or "Backend App"
     stable_identity_dir: Path = _BACKEND_ROOT
     
     # Agent STS Configuration
