@@ -1,8 +1,8 @@
+AAuth Protocol
 TBD                                                             D. Hardt
 Internet-Draft                                                     Hellō
 Intended status: Standards Track                           13 April 2026
 Expires: 15 October 2026
-
 
                              AAuth Protocol
                      draft-hardt-aauth-protocol-01
@@ -44,15 +44,8 @@ Status of This Memo
 
    This Internet-Draft will expire on 15 October 2026.
 
-
-
-
-
-
 Hardt                    Expires 15 October 2026                [Page 1]
-
 Internet-Draft               AAuth-Protocol                   April 2026
-
 
 Copyright Notice
 
@@ -103,12 +96,8 @@ Table of Contents
        6.2.1.  Response without Resource Token . . . . . . . . . . .  24
        6.2.2.  Response with Resource Token  . . . . . . . . . . . .  25
 
-
-
 Hardt                    Expires 15 October 2026                [Page 2]
-
 Internet-Draft               AAuth-Protocol                   April 2026
-
 
        6.2.3.  Authorization Endpoint Error Responses  . . . . . . .  25
      6.3.  AAuth-Access Response Header  . . . . . . . . . . . . . .  26
@@ -159,12 +148,8 @@ Internet-Draft               AAuth-Protocol                   April 2026
        9.3.2.  AS Decision Logic (Non-Normative) . . . . . . . . . .  51
        9.3.3.  Organization Visibility . . . . . . . . . . . . . . .  52
 
-
-
 Hardt                    Expires 15 October 2026                [Page 3]
-
 Internet-Draft               AAuth-Protocol                   April 2026
-
 
      9.4.  Auth Token  . . . . . . . . . . . . . . . . . . . . . . .  52
        9.4.1.  Auth Token Structure  . . . . . . . . . . . . . . . .  52
@@ -215,12 +200,8 @@ Internet-Draft               AAuth-Protocol                   April 2026
        12.10.4.  Resource Metadata . . . . . . . . . . . . . . . . .  76
    13. Incremental Adoption  . . . . . . . . . . . . . . . . . . . .  77
 
-
-
 Hardt                    Expires 15 October 2026                [Page 4]
-
 Internet-Draft               AAuth-Protocol                   April 2026
-
 
      13.1.  Agent Adoption Path  . . . . . . . . . . . . . . . . . .  77
      13.2.  Resource Adoption Path . . . . . . . . . . . . . . . . .  77
@@ -271,12 +252,8 @@ Internet-Draft               AAuth-Protocol                   April 2026
      A.5.  Browser-Based Applications  . . . . . . . . . . . . . . .  94
      A.6.  Server Workloads  . . . . . . . . . . . . . . . . . . . .  94
 
-
-
 Hardt                    Expires 15 October 2026                [Page 5]
-
 Internet-Draft               AAuth-Protocol                   April 2026
-
 
      A.7.  Managed Desktops  . . . . . . . . . . . . . . . . . . . .  95
    Appendix B.  Detailed Flows . . . . . . . . . . . . . . . . . . .  95
@@ -319,20 +296,8 @@ Internet-Draft               AAuth-Protocol                   April 2026
 
 1.  Introduction
 
-
-
-
-
-
-
-
-
-
-
 Hardt                    Expires 15 October 2026                [Page 6]
-
 Internet-Draft               AAuth-Protocol                   April 2026
-
 
 1.1.  HTTP Clients Need Their Own Identity
 
@@ -382,13 +347,8 @@ Internet-Draft               AAuth-Protocol                   April 2026
 
 1.3.  What AAuth Provides
 
-
-
-
 Hardt                    Expires 15 October 2026                [Page 7]
-
 Internet-Draft               AAuth-Protocol                   April 2026
-
 
    *  *Agent identity without pre-registration*: A domain, static
       metadata, and a JWKS establish identity with no portal, no
@@ -439,12 +399,8 @@ Internet-Draft               AAuth-Protocol                   April 2026
       ([OpenID.Enterprise]), lowering the adoption barrier for identity-
       aware resources.
 
-
-
 Hardt                    Expires 15 October 2026                [Page 8]
-
 Internet-Draft               AAuth-Protocol                   April 2026
-
 
    *  *Well-known metadata and key discovery*: Servers publish metadata
       at well-known URLs ([RFC8615]) and signing keys via JWKS
@@ -493,14 +449,8 @@ Internet-Draft               AAuth-Protocol                   April 2026
 
    Parties:
 
-
-
-
-
 Hardt                    Expires 15 October 2026                [Page 9]
-
 Internet-Draft               AAuth-Protocol                   April 2026
-
 
    *  *Person*: A user or organization — the legal person — on whose
       behalf an agent acts and who is accountable for the agent's
@@ -545,18 +495,8 @@ Internet-Draft               AAuth-Protocol                   April 2026
 
    Protocol concepts:
 
-
-
-
-
-
-
-
-
 Hardt                    Expires 15 October 2026               [Page 10]
-
 Internet-Draft               AAuth-Protocol                   April 2026
-
 
    *  *Mission*: A scoped authorization context for agent governance
       Section 8.  Required when the person's PS requires governance over
@@ -606,13 +546,8 @@ Internet-Draft               AAuth-Protocol                   April 2026
    capabilities.  The protocol works in every mode — adoption does not
    require coordination between parties.
 
-
-
-
 Hardt                    Expires 15 October 2026               [Page 11]
-
 Internet-Draft               AAuth-Protocol                   April 2026
-
 
      +==================+==========+================================+
      | Mode             | Parties  | Description                    |
@@ -662,13 +597,8 @@ Internet-Draft               AAuth-Protocol                   April 2026
    |   Server  |        |              |<-----------------|              |
    +-----------+        +--------------+     resource     +--------------+
 
-
-
-
 Hardt                    Expires 15 October 2026               [Page 12]
-
 Internet-Draft               AAuth-Protocol                   April 2026
-
 
                 Figure 1: Protocol Parties and Relationships
 
@@ -712,19 +642,8 @@ Internet-Draft               AAuth-Protocol                   April 2026
    After authorization, the resource MAY return an AAuth-Access header
    Section 6.3 with an opaque access token for subsequent calls.
 
-
-
-
-
-
-
-
-
-
 Hardt                    Expires 15 October 2026               [Page 13]
-
 Internet-Draft               AAuth-Protocol                   April 2026
-
 
    Agent                                        Resource
      |                                             |
@@ -766,21 +685,8 @@ Internet-Draft               AAuth-Protocol                   April 2026
    the resource to get rich authorization context from the PS without
    building its own identity infrastructure.
 
-
-
-
-
-
-
-
-
-
-
-
 Hardt                    Expires 15 October 2026               [Page 14]
-
 Internet-Draft               AAuth-Protocol                   April 2026
-
 
    Agent                                 Resource       PS
      |                                      |            |
@@ -816,27 +722,8 @@ Internet-Draft               AAuth-Protocol                   April 2026
    federates with the AS Section 9.3 to obtain the auth token
    Section 9.4.
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 Hardt                    Expires 15 October 2026               [Page 15]
-
 Internet-Draft               AAuth-Protocol                   April 2026
-
 
    Agent                                Resource   PS                    AS
      |                                     |       |                      |
@@ -882,17 +769,8 @@ Internet-Draft               AAuth-Protocol                   April 2026
    server is out of scope of this specification.  No mission is
    required.
 
-
-
-
-
-
-
-
 Hardt                    Expires 15 October 2026               [Page 16]
-
 Internet-Draft               AAuth-Protocol                   April 2026
-
 
 4.2.  Agent Governance
 
@@ -942,13 +820,8 @@ Internet-Draft               AAuth-Protocol                   April 2026
    The resource includes the mission object in the resource token it
    issues:
 
-
-
-
 Hardt                    Expires 15 October 2026               [Page 17]
-
 Internet-Draft               AAuth-Protocol                   April 2026
-
 
    Agent                                        Resource
      |                                             |
@@ -999,12 +872,8 @@ Internet-Draft               AAuth-Protocol                   April 2026
    *  *Permission endpoint*: Request permission for actions not governed
       by a remote resource — tool calls, file writes, sending messages.
 
-
-
 Hardt                    Expires 15 October 2026               [Page 18]
-
 Internet-Draft               AAuth-Protocol                   April 2026
-
 
    *  *Audit endpoint*: Log actions performed, providing the PS with a
       complete record for the mission log.
@@ -1055,12 +924,8 @@ Internet-Draft               AAuth-Protocol                   April 2026
       organization administrator may also pre-authorize agents for the
       organization.
 
-
-
 Hardt                    Expires 15 October 2026               [Page 19]
-
 Internet-Draft               AAuth-Protocol                   April 2026
-
 
    *  The PS MAY establish a direct communication channel with the user
       (e.g., email, push notification, or messaging) to support out-of-
@@ -1111,12 +976,8 @@ Internet-Draft               AAuth-Protocol                   April 2026
    *  My Agent@agent.example (uppercase letters and space in local part)
    *  @agent.example (empty local part)
 
-
-
 Hardt                    Expires 15 October 2026               [Page 20]
-
 Internet-Draft               AAuth-Protocol                   April 2026
-
 
    *  agent@http://agent.example (domain includes scheme)
 
@@ -1167,12 +1028,8 @@ Internet-Draft               AAuth-Protocol                   April 2026
    discover the agent's PS from the agent token.  This claim is distinct
    from iss (which identifies the agent server that issued the token).
 
-
-
 Hardt                    Expires 15 October 2026               [Page 21]
-
 Internet-Draft               AAuth-Protocol                   April 2026
-
 
    Agent servers MAY include additional claims in the agent token.
    Companion specifications may define additional claims for use by PSes
@@ -1220,15 +1077,8 @@ Internet-Draft               AAuth-Protocol                   April 2026
        the resource returns 401 with an AAuth-Requirement header
        containing a resource token Section 6.5.
 
-
-
-
-
-
 Hardt                    Expires 15 October 2026               [Page 22]
-
 Internet-Draft               AAuth-Protocol                   April 2026
-
 
    A resource MAY return a 401 with AAuth-Requirement even when the
    agent presents a valid auth token — for example, when the endpoint
@@ -1277,14 +1127,8 @@ Internet-Draft               AAuth-Protocol                   April 2026
    When the agent is operating in a mission context, it includes the
    AAuth-Mission header and adds aauth-mission to the signed components:
 
-
-
-
-
 Hardt                    Expires 15 October 2026               [Page 23]
-
 Internet-Draft               AAuth-Protocol                   April 2026
-
 
    POST /authorize HTTP/1.1
    Host: resource.example
@@ -1330,17 +1174,8 @@ Internet-Draft               AAuth-Protocol                   April 2026
    the resource returns 200 OK and MAY include an AAuth-Access header
    Section 6.3 containing an opaque access token for subsequent calls.
 
-
-
-
-
-
-
-
 Hardt                    Expires 15 October 2026               [Page 24]
-
 Internet-Draft               AAuth-Protocol                   April 2026
-
 
    HTTP/1.1 200 OK
    AAuth-Access: wrapped-opaque-token-value
@@ -1390,13 +1225,8 @@ Internet-Draft               AAuth-Protocol                   April 2026
 
                                   Table 2
 
-
-
-
 Hardt                    Expires 15 October 2026               [Page 25]
-
 Internet-Draft               AAuth-Protocol                   April 2026
-
 
    Error responses use the same format as the token endpoint
    Section 12.5.2.
@@ -1436,23 +1266,8 @@ Internet-Draft               AAuth-Protocol                   April 2026
    interaction, it returns a 202 Accepted response with an interaction
    requirement:
 
-
-
-
-
-
-
-
-
-
-
-
-
-
 Hardt                    Expires 15 October 2026               [Page 26]
-
 Internet-Draft               AAuth-Protocol                   April 2026
-
 
    HTTP/1.1 202 Accepted
    Location: https://resource.example/pending/abc123
@@ -1500,15 +1315,8 @@ Internet-Draft               AAuth-Protocol                   April 2026
 
 6.6.  Resource Token
 
-
-
-
-
-
 Hardt                    Expires 15 October 2026               [Page 27]
-
 Internet-Draft               AAuth-Protocol                   April 2026
-
 
 6.6.1.  Resource Token Structure
 
@@ -1559,12 +1367,8 @@ Internet-Draft               AAuth-Protocol                   April 2026
    4.  Verify aud matches the recipient's own identifier (the PS in
        three-party, or the AS in four-party).
 
-
-
 Hardt                    Expires 15 October 2026               [Page 28]
-
 Internet-Draft               AAuth-Protocol                   April 2026
-
 
    5.  Verify agent matches the requesting agent's identifier.
    6.  Verify agent_jkt matches the JWK Thumbprint of the key used to
@@ -1615,12 +1419,8 @@ Internet-Draft               AAuth-Protocol                   April 2026
      +-----------------+------------------+--------------------------+
      | Call chaining   | resource_token + | Resource acting as agent |
 
-
-
 Hardt                    Expires 15 October 2026               [Page 29]
-
 Internet-Draft               AAuth-Protocol                   April 2026
-
 
      |                 | upstream_token   |                          |
      +-----------------+------------------+--------------------------+
@@ -1664,19 +1464,8 @@ Internet-Draft               AAuth-Protocol                   April 2026
 
    *Example request:*
 
-
-
-
-
-
-
-
-
-
 Hardt                    Expires 15 October 2026               [Page 30]
-
 Internet-Draft               AAuth-Protocol                   April 2026
-
 
    POST /token HTTP/1.1
    Host: ps.example
@@ -1727,12 +1516,8 @@ Internet-Draft               AAuth-Protocol                   April 2026
    In four-party mode, the PS may also pass through a clarification from
    the AS to the agent via the 202 response Section 9.1.
 
-
-
 Hardt                    Expires 15 October 2026               [Page 31]
-
 Internet-Draft               AAuth-Protocol                   April 2026
-
 
 7.2.  User Interaction
 
@@ -1774,21 +1559,8 @@ Internet-Draft               AAuth-Protocol                   April 2026
    proceeding.  The response body MUST include a clarification field
    containing the question and MAY include timeout and options fields.
 
-
-
-
-
-
-
-
-
-
-
-
 Hardt                    Expires 15 October 2026               [Page 32]
-
 Internet-Draft               AAuth-Protocol                   April 2026
-
 
    HTTP/1.1 202 Accepted
    Location: /pending/abc123
@@ -1837,14 +1609,8 @@ Internet-Draft               AAuth-Protocol                   April 2026
    The agent responds by POSTing JSON with clarification_response to the
    pending URL:
 
-
-
-
-
 Hardt                    Expires 15 October 2026               [Page 33]
-
 Internet-Draft               AAuth-Protocol                   April 2026
-
 
    POST /pending/abc123 HTTP/1.1
    Host: ps.example
@@ -1892,15 +1658,8 @@ Internet-Draft               AAuth-Protocol                   April 2026
    The agent MAY cancel the request by sending DELETE to the pending
    URL:
 
-
-
-
-
-
 Hardt                    Expires 15 October 2026               [Page 34]
-
 Internet-Draft               AAuth-Protocol                   April 2026
-
 
    DELETE /pending/abc123 HTTP/1.1
    Host: ps.example
@@ -1951,12 +1710,8 @@ Internet-Draft               AAuth-Protocol                   April 2026
       binding the request to a mission.  When present, the PS evaluates
       the request against the mission context and log history.
 
-
-
 Hardt                    Expires 15 October 2026               [Page 35]
-
 Internet-Draft               AAuth-Protocol                   April 2026
-
 
    POST /permission HTTP/1.1
    Host: ps.example
@@ -2007,12 +1762,8 @@ Internet-Draft               AAuth-Protocol                   April 2026
    mission is present, the PS records the permission request and
    response in the mission log.
 
-
-
 Hardt                    Expires 15 October 2026               [Page 36]
-
 Internet-Draft               AAuth-Protocol                   April 2026
-
 
 7.5.  Audit Endpoint
 
@@ -2040,35 +1791,8 @@ Internet-Draft               AAuth-Protocol                   April 2026
    *  result (OPTIONAL): A JSON object containing the result or outcome
       of the action.
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 Hardt                    Expires 15 October 2026               [Page 37]
-
 Internet-Draft               AAuth-Protocol                   April 2026
-
 
    POST /audit HTTP/1.1
    Host: ps.example
@@ -2118,13 +1842,8 @@ Internet-Draft               AAuth-Protocol                   April 2026
    well-known metadata Section 12.10.2.  The interaction endpoint MAY be
    used with or without a mission.
 
-
-
-
 Hardt                    Expires 15 October 2026               [Page 38]
-
 Internet-Draft               AAuth-Protocol                   April 2026
-
 
 7.6.1.  Interaction Request
 
@@ -2171,16 +1890,8 @@ Internet-Draft               AAuth-Protocol                   April 2026
 
    *Completion example:*
 
-
-
-
-
-
-
 Hardt                    Expires 15 October 2026               [Page 39]
-
 Internet-Draft               AAuth-Protocol                   April 2026
-
 
    POST /interaction HTTP/1.1
    Host: ps.example
@@ -2225,18 +1936,8 @@ Internet-Draft               AAuth-Protocol                   April 2026
    Section 7.3, keeping the mission active.  The PS returns a deferred
    response while the user reviews.
 
-
-
-
-
-
-
-
-
 Hardt                    Expires 15 October 2026               [Page 40]
-
 Internet-Draft               AAuth-Protocol                   April 2026
-
 
    If the PS cannot reach the user and the agent does not have the
    interaction capability, the PS returns interaction_required.  If the
@@ -2287,12 +1988,8 @@ Internet-Draft               AAuth-Protocol                   April 2026
    Section 12.7, presenting its agent token via the Signature-Key header
    using scheme=jwt.
 
-
-
 Hardt                    Expires 15 October 2026               [Page 41]
-
 Internet-Draft               AAuth-Protocol                   April 2026
-
 
    The proposal includes a Markdown description of what the agent
    intends to accomplish, and MAY include a list of tools the agent
@@ -2334,21 +2031,8 @@ Internet-Draft               AAuth-Protocol                   April 2026
    specific information.  The PS returns the AAuth-Mission header with
    the approver and s256 values:
 
-
-
-
-
-
-
-
-
-
-
-
 Hardt                    Expires 15 October 2026               [Page 42]
-
 Internet-Draft               AAuth-Protocol                   April 2026
-
 
    HTTP/1.1 200 OK
    Content-Type: application/json
@@ -2399,12 +2083,8 @@ Internet-Draft               AAuth-Protocol                   April 2026
       session.  The PS determines these based on whether it can reach
       the specific user — for example, via push notification, email, or
 
-
-
 Hardt                    Expires 15 October 2026               [Page 43]
-
 Internet-Draft               AAuth-Protocol                   April 2026
-
 
       an active session.  The agent unions these with its own
       capabilities when constructing the AAuth-Capabilities request
@@ -2453,14 +2133,8 @@ Internet-Draft               AAuth-Protocol                   April 2026
 
    A mission has one of two states:
 
-
-
-
-
 Hardt                    Expires 15 October 2026               [Page 44]
-
 Internet-Draft               AAuth-Protocol                   April 2026
-
 
    *  *active*: The mission is in progress.  The agent can make requests
       against it.
@@ -2511,12 +2185,8 @@ Internet-Draft               AAuth-Protocol                   April 2026
 
    *  approver: The HTTPS URL of the entity that approved the mission
 
-
-
 Hardt                    Expires 15 October 2026               [Page 45]
-
 Internet-Draft               AAuth-Protocol                   April 2026
-
 
    *  s256: The base64url-encoded SHA-256 hash of the approved mission
       JSON
@@ -2558,21 +2228,8 @@ Internet-Draft               AAuth-Protocol                   April 2026
 
    *Example request:*
 
-
-
-
-
-
-
-
-
-
-
-
 Hardt                    Expires 15 October 2026               [Page 46]
-
 Internet-Draft               AAuth-Protocol                   April 2026
-
 
    POST /token HTTP/1.1
    Host: as.resource.example
@@ -2622,13 +2279,8 @@ Internet-Draft               AAuth-Protocol                   April 2026
    *  *requirement=approval* Section 12.3: The AS is obtaining approval
       without requiring user direction.
 
-
-
-
 Hardt                    Expires 15 October 2026               [Page 47]
-
 Internet-Draft               AAuth-Protocol                   April 2026
-
 
    *Payment required* (402):
 
@@ -2677,14 +2329,8 @@ Internet-Draft               AAuth-Protocol                   April 2026
    header Section 9.4.2.  The resource verifies the auth token against
    the AS's JWKS Section 9.4.3.
 
-
-
-
-
 Hardt                    Expires 15 October 2026               [Page 48]
-
 Internet-Draft               AAuth-Protocol                   April 2026
-
 
    The agent receives the auth token from its trusted PS, so signature
    verification is not strictly required.  However, agents SHOULD verify
@@ -2735,12 +2381,8 @@ Internet-Draft               AAuth-Protocol                   April 2026
    AS evaluates the token request and responds based on its current
    policy:
 
-
-
 Hardt                    Expires 15 October 2026               [Page 49]
-
 Internet-Draft               AAuth-Protocol                   April 2026
-
 
    *  *Pre-established*: A business relationship configured between the
       PS and AS, potentially including payment terms, SLA, and
@@ -2765,38 +2407,8 @@ Internet-Draft               AAuth-Protocol                   April 2026
    (202) before issuing an auth token.  Each step uses the same Location
    URL for polling.
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 Hardt                    Expires 15 October 2026               [Page 50]
-
 Internet-Draft               AAuth-Protocol                   April 2026
-
 
    PS                        User                    AS
      |                         |                       |
@@ -2847,12 +2459,8 @@ Internet-Draft               AAuth-Protocol                   April 2026
    The following is a non-normative description of how an AS might
    evaluate a token request:
 
-
-
 Hardt                    Expires 15 October 2026               [Page 51]
-
 Internet-Draft               AAuth-Protocol                   April 2026
-
 
    1.  *PS = AS (same entity)*: Grant directly.  When an organization
        controls both the PS and AS, the federation call is internal and
@@ -2903,12 +2511,8 @@ Internet-Draft               AAuth-Protocol                   April 2026
    identifier for replay detection, audit, and revocation - agent: Agent
    identifier - cnf: Confirmation claim with jwk containing the agent's
 
-
-
 Hardt                    Expires 15 October 2026               [Page 52]
-
 Internet-Draft               AAuth-Protocol                   April 2026
-
 
    public key - act: Actor claim ([RFC8693], Section 4.1) identifying
    the entity that requested this auth token.  In direct authorization,
@@ -2959,12 +2563,8 @@ Internet-Draft               AAuth-Protocol                   April 2026
        ([I-D.hardt-httpbis-signature-key]).  Locate the key matching the
        JWT header kid and verify the JWT signature.
 
-
-
 Hardt                    Expires 15 October 2026               [Page 53]
-
 Internet-Draft               AAuth-Protocol                   April 2026
-
 
    3.  Verify exp is in the future and iat is not in the future.
    4.  Verify iss is a valid HTTPS URL.
@@ -3011,16 +2611,8 @@ Internet-Draft               AAuth-Protocol                   April 2026
        authorization is not required to be a subset of the upstream
        scopes — see Section 10.1.
 
-
-
-
-
-
-
 Hardt                    Expires 15 October 2026               [Page 54]
-
 Internet-Draft               AAuth-Protocol                   April 2026
-
 
 10.  Multi-Hop Resource Access
 
@@ -3061,22 +2653,8 @@ Internet-Draft               AAuth-Protocol                   April 2026
    The recipient (PS or AS) evaluates the downstream request per
    Section 9.4.5.
 
-
-
-
-
-
-
-
-
-
-
-
-
 Hardt                    Expires 15 October 2026               [Page 55]
-
 Internet-Draft               AAuth-Protocol                   April 2026
-
 
    Note that downstream authorization is not required to be a subset of
    the upstream scopes.  A downstream resource may have capabilities
@@ -3125,14 +2703,8 @@ Internet-Draft               AAuth-Protocol                   April 2026
    agent for a specific user, an app marketplace connecting a user to a
    new service, or a PS dashboard directing a user to an agent.
 
-
-
-
-
 Hardt                    Expires 15 October 2026               [Page 56]
-
 Internet-Draft               AAuth-Protocol                   April 2026
-
 
 11.1.  Login Endpoint
 
@@ -3182,13 +2754,8 @@ Internet-Draft               AAuth-Protocol                   April 2026
    session.  If not, the user completes a normal authentication and
    consent flow.
 
-
-
-
 Hardt                    Expires 15 October 2026               [Page 57]
-
 Internet-Draft               AAuth-Protocol                   April 2026
-
 
    User         Third Party     Agent/Resource                  PS
      |               |               |                           |
@@ -3236,15 +2803,8 @@ Internet-Draft               AAuth-Protocol                   April 2026
 
 11.3.  Security Considerations for Third-Party Login
 
-
-
-
-
-
 Hardt                    Expires 15 October 2026               [Page 58]
-
 Internet-Draft               AAuth-Protocol                   April 2026
-
 
    *  The login_endpoint does not carry any tokens, codes, or pre-
       authorized state.  The agent or resource initiates a standard
@@ -3280,27 +2840,8 @@ Internet-Draft               AAuth-Protocol                   April 2026
 
    This specification defines the following capability values:
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 Hardt                    Expires 15 October 2026               [Page 59]
-
 Internet-Draft               AAuth-Protocol                   April 2026
-
 
          +===============+======================================+
          | Value         | Meaning                              |
@@ -3350,13 +2891,8 @@ Internet-Draft               AAuth-Protocol                   April 2026
       corresponding identity claims.  Enterprise identity extensions
       (e.g., org, groups, roles) follow [OpenID.Enterprise].
 
-
-
-
 Hardt                    Expires 15 October 2026               [Page 60]
-
 Internet-Draft               AAuth-Protocol                   April 2026
-
 
    A resource token MUST only include resource scopes that the resource
    has defined in its scope_descriptions metadata, and identity scopes
@@ -3407,12 +2943,8 @@ Internet-Draft               AAuth-Protocol                   April 2026
    *  requirement: A Token ([RFC8941], Section 3.3.4) indicating the
       requirement type.
 
-
-
 Hardt                    Expires 15 October 2026               [Page 61]
-
 Internet-Draft               AAuth-Protocol                   April 2026
-
 
    Additional members are defined per requirement value.  Recipients
    MUST ignore unknown members.
@@ -3463,12 +2995,8 @@ Internet-Draft               AAuth-Protocol                   April 2026
    payment approval, or any decision requiring a human in the loop — it
    returns a 202 Accepted response:
 
-
-
 Hardt                    Expires 15 October 2026               [Page 62]
-
 Internet-Draft               AAuth-Protocol                   April 2026
-
 
    HTTP/1.1 202 Accepted
    AAuth-Requirement:
@@ -3506,25 +3034,8 @@ Internet-Draft               AAuth-Protocol                   April 2026
    the request is still pending.  A non-202 response is terminal — 200
    indicates success, 403 indicates denial, and 408 indicates timeout.
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 Hardt                    Expires 15 October 2026               [Page 63]
-
 Internet-Draft               AAuth-Protocol                   April 2026
-
 
    Agent                        User                         Server
      |                            |                             |
@@ -3574,13 +3085,8 @@ Internet-Draft               AAuth-Protocol                   April 2026
    compliance review, direct user authorization via established
    communication channel.
 
-
-
-
 Hardt                    Expires 15 October 2026               [Page 64]
-
 Internet-Draft               AAuth-Protocol                   April 2026
-
 
 12.4.  Deferred Responses
 
@@ -3630,13 +3136,8 @@ Internet-Draft               AAuth-Protocol                   April 2026
    *  Retry-After (REQUIRED): Seconds the agent SHOULD wait before
       polling. 0 means retry immediately.
 
-
-
-
 Hardt                    Expires 15 October 2026               [Page 65]
-
 Internet-Draft               AAuth-Protocol                   April 2026
-
 
    *  Cache-Control: no-store (REQUIRED): Prevents caching of pending
       responses.
@@ -3679,20 +3180,8 @@ Internet-Draft               AAuth-Protocol                   April 2026
    token endpoints, and resource endpoints during call chaining.  A
    non-202 response terminates polling.
 
-
-
-
-
-
-
-
-
-
-
 Hardt                    Expires 15 October 2026               [Page 66]
-
 Internet-Draft               AAuth-Protocol                   April 2026
-
 
 Initial request (with Prefer: wait=N)
     |
@@ -3743,12 +3232,8 @@ Initial request (with Prefer: wait=N)
    |                        |        | required fields                 |
    +------------------------+--------+---------------------------------+
 
-
-
 Hardt                    Expires 15 October 2026               [Page 67]
-
 Internet-Draft               AAuth-Protocol                   April 2026
-
 
    | invalid_agent_token    | 400    | Agent token malformed or        |
    |                        |        | signature verification          |
@@ -3798,13 +3283,8 @@ Internet-Draft               AAuth-Protocol                   April 2026
 
                                  Table 8
 
-
-
-
 Hardt                    Expires 15 October 2026               [Page 68]
-
 Internet-Draft               AAuth-Protocol                   April 2026
-
 
 12.6.  Token Revocation
 
@@ -3853,14 +3333,8 @@ Internet-Draft               AAuth-Protocol                   April 2026
       lifecycle — all tokens have limited lifetimes and require periodic
       re-issuance, which provides a natural policy re-evaluation point.
 
-
-
-
-
 Hardt                    Expires 15 October 2026               [Page 69]
-
 Internet-Draft               AAuth-Protocol                   April 2026
-
 
    Revocation endpoints are advertised in server metadata as
    revocation_endpoint.  Resources that accept revocation requests MUST
@@ -3907,16 +3381,8 @@ Internet-Draft               AAuth-Protocol                   April 2026
    ([I-D.hardt-httpbis-signature-key]) for scheme definitions, key
    discovery, and verification procedures.
 
-
-
-
-
-
-
 Hardt                    Expires 15 October 2026               [Page 70]
-
 Internet-Draft               AAuth-Protocol                   April 2026
-
 
 12.7.3.  Signing (Agent)
 
@@ -3965,14 +3431,8 @@ Internet-Draft               AAuth-Protocol                   April 2026
        components, verify those are covered as well.  If not, return
        invalid_input with required_input.
 
-
-
-
-
 Hardt                    Expires 15 October 2026               [Page 71]
-
 Internet-Draft               AAuth-Protocol                   April 2026
-
 
    3.  Verify the created parameter is present and within the server's
        signature validity window of the server's current time.  The
@@ -4023,12 +3483,8 @@ Internet-Draft               AAuth-Protocol                   April 2026
    *  MUST contain only scheme and host (no port, path, query, or
       fragment)
 
-
-
 Hardt                    Expires 15 October 2026               [Page 72]
-
 Internet-Draft               AAuth-Protocol                   April 2026
-
 
    *  MUST NOT include a trailing slash
    *  MUST be lowercase
@@ -4075,16 +3531,8 @@ Internet-Draft               AAuth-Protocol                   April 2026
    Participants publish metadata at well-known URLs ([RFC8615]) to
    enable discovery.
 
-
-
-
-
-
-
 Hardt                    Expires 15 October 2026               [Page 73]
-
 Internet-Draft               AAuth-Protocol                   April 2026
-
 
 12.10.1.  Agent Server Metadata
 
@@ -4134,13 +3582,8 @@ Internet-Draft               AAuth-Protocol                   April 2026
      "jwks_uri": "https://ps.example/.well-known/jwks.json"
    }
 
-
-
-
 Hardt                    Expires 15 October 2026               [Page 74]
-
 Internet-Draft               AAuth-Protocol                   April 2026
-
 
    Fields:
 
@@ -4188,15 +3631,8 @@ Internet-Draft               AAuth-Protocol                   April 2026
       revoke tokens Section 12.6
    *  jwks_uri (REQUIRED): URL to the AS's JSON Web Key Set
 
-
-
-
-
-
 Hardt                    Expires 15 October 2026               [Page 75]
-
 Internet-Draft               AAuth-Protocol                   April 2026
-
 
 12.10.4.  Resource Metadata
 
@@ -4244,15 +3680,8 @@ Internet-Draft               AAuth-Protocol                   April 2026
       IoT) MAY advertise a larger value.  High-security resources MAY
       advertise a smaller value.
 
-
-
-
-
-
 Hardt                    Expires 15 October 2026               [Page 76]
-
 Internet-Draft               AAuth-Protocol                   April 2026
-
 
    *  additional_signature_components (OPTIONAL): Array of HTTP message
       component identifiers ([RFC9421]) that agents MUST include in the
@@ -4300,15 +3729,8 @@ Internet-Draft               AAuth-Protocol                   April 2026
    Each step builds on the previous one.  A resource that adopts any
    step works with agents at all identity levels.
 
-
-
-
-
-
 Hardt                    Expires 15 October 2026               [Page 77]
-
 Internet-Draft               AAuth-Protocol                   April 2026
-
 
    1.  *Recognize AAuth signatures*: Verify HTTP Message Signatures and
        respond with Accept-Signature headers
@@ -4359,12 +3781,8 @@ Internet-Draft               AAuth-Protocol                   April 2026
     |          |               |                  | access            |
     +----------+---------------+------------------+-------------------+
 
-
-
 Hardt                    Expires 15 October 2026               [Page 78]
-
 Internet-Draft               AAuth-Protocol                   April 2026
-
 
                                   Table 9
 
@@ -4410,17 +3828,8 @@ Internet-Draft               AAuth-Protocol                   April 2026
    fields MUST be sanitized before rendering to prevent script
    injection.
 
-
-
-
-
-
-
-
 Hardt                    Expires 15 October 2026               [Page 79]
-
 Internet-Draft               AAuth-Protocol                   April 2026
-
 
 14.6.  Interaction Code Misdirection
 
@@ -4471,12 +3880,8 @@ Internet-Draft               AAuth-Protocol                   April 2026
    the agent at the PS via the interaction flow.  An organization
    administrator may pre-authorize agents for the organization.  Once
 
-
-
 Hardt                    Expires 15 October 2026               [Page 80]
-
 Internet-Draft               AAuth-Protocol                   April 2026
-
 
    established, the PS MUST NOT allow a different person to claim the
    same agent.  If an agent's association needs to change (e.g., an
@@ -4527,12 +3932,8 @@ Internet-Draft               AAuth-Protocol                   April 2026
    tokens independently.  Shorter auth token lifetimes reduce the window
    between a control action and natural expiration.
 
-
-
 Hardt                    Expires 15 October 2026               [Page 81]
-
 Internet-Draft               AAuth-Protocol                   April 2026
-
 
 14.14.  TLS Requirements
 
@@ -4583,12 +3984,8 @@ Internet-Draft               AAuth-Protocol                   April 2026
 
    *  Status: permanent
 
-
-
 Hardt                    Expires 15 October 2026               [Page 82]
-
 Internet-Draft               AAuth-Protocol                   April 2026
-
 
    *  Structured Type: Dictionary
 
@@ -4634,17 +4031,8 @@ Internet-Draft               AAuth-Protocol                   April 2026
    This specification registers the following well-known URIs per
    [RFC8615]:
 
-
-
-
-
-
-
-
 Hardt                    Expires 15 October 2026               [Page 83]
-
 Internet-Draft               AAuth-Protocol                   April 2026
-
 
        +=====================+===================+=================+
        | URI Suffix          | Change Controller | Reference       |
@@ -4695,12 +4083,8 @@ Internet-Draft               AAuth-Protocol                   April 2026
    *  Interoperability considerations: N/A
    *  Published specification: This document, Section 9.4
 
-
-
 Hardt                    Expires 15 October 2026               [Page 84]
-
 Internet-Draft               AAuth-Protocol                   April 2026
-
 
    *  Applications that use this media type: AAuth ASes, agents, and
       resources
@@ -4742,21 +4126,8 @@ Internet-Draft               AAuth-Protocol                   April 2026
    This specification registers the following claims in the IANA "JSON
    Web Token Claims" registry established by [RFC7519]:
 
-
-
-
-
-
-
-
-
-
-
-
 Hardt                    Expires 15 October 2026               [Page 85]
-
 Internet-Draft               AAuth-Protocol                   April 2026
-
 
     +===========+===========================+============+===========+
     | Claim     | Claim Description         | Change     | Reference |
@@ -4807,12 +4178,8 @@ Internet-Draft               AAuth-Protocol                   April 2026
    This specification establishes the AAuth Capability Value Registry.
    The registry policy is Specification Required ([RFC8126]).
 
-
-
 Hardt                    Expires 15 October 2026               [Page 86]
-
 Internet-Draft               AAuth-Protocol                   April 2026
-
 
                      +===============+===============+
                      | Value         | Reference     |
@@ -4858,17 +4225,8 @@ Internet-Draft               AAuth-Protocol                   April 2026
 
    The following implementations are known:
 
-
-
-
-
-
-
-
 Hardt                    Expires 15 October 2026               [Page 87]
-
 Internet-Draft               AAuth-Protocol                   April 2026
-
 
    *  *TypeScript* — github.com/hellocoop/AAuth
       (https://github.com/hellocoop/AAuth).  Organization: Hellō.
@@ -4913,18 +4271,8 @@ Internet-Draft               AAuth-Protocol                   April 2026
               <https://dickhardt.github.io/signature-key/draft-hardt-
               httpbis-signature-key.html>.
 
-
-
-
-
-
-
-
-
 Hardt                    Expires 15 October 2026               [Page 88]
-
 Internet-Draft               AAuth-Protocol                   April 2026
-
 
    [I-D.ryan-httpauth-payment]
               Ryan, B., Moxey, J., Meagher, T., Weinstein, J., and S.
@@ -4973,14 +4321,8 @@ Internet-Draft               AAuth-Protocol                   April 2026
               RFC 7595, DOI 10.17487/RFC7595, June 2015,
               <https://www.rfc-editor.org/info/rfc7595>.
 
-
-
-
-
 Hardt                    Expires 15 October 2026               [Page 89]
-
 Internet-Draft               AAuth-Protocol                   April 2026
-
 
    [RFC7638]  Jones, M. and N. Sakimura, "JSON Web Key (JWK)
               Thumbprint", RFC 7638, DOI 10.17487/RFC7638, September
@@ -5028,15 +4370,8 @@ Internet-Draft               AAuth-Protocol                   April 2026
               DOI 10.17487/RFC9110, June 2022,
               <https://www.rfc-editor.org/info/rfc9110>.
 
-
-
-
-
-
 Hardt                    Expires 15 October 2026               [Page 90]
-
 Internet-Draft               AAuth-Protocol                   April 2026
-
 
    [RFC9325]  Sheffer, Y., Saint-Andre, P., and T. Fossati,
               "Recommendations for Secure Use of Transport Layer
@@ -5087,12 +4422,8 @@ Internet-Draft               AAuth-Protocol                   April 2026
               RFC 7942, DOI 10.17487/RFC7942, July 2016,
               <https://www.rfc-editor.org/info/rfc7942>.
 
-
-
 Hardt                    Expires 15 October 2026               [Page 91]
-
 Internet-Draft               AAuth-Protocol                   April 2026
-
 
    [RFC8414]  Jones, M., Sakimura, N., and J. Bradley, "OAuth 2.0
               Authorization Server Metadata", RFC 8414,
@@ -5141,14 +4472,8 @@ A.1.  Self-Hosted Agents
    private key.  Verifiers resolve the agent token against the published
    JWKS.
 
-
-
-
-
 Hardt                    Expires 15 October 2026               [Page 92]
-
 Internet-Draft               AAuth-Protocol                   April 2026
-
 
    This is the simplest deployment model — a developer or user publishes
    static files and runs software that signs its own requests.  When the
@@ -5198,13 +4523,8 @@ A.3.  Desktop and CLI Applications
    above is the most common approach.  The agent stores its key in a
    platform vault (macOS Keychain, Windows TPM, Linux Secret Service).
 
-
-
-
 Hardt                    Expires 15 October 2026               [Page 93]
-
 Internet-Draft               AAuth-Protocol                   April 2026
-
 
 A.4.  Mobile Applications
 
@@ -5253,14 +4573,8 @@ A.5.  Browser-Based Applications
 
 A.6.  Server Workloads
 
-
-
-
-
 Hardt                    Expires 15 October 2026               [Page 94]
-
 Internet-Draft               AAuth-Protocol                   April 2026
-
 
    1.  The agent generates an ephemeral signing key pair (e.g.,
        Ed25519).
@@ -5305,18 +4619,8 @@ B.1.  Two-Party: Resource-Managed with Interaction
    completes interaction, and the agent receives an AAuth-Access token
    for subsequent calls.
 
-
-
-
-
-
-
-
-
 Hardt                    Expires 15 October 2026               [Page 95]
-
 Internet-Draft               AAuth-Protocol                   April 2026
-
 
    Agent                            Resource              User
      |                                 |                    |
@@ -5356,23 +4660,8 @@ B.2.  Four-Party: 401 Resource Challenge
    challenges with a 401 containing a resource token.  The PS federates
    with the AS without user interaction.
 
-
-
-
-
-
-
-
-
-
-
-
-
-
 Hardt                    Expires 15 October 2026               [Page 96]
-
 Internet-Draft               AAuth-Protocol                   April 2026
-
 
    Agent                          Resource               PS
      |                               |                    |
@@ -5406,29 +4695,8 @@ B.3.  Four-Party: User Authorization
    authorization_endpoint, then requests authorization from the PS.  The
    PS requires user consent via interaction.
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 Hardt                    Expires 15 October 2026               [Page 97]
-
 Internet-Draft               AAuth-Protocol                   April 2026
-
 
    User        Agent                Resource             PS
      |           |                     |                  |
@@ -5479,12 +4747,8 @@ B.4.  Four-Party: Direct Approval
    The PS obtains approval directly — via push notification, existing
    session, or email — without the agent facilitating a redirect.
 
-
-
 Hardt                    Expires 15 October 2026               [Page 98]
-
 Internet-Draft               AAuth-Protocol                   April 2026
-
 
    Agent                 Resource       PS              User
      |                      |            |                |
@@ -5528,19 +4792,8 @@ B.5.  Four-Party: Call Chaining
    agent, sending the downstream resource token plus its own agent token
    and the upstream auth token to the PS.
 
-
-
-
-
-
-
-
-
-
 Hardt                    Expires 15 October 2026               [Page 99]
-
 Internet-Draft               AAuth-Protocol                   April 2026
-
 
    Agent        Resource 1       Resource 2          PS
      |              |                |                 |
@@ -5585,18 +4838,8 @@ B.6.  Interaction Chaining
    user interaction for the downstream access, Resource 1 chains the
    interaction back to the original agent.
 
-
-
-
-
-
-
-
-
 Hardt                    Expires 15 October 2026              [Page 100]
-
 Internet-Draft               AAuth-Protocol                   April 2026
-
 
    User      Agent       Resource 1      Resource 2    PS
      |         |              |               |          |
@@ -5647,12 +4890,8 @@ Internet-Draft               AAuth-Protocol                   April 2026
      |         |              | HTTPSig w/    |          |
      |         |              | auth token    |          |
 
-
-
 Hardt                    Expires 15 October 2026              [Page 101]
-
 Internet-Draft               AAuth-Protocol                   April 2026
-
 
      |         |              |-------------->|          |
      |         |              |               |          |
@@ -5701,14 +4940,8 @@ C.1.3.  Why Every Agent Has a Person
    present, the PS ensures there is always an accountable party for
    authorization decisions, audit, and liability.
 
-
-
-
-
 Hardt                    Expires 15 October 2026              [Page 102]
-
 Internet-Draft               AAuth-Protocol                   April 2026
-
 
 C.1.4.  Why the ps Claim in Agent Tokens
 
@@ -5755,16 +4988,8 @@ C.2.4.  Why No Authorization Code
    exclusively via polling, authenticated by the agent's HTTP Message
    Signature.
 
-
-
-
-
-
-
 Hardt                    Expires 15 October 2026              [Page 103]
-
 Internet-Draft               AAuth-Protocol                   April 2026
-
 
 C.2.5.  Why Callback URL Has No Security Role
 
@@ -5812,15 +5037,8 @@ C.3.2.  Why Four Adoption Modes
    Agent governance (missions, permissions, audit) works independently
    of resource access modes.
 
-
-
-
-
-
 Hardt                    Expires 15 October 2026              [Page 104]
-
 Internet-Draft               AAuth-Protocol                   April 2026
-
 
 C.3.3.  Why Resource Tokens
 
@@ -5871,12 +5089,8 @@ C.3.5.  Why Missions Are Not a Policy Language
    (RAR) require clients and servers to agree on domain-specific type
    values and JSON structures — workable within a single API but
 
-
-
 Hardt                    Expires 15 October 2026              [Page 105]
-
 Internet-Draft               AAuth-Protocol                   April 2026
-
 
    combinatorially explosive across arbitrary services.  UMA attempted
    cross-domain resource sharing with machine-readable permission
@@ -5919,20 +5133,8 @@ Internet-Draft               AAuth-Protocol                   April 2026
    enforcement, since those parties lack the context to evaluate the
    mission meaningfully.
 
-
-
-
-
-
-
-
-
-
-
 Hardt                    Expires 15 October 2026              [Page 106]
-
 Internet-Draft               AAuth-Protocol                   April 2026
-
 
 C.3.6.  Why Missions Have Only Two States
 
@@ -5977,18 +5179,8 @@ C.4.1.  Why Not mTLS?
    service mesh).  AAuth addresses application-level identity where
    progressive requirements and intermediary compatibility are needed.
 
-
-
-
-
-
-
-
-
 Hardt                    Expires 15 October 2026              [Page 107]
-
 Internet-Draft               AAuth-Protocol                   April 2026
-
 
 C.4.2.  Why Not DPoP?
 
@@ -6037,14 +5229,8 @@ C.4.3.  Why Not Extend GNAP
    profile so constrained that it would be a distinct protocol in
    practice.
 
-
-
-
-
 Hardt                    Expires 15 October 2026              [Page 108]
-
 Internet-Draft               AAuth-Protocol                   April 2026
-
 
    *GNAP's generality is a liability for this use case.* GNAP is
    designed to be maximally flexible — interaction modes, key proofing
@@ -6092,15 +5278,8 @@ C.4.4.  Why Not Extend WWW-Authenticate?
        request="eyJhbW91bnQiOiIxMDAw..."
    Accept-Signature: sig=("@method" "@authority" "@path");sigkey=jkt
 
-
-
-
-
-
 Hardt                    Expires 15 October 2026              [Page 109]
-
 Internet-Draft               AAuth-Protocol                   April 2026
-
 
 C.4.5.  Why Not Extend OAuth?
 
@@ -6149,14 +5328,8 @@ C.4.5.  Why Not Extend OAuth?
    but it cannot provide the identity, governance, and federation that
    agents need as they operate across trust domains.
 
-
-
-
-
 Hardt                    Expires 15 October 2026              [Page 110]
-
 Internet-Draft               AAuth-Protocol                   April 2026
-
 
    Rather than layer these changes onto OAuth — which would break
    backward compatibility and produce something unrecognizable — AAuth
@@ -6170,43 +5343,5 @@ Author's Address
    Dick Hardt
    Hellō
    Email: dick.hardt@gmail.com
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 
 Hardt                    Expires 15 October 2026              [Page 111]

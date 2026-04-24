@@ -10,10 +10,12 @@ jwks_cache:
 resources:
   - id: supply-chain-agent
     issuer: http://localhost:8081
-    # hosts: no longer needed — aauth_resource_id is set in agentgateway context
-    # hosts:
-    #   - "supply-chain-agent.localhost:3000"
-    #   - "supply-chain-agent.localhost"
+    # Needed for host-based routing on the HTTP sidecar (/.well-known/*, /resource/token).
+    # The gRPC ext-authz path uses aauth_resource_id from agentgateway context (no hosts needed there),
+    # but the Person Server discovers JWKS via GET http://localhost:8081/.well-known/aauth-resource.json,
+    # which uses Host-header routing on the HTTP server — so localhost:8081 must be registered here.
+    hosts:
+      - localhost:8081
     # we will need the following override: until we get this in: https://github.com/agentgateway/agentgateway/pull/1641
     # once that PR is in, we can comment this out:
     authority_override: "supply-chain-agent.localhost:3000"
@@ -23,6 +25,20 @@ resources:
       private_key_file: spa-resource-key.pem
     signature_window: 60s
     allow_pseudonymous: false
+    # OAuth-style scopes this resource advertises (metadata + policy hints).
+    supported_scopes:
+      - supply-chain:check
+      - supply-chain:read
+      - supply-chain:optimize
+    scope_descriptions:
+      supply-chain:check: Check supply chain
+      supply-chain:read: Read supply chain
+      supply-chain:optimize: Optimize supply chain
+    # Default scopes to embed in 401 challenge resource tokens when the agent
+    # did not proactively call authorization_endpoint with a scope body.
+    default_resource_token_scopes:
+      - supply-chain:check
+      - supply-chain:read
     access:
       require: auth-token
     person_server:
