@@ -1,25 +1,7 @@
 #!/usr/bin/env python3
-"""
-Supply Chain Agent - A2A HTTP Server
-
-CLI options (parsed before .env load; override env vars):
-  --signature-scheme {hwk,jwks_uri}       Override AAUTH_SIGNATURE_SCHEME
-
-Example: uv run . --signature-scheme jwks_uri
-"""
-import argparse
+"""Supply Chain Agent - A2A HTTP server (outbound A2A uses Agent Server aa-agent+jwt; see env.example)."""
+import asyncio
 import os
-
-# Parse CLI args before load_dotenv and any app imports
-parser = argparse.ArgumentParser(description="Supply Chain Agent")
-parser.add_argument(
-    "--signature-scheme",
-    choices=["hwk", "jwks_uri"],
-    help="AAuth signature scheme (overrides AAUTH_SIGNATURE_SCHEME env)",
-)
-args, _ = parser.parse_known_args()
-if args.signature_scheme:
-    os.environ["AAUTH_SIGNATURE_SCHEME"] = args.signature_scheme
 
 import uvicorn
 from dotenv import load_dotenv
@@ -42,18 +24,18 @@ from a2a.types import (
 from agent_executor import (
     SupplyChainOptimizerExecutor,  # type: ignore[import-untyped]
 )
-from aauth_interceptor import get_signing_keypair
+from agent_token_service import agent_token_service
 from aauth import generate_jwks, generate_agent_metadata
 from starlette.responses import JSONResponse
 
 # Initialize OpenTelemetry tracing
 from tracing_config import initialize_tracing
 
-if __name__ == '__main__':
-    # Initialize tracing before starting the server
+
+async def main() -> None:
     jaeger_host = os.getenv("JAEGER_HOST")
     jaeger_port = int(os.getenv("JAEGER_PORT", "4317"))
-    
+
     print("🔗 Initializing OpenTelemetry tracing...")
     initialize_tracing(
         service_name="supply-chain-agent",
@@ -61,10 +43,9 @@ if __name__ == '__main__':
         jaeger_port=jaeger_port,
         enable_console_exporter=None  # Will use environment variable ENABLE_CONSOLE_EXPORTER
     )
-    
-    # Check console exporter status
+
     console_exporter_enabled = os.getenv("ENABLE_CONSOLE_EXPORTER", "true").lower() == "true"
-    
+
     if jaeger_host:
         print(f"🔗 Tracing configured with OTLP at {jaeger_host}:{jaeger_port}")
         if console_exporter_enabled:
@@ -76,8 +57,7 @@ if __name__ == '__main__':
             print("🔗 Tracing configured with console exporter only")
         else:
             print("🔗 Tracing configured with console exporter DISABLED")
-    
-    # --8<-- [start:AgentSkill]
+
     skill = AgentSkill(
         id='supply_chain_optimization',
         name='Enterprise Supply Chain Optimization',
@@ -89,7 +69,6 @@ if __name__ == '__main__':
             'ensure we have adequate MacBook inventory for Q2 hiring targets'
         ],
     )
-    # --8<-- [end:AgentSkill]
 
     extended_skill = AgentSkill(
         id='business_policy_application',
@@ -103,14 +82,10 @@ if __name__ == '__main__':
         ],
     )
 
-    # Get port from environment variable or use default
     port = int(os.getenv("SUPPLY_CHAIN_AGENT_PORT", "9999"))
-    
-    # --8<-- [start:AgentCard]
-    # Get agent URL from environment variable or use default
+
     agent_url = os.getenv("SUPPLY_CHAIN_AGENT_URL", f"http://localhost:{port}/")
-    
-    # This will be the public-facing agent card
+
     public_agent_card = AgentCard(
         name='Supply Chain Optimizer Agent',
         description='High-level orchestration agent that optimizes enterprise laptop supply chains by analyzing requirements, applying business policies, and generating procurement recommendations. Interprets user intent like "optimize laptop" and provides structured analysis with business rule compliance.',
@@ -127,9 +102,8 @@ if __name__ == '__main__':
         default_input_modes=['text/plain', 'application/json'],
         default_output_modes=['text/plain', 'application/json'],
         capabilities=AgentCapabilities(streaming=False),
-        skills=[skill],  # Only the basic skill for the public card
+        skills=[skill],
         supports_authenticated_extended_card=True,
-        # Security configuration
         security_schemes={
             'bearerAuth': SecurityScheme(
                 root=HTTPAuthSecurityScheme(
@@ -143,21 +117,16 @@ if __name__ == '__main__':
             {'bearerAuth': ['supply-chain:optimize', 'agents:delegate']}
         ],
     )
-    # --8<-- [end:AgentCard]
 
-    # This will be the authenticated extended agent card
-    # It includes the additional 'extended_skill'
     specific_extended_agent_card = public_agent_card.model_copy(
         update={
-            'name': 'Supply Chain Optimizer Agent - Extended Edition',  # Different name for clarity
+            'name': 'Supply Chain Optimizer Agent - Extended Edition',
             'description': 'The full-featured supply chain optimization agent for authenticated users with additional business policy and compliance management capabilities.',
-            'version': '1.0.1',  # Could even be a different version
-            # Capabilities and other fields like url, default_input_modes, default_output_modes,
-            # supports_authenticated_extended_card are inherited from public_agent_card unless specified here.
+            'version': '1.0.1',
             'skills': [
                 skill,
                 extended_skill,
-            ],  # Both skills for the extended card
+            ],
         }
     )
 
@@ -174,14 +143,11 @@ if __name__ == '__main__':
 
     print(f"🚀 Starting Supply Chain Agent on port {port}")
     print(f"🔗 Agent URL: {agent_url}")
-    
-    # Build the Starlette app and add middleware to capture HTTP headers
-    # This is necessary because the A2A SDK doesn't expose HTTP headers to the AgentExecutor
+
     app = server.build()
     app.add_middleware(HTTPHeadersCaptureMiddleware)
     print(f"🔐 Added HTTPHeadersCaptureMiddleware for AAuth header capture")
-    
-    # Add JWKS endpoints for AAuth signature verification
+
     @app.route("/.well-known/aauth-agent.json", methods=["GET"])
     async def aauth_agent_metadata(request):
         agent_id_url = os.getenv("SUPPLY_CHAIN_AGENT_ID_URL", agent_url.rstrip('/'))
@@ -197,15 +163,24 @@ if __name__ == '__main__':
 
     @app.route("/jwks.json", methods=["GET"])
     async def jwks_endpoint(request):
-        """JWKS endpoint for AAuth signature verification.
-        
-        Returns JSON Web Key Set containing the agent's public signing key.
-        Used by both agent and resource metadata endpoints.
-        """
-        _, _, public_jwk = get_signing_keypair()
+        """JWKS for current PoP key (matches agent_token cnf.jwk after Agent Server registration)."""
+        ephemeral_jwk = agent_token_service.get_ephemeral_pub_jwk()
+        if not ephemeral_jwk:
+            return JSONResponse({"keys": []}, status_code=503)
+        public_jwk = dict(ephemeral_jwk)
+        if "kid" not in public_jwk:
+            public_jwk["kid"] = "supply-chain-agent-ephemeral-1"
         jwks = generate_jwks([public_jwk])
         return JSONResponse(jwks)
-    
+
     print(f"🔐 Added JWKS endpoints: /.well-known/aauth-agent.json and /jwks.json")
-    
-    uvicorn.run(app, host='0.0.0.0', port=port)
+
+    await agent_token_service.startup()
+
+    config = uvicorn.Config(app, host="0.0.0.0", port=port)
+    server_uv = uvicorn.Server(config)
+    await server_uv.serve()
+
+
+if __name__ == '__main__':
+    asyncio.run(main())

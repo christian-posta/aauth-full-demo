@@ -15,7 +15,8 @@ from tracing_config import (
     inject_context_to_headers, initialize_tracing
 )
 from http_headers_middleware import get_current_request_headers
-from aauth_interceptor import AAuthSigningInterceptor, get_signing_keypair
+from aauth_interceptor import AAuthSigningInterceptor
+from agent_token_service import agent_token_service
 
 # Configure logging
 logger = logging.getLogger(__name__)
@@ -73,16 +74,16 @@ class SupplyChainOptimizerAgent:
         if DEBUG:
             logger.debug(f"🔗 Market Analysis Agent URL: {self.market_analysis_url}")
         self.market_analysis_client = None
-        # Note: JWT/OBO token exchange removed - now using AAuth HWK signing
+        # Note: Outbound calls use Agent Server aa-agent+jwt (see agent_token_service + aauth_interceptor).
 
     async def _get_market_analysis_client(self):
-        """Get or create the market analysis agent client with AAuth request signing (HWK or jwks_uri)."""
+        """Get or create the market analysis agent client with AAuth agent JWT signing."""
         if self.market_analysis_client is not None:
             return self.market_analysis_client
         try:
             add_event("creating_market_analysis_client")
             set_attribute("market_analysis.url", self.market_analysis_url)
-            set_attribute("market_analysis.auth_method", "aauth")
+            set_attribute("market_analysis.auth_method", "aauth_jwt")
 
             connect_timeout = float(os.getenv("MARKET_ANALYSIS_CONNECT_TIMEOUT", "30.0"))
             read_timeout = float(os.getenv("MARKET_ANALYSIS_READ_TIMEOUT", "120.0"))
@@ -109,9 +110,9 @@ class SupplyChainOptimizerAgent:
                 streaming=False,
             )
 
-            aauth_interceptor = AAuthSigningInterceptor()
+            aauth_interceptor = AAuthSigningInterceptor(agent_token_service=agent_token_service)
             logger.info(
-                f"🔐 AAuth: Using {os.getenv('AAUTH_SIGNATURE_SCHEME', 'hwk').upper()} signing for market-analysis-agent calls"
+                "🔐 AAuth: Using agent JWT (aa-agent+jwt) signing for market-analysis-agent calls"
             )
             add_event("aauth_interceptor_added_to_market_analysis_client")
             set_attribute("market_analysis.aauth_interceptor_added", True)
@@ -595,10 +596,9 @@ class SupplyChainOptimizerExecutor(AgentExecutor):
             logger.debug(f"🔍 Executor: Final request_text: '{request_text}'")
         
         try:
-            sig_scheme = os.getenv("AAUTH_SIGNATURE_SCHEME", "hwk").lower()
-            logger.info(f"🔐 Using AAuth {sig_scheme.upper()} signing for downstream agent calls")
-            add_event("aauth_auth_method", {"scheme": sig_scheme})
-            set_attribute("auth.method", f"aauth_{sig_scheme}")
+            logger.info("🔐 Using AAuth agent JWT (aa-agent+jwt) for downstream agent calls")
+            add_event("aauth_auth_method", {"scheme": "jwt"})
+            set_attribute("auth.method", "aauth_jwt")
 
             result = await self.agent.invoke(request_text, trace_context)
             add_event("agent_invoke_successful")

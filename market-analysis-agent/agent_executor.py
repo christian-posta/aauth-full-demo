@@ -99,7 +99,7 @@ class MarketAnalysisAgent:
         
         self.policies = market_analysis_policies
         self.analysis_history = []
-        # Note: JWT/OBO token attributes removed - authentication now handled via AAuth HWK signing
+        # Inbound: gateway; outbound MCP: Agent Server aa-agent+jwt (see agent_token_service + mcp_client).
 
     async def invoke(self, request_text: str = "") -> str:
         """Main entry point for market analysis requests."""
@@ -164,7 +164,7 @@ class MarketAnalysisAgent:
     async def _discover_mcp_tools(self) -> List[Dict[str, Any]]:
         """Discover available tools from MCP servers.
         
-        Note: JWT token passing removed - MCP authentication should be handled via AAuth or other mechanisms.
+        Outbound Streamable HTTP to MCP is signed with aa-agent+jwt (MCPClient + httpx hook).
         """
         try:
             async with MCPClient() as mcp_client:
@@ -266,7 +266,7 @@ Consider integrating with procurement systems for automated order processing.
         return response
 
 
-## JWTInterceptor removed - authentication now handled via AAuth HWK signing from supply-chain-agent
+## Inbound A2A: agentgateway. Outbound MCP: HTTP Message Signatures with agent JWT (mcp_client).
 
 
 class MarketAnalysisAgentExecutor(AgentExecutor):
@@ -357,7 +357,7 @@ class MarketAnalysisAgentExecutor(AgentExecutor):
     ):
         """Execute with tracing support.
         
-        Note: JWT token parameter removed - authentication is now handled via AAuth HWK signing.
+        Inbound: policy on agentgateway. Outbound MCP: signed with agent token (MCP).
         """
         # Extract request text from context if available
         request_text = ""
@@ -376,10 +376,9 @@ class MarketAnalysisAgentExecutor(AgentExecutor):
         set_attribute("request.has_content", bool(request_text))
         
         try:
-            # Note: JWT/STS token exchange removed - authentication is now handled via AAuth HWK signing
-            logger.info(f"🔐 Using AAuth authentication (signature verification already performed)")
-            add_event("aauth_hwk_auth_method")
-            set_attribute("auth.method", "aauth_hwk")
+            logger.info("🔐 Inbound A2A: gateway verification; outbound MCP: aa-agent+jwt (Agent Server)")
+            add_event("aauth_agent_jwt_mcp")
+            set_attribute("auth.method", "aauth_jwt_mcp")
             
             result = await self.agent.invoke(request_text)
             add_event("agent_invoke_successful")

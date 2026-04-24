@@ -29,6 +29,14 @@ supply-chain-ui/dist/
 backend/backend-stable.key
 backend/backend-stable.pub
 
+# Supply-chain-agent AAuth stable identity (Agent Server client)
+supply-chain-agent/supply-chain-stable.key
+supply-chain-agent/supply-chain-stable.pub
+
+# Market-analysis-agent AAuth stable identity (Agent Server client)
+market-analysis-agent/market-analysis-stable.key
+market-analysis-agent/market-analysis-stable.pub
+
 # Python
 __pycache__/
 *.py[cod]

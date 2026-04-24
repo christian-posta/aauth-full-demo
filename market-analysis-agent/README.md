@@ -15,14 +15,13 @@ cd market-analysis-agent
 uv run .
 ```
 
-**CLI options** (override env vars when using `uv run .`):
+Ensure the **Agent Server** is reachable at `AGENT_SERVER_BASE` (this agent registers and obtains `aa-agent+jwt` for **outbound MCP** Streamable HTTP, same pattern as [supply-chain-agent](../supply-chain-agent) for downstream A2A). Then:
+
 ```bash
-uv run . --signature-scheme jwks_uri   # Use JWKS_URI scheme
-uv run . --signature-scheme hwk         # Use HWK scheme
-uv run . --help                         # Show all options
+uv run .
 ```
 
-The agent will start on `http://localhost:9998` and serve its agent card at `/.well-known/agent-card.json`.
+The agent will start on `http://localhost:9998` and serve its agent card at `/.well-known/agent-card.json`. `/jwks.json` reflects the current proof-of-possession key from the agent token.
 
 ### 2. Test the Agent
 
@@ -38,18 +37,13 @@ The agent can be configured using environment variables. Copy `env.example` to `
 cp env.example .env
 ```
 
-Preset env files for different signing modes (policy is configured in **agentgateway**):
-- `env.hwk` / `env.jwks` / `env.jwt-autonomous` / `env.user-delegated` – convenience presets; see `env.example`
-
-```bash
-cp env.jwks .env   # Example: use JWKS + signature-only
-```
-
 ### Environment Variables
 
 - **`MARKET_ANALYSIS_AGENT_URL`**: External URL for this agent (default: `http://localhost:9998/`)
-- **`AAUTH_SIGNATURE_SCHEME`**: AAuth signature scheme for **outgoing** signed calls (if any) - `"hwk"` or `"jwks_uri"`. Default: `hwk`
-- **`MARKET_ANALYSIS_AGENT_ID_URL`**: Agent identifier for JWKS scheme (HTTPS URL). Also used to derive canonical authority for request metadata (per SPEC 10.3.1).
+- **`AGENT_SERVER_BASE`**: Agent Server for `aa-agent+jwt` registration/refresh (default: `http://127.0.0.1:8765`); see [../backend/CLIENTS.md](../backend/CLIENTS.md)
+- **`MARKET_ANALYSIS_AGENT_NAME`**: Display name for `POST /register` to the Agent Server
+- **`MARKET_ANALYSIS_AGENT_ID_URL`**: Public id for `/.well-known/aauth-agent.json` when exposed through the gateway
+- **`MCP_SERVER_BASE_URL`** / **`MCP_SERVER_PATH`**: Streamable HTTP MCP endpoint (outbound calls are AAuth-signed with the agent token)
 - **`JAEGER_HOST`**: Jaeger collector host for distributed tracing (default: `localhost`)
 - **`JAEGER_PORT`**: Jaeger collector port (default: `4317`)
 - **`ENABLE_CONSOLE_EXPORTER`**: Control console trace span logging (default: `true`)
@@ -60,11 +54,8 @@ cp env.jwks .env   # Example: use JWKS + signature-only
 # Market Analysis Agent Configuration
 MARKET_ANALYSIS_AGENT_URL=http://market-analysis-agent.localhost:3000/
 
-# AAuth Configuration
-AAUTH_SIGNATURE_SCHEME=jwks_uri
-# Agent identifier for JWKS scheme (HTTPS URL)
-# Also used to derive canonical authority for signature verification (per SPEC 10.3.1)
-# Canonical authority format: host:port (if port is non-default) or just host (if default port)
+# AGENT_SERVER_BASE=http://127.0.0.1:8765
+# MARKET_ANALYSIS_AGENT_NAME=Market Analysis Agent
 MARKET_ANALYSIS_AGENT_ID_URL=http://market-analysis-agent.localhost:3000
 
 # Tracing Configuration
@@ -95,23 +86,13 @@ The agent returns structured analysis results including:
 - **Recommendations**: Prioritized procurement actions with timelines
 - **Cost Estimates**: Estimated costs for recommended actions
 
-## AAuth (Agent-to-Agent Authentication)
+## AAuth
 
-This agent **signs outbound traffic** the same way as other agents (see `aauth_keys.py` / JWKS routes in `__main__.py`).
+- **Incoming A2A** from the supply-chain agent (or backend) is **terminated / policy-checked at agentgateway** ([/agentgateway/config-policy.yaml](../agentgateway/config-policy.yaml)). **Header capture** for the executor: [http_headers_middleware.py](http_headers_middleware.py).
 
-**Incoming request policy** (e.g. require JWKS, validate identity) is enforced at **agentgateway** ([/agentgateway/config-policy.yaml](../agentgateway/config-policy.yaml)) in this demo layout, not with per-process `AAUTH_AUTHORIZATION_*` settings.
+- **Outgoing MCP (Streamable HTTP)**: the market-analysis agent contacts the configured MCP base URL with **`aauth.sign_request(..., sig_scheme="jwt", ...)`** on every HTTP request (via an **httpx request hook** in [mcp_client.py](mcp_client.py)). The **aa-agent+jwt** is obtained from the same **Agent Server** as the rest of the demo: [agent_token_service.py](agent_token_service.py) + on-disk [stable_identity.py](stable_identity.py) (`market-analysis-stable.*`). [../backend/CLIENTS.md](../backend/CLIENTS.md) documents registration/refresh.
 
-**HTTP header capture** for tracing and context: [http_headers_middleware.py](http_headers_middleware.py). The A2A executor runs the analysis after the gateway and framework handle transport security.
-
-### Signature schemes (outbound / metadata)
-
-- **HWK** and **jwks_uri** for HTTP message signing are controlled by `AAUTH_SIGNATURE_SCHEME` and `--signature-scheme`
-
-### Learning AAuth
-
-1. **Outbound signing**: `aauth_keys.py`, `supply-chain-agent/aauth_interceptor.py` (caller side)
-2. **Header capture**: `http_headers_middleware.py`
-3. **Spec**: [../SPEC.md](../SPEC.md)
+- **JWKS** in `__main__.py` exposes the current **ephemeral** PoP public key (matches `agent_token` `cnf.jwk` after registration).
 
 ## Architecture
 
@@ -152,15 +133,20 @@ uv run test_client.py
 ```
 market-analysis-agent/
 ├── agent_executor.py      # Core agent implementation
+├── agent_token_service.py  # Agent Server: aa-agent+jwt
+├── stable_identity.py     # Long-term key for /register
+├── mcp_client.py         # MCP Streamable HTTP (signed with agent JWT)
 ├── http_headers_middleware.py  # HTTP header capture
 ├── business_policies.py   # Business rules and analysis algorithms
-├── __main__.py           # A2A server setup
+├── __main__.py           # A2A server + well-known + JWKS
 ├── agent_card.json       # A2A protocol agent card
 ├── test_client.py        # Test suite
 └── README.md             # This file
 ```
 
-### Key Files for AAuth
+### Key files for AAuth
 
-- **`__main__.py`** - JWKS and `/.well-known/aauth-agent.json`
-- **`http_headers_middleware.py`** - Captures HTTP headers for context
+- **`agent_token_service.py`** / **`stable_identity.py`** – obtain and refresh the agent token
+- **`mcp_client.py`** – httpx **request** hook; signs each MCP call with `sig_scheme="jwt"`
+- **`__main__.py`** – startup + `/.well-known` + `/jwks.json`
+- **`http_headers_middleware.py`** – request headers for the executor
