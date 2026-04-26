@@ -18,17 +18,24 @@ DEBUG = os.getenv("DEBUG", "false").lower() == "true"
 
 
 class AAuthSigningInterceptor(ClientCallInterceptor):
-    """Signs outbound A2A requests with ``sig=jwt`` (``aa-agent+jwt``) + ephemeral PoP."""
+    """Signs outbound A2A requests with ``sig=jwt`` (``aa-agent+jwt`` or ``aa-auth+jwt``) + ephemeral PoP."""
 
     def __init__(
         self,
         agent_token_service: AgentTokenService,
         trace_headers: Optional[Dict[str, str]] = None,
+        auth_token: Optional[str] = None,
     ):
         self.trace_headers = trace_headers or {}
         self.agent_token_service = agent_token_service
+        # When set, use this auth_token (aa-auth+jwt from PS) in Signature-Key
+        # instead of the agent token — three-party retry (AAuth spec §9.4.2).
+        self.auth_token = auth_token
         if DEBUG:
-            logger.debug("🔐 AAuthSigningInterceptor initialized (agent JWT)")
+            logger.debug(
+                "🔐 AAuthSigningInterceptor initialized (%s)",
+                "auth_token (aa-auth+jwt)" if auth_token else "agent JWT",
+            )
 
     async def intercept(
         self,
@@ -131,8 +138,14 @@ class AAuthSigningInterceptor(ClientCallInterceptor):
                     self.agent_token_service.get_http_signing_private_key_and_token()
                 )
                 sig_scheme = "jwt"
-                sign_kwargs = {"jwt": agent_jwt}
-                logger.info("🔐 AAuth: Signing with agent token (aa-agent+jwt in Signature-Key)")
+                # Use auth_token (aa-auth+jwt) when available (three-party retry),
+                # otherwise fall back to the agent token (aa-agent+jwt).
+                jwt_for_sig_key = self.auth_token if self.auth_token else agent_jwt
+                sign_kwargs = {"jwt": jwt_for_sig_key}
+                if self.auth_token:
+                    logger.info("🔐 AAuth: Signing with auth_token (aa-auth+jwt in Signature-Key)")
+                else:
+                    logger.info("🔐 AAuth: Signing with agent token (aa-agent+jwt in Signature-Key)")
 
                 if "Content-Digest" in headers or "content-digest" in headers:
                     headers.pop("Content-Digest", None)

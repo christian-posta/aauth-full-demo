@@ -1,17 +1,22 @@
 from a2a.server.agent_execution import AgentExecutor, RequestContext
 from a2a.server.events import EventQueue
 from a2a.utils import new_agent_text_message
+import json
 import logging
 import os
-from typing import Dict, Any, List, Optional
+import re
+from typing import Dict, Any, List, Optional, Tuple
 from business_policies import business_policies
 import httpx
-from a2a.client import ClientFactory, ClientConfig
+import jwt as _pyjwt
+from a2a.client import ClientFactory, ClientConfig, minimal_agent_card
+from a2a.client.errors import A2AClientHTTPError
 from a2a.types import TransportProtocol, Message, Role
 from a2a.client.helpers import create_text_message_object
 from a2a.client.middleware import ClientCallInterceptor, ClientCallContext
+from aauth import sign_request as _aauth_sign_request
 from tracing_config import (
-    span, add_event, set_attribute, extract_context_from_headers, 
+    span, add_event, set_attribute, extract_context_from_headers,
     inject_context_to_headers, initialize_tracing
 )
 from http_headers_middleware import get_current_request_headers
@@ -24,6 +29,109 @@ token_logger = logging.getLogger("aauth.tokens")  # For token visibility - alway
 
 # Check DEBUG mode from environment
 DEBUG = os.getenv("DEBUG", "false").lower() == "true"
+
+# SPEC §6.5: 401 challenge resource-token extraction
+_AAUTH_RESOURCE_TOKEN_RE = re.compile(
+    r"resource-token\s*=\s*\"(?P<tok>[^\"]+)\"",
+    re.IGNORECASE,
+)
+
+
+def _httpx_response_for_error(
+    e: A2AClientHTTPError | httpx.HTTPStatusError,
+) -> Optional[httpx.Response]:
+    """Unwrap httpx.Response from either A2AClientHTTPError or HTTPStatusError."""
+    if isinstance(e, A2AClientHTTPError) and e.__cause__ and isinstance(e.__cause__, httpx.HTTPStatusError):
+        return e.__cause__.response
+    if isinstance(e, httpx.HTTPStatusError):
+        return e.response
+    return None
+
+
+def _extract_resource_token_from_401(
+    e: A2AClientHTTPError | httpx.HTTPStatusError,
+) -> Optional[str]:
+    """Return raw resource_token JWT from a 401 AAuth challenge, or None if absent."""
+    r = _httpx_response_for_error(e)
+    if r is None:
+        return None
+    for k, v in r.headers.items():
+        if "aauth" in k.lower():
+            m = _AAUTH_RESOURCE_TOKEN_RE.search(v)
+            if m:
+                return m.group("tok")
+    return None
+
+
+async def _exchange_resource_token_for_auth_token(resource_token: str) -> Optional[str]:
+    """Three-party PS token exchange (AAuth spec §4.1.3 / §7.1).
+
+    1. Decode resource_token to get the PS URL from the ``aud`` claim.
+    2. Discover PS ``token_endpoint`` via ``/.well-known/aauth-person.json``.
+    3. POST ``{"resource_token": ...}`` signed with aa-agent+jwt.
+    4. Return ``auth_token`` (aa-auth+jwt) from the PS response.
+    """
+    try:
+        claims = _pyjwt.decode(resource_token, options={"verify_signature": False})
+    except Exception as exc:
+        token_logger.error("Cannot decode resource_token JWT: %s", exc)
+        return None
+
+    aud = claims.get("aud")
+    if not aud:
+        token_logger.error("resource_token has no 'aud' claim — cannot locate PS")
+        return None
+
+    ps_base = aud.rstrip("/")
+    token_endpoint = f"{ps_base}/token"
+    try:
+        async with httpx.AsyncClient(timeout=httpx.Timeout(10.0)) as hc:
+            meta_resp = await hc.get(f"{ps_base}/.well-known/aauth-person.json")
+            if meta_resp.status_code == 200:
+                meta = meta_resp.json()
+                discovered = meta.get("token_endpoint")
+                if discovered:
+                    token_endpoint = discovered
+                    token_logger.info("PS token_endpoint (from metadata): %s", token_endpoint)
+    except Exception as exc:
+        token_logger.info("PS metadata fetch failed (%s); using default: %s", exc, token_endpoint)
+
+    await agent_token_service.ensure_valid_token()
+    signing_priv, agent_jwt = agent_token_service.get_http_signing_private_key_and_token()
+
+    body = json.dumps({"resource_token": resource_token}, separators=(",", ":")).encode()
+    headers: Dict[str, str] = {"Content-Type": "application/json"}
+    sig_hdrs = _aauth_sign_request(
+        method="POST",
+        target_uri=token_endpoint,
+        headers=headers,
+        body=None,
+        private_key=signing_priv,
+        sig_scheme="jwt",
+        jwt=agent_jwt,
+    )
+    headers.update(sig_hdrs)
+
+    token_logger.info("Posting resource_token to PS token_endpoint: %s", token_endpoint)
+    try:
+        async with httpx.AsyncClient(timeout=httpx.Timeout(30.0)) as hc:
+            resp = await hc.post(token_endpoint, headers=headers, content=body)
+    except Exception as exc:
+        token_logger.error("PS token_endpoint request failed: %s", exc)
+        return None
+
+    if resp.status_code != 200:
+        token_logger.error("PS token_endpoint returned HTTP %d: %s", resp.status_code, resp.text[:500])
+        return None
+
+    data = resp.json()
+    auth_token = data.get("auth_token")
+    if not auth_token:
+        token_logger.error("PS response missing 'auth_token': keys=%s", list(data.keys()))
+        return None
+
+    token_logger.info("auth_token received from PS (len=%d)", len(auth_token))
+    return auth_token
 
 
 class TracingInterceptor(ClientCallInterceptor):
@@ -76,19 +184,25 @@ class SupplyChainOptimizerAgent:
         self.market_analysis_client = None
         # Note: Outbound calls use Agent Server aa-agent+jwt (see agent_token_service + aauth_interceptor).
 
-    async def _get_market_analysis_client(self):
-        """Get or create the market analysis agent client with AAuth agent JWT signing."""
-        if self.market_analysis_client is not None:
-            return self.market_analysis_client
-        try:
-            add_event("creating_market_analysis_client")
-            set_attribute("market_analysis.url", self.market_analysis_url)
-            set_attribute("market_analysis.auth_method", "aauth_jwt")
+    async def _get_market_analysis_client(self, auth_token: Optional[str] = None):
+        """Get market analysis agent client with AAuth signing.
 
-            connect_timeout = float(os.getenv("MARKET_ANALYSIS_CONNECT_TIMEOUT", "30.0"))
-            read_timeout = float(os.getenv("MARKET_ANALYSIS_READ_TIMEOUT", "120.0"))
-            write_timeout = float(os.getenv("MARKET_ANALYSIS_WRITE_TIMEOUT", "30.0"))
-            pool_timeout = float(os.getenv("MARKET_ANALYSIS_POOL_TIMEOUT", "30.0"))
+        When auth_token is None, returns the cached base client (aa-agent+jwt).
+        When auth_token is provided, creates a fresh client using aa-auth+jwt for
+        the three-party retry (not cached — auth tokens are per-request).
+        """
+        connect_timeout = float(os.getenv("MARKET_ANALYSIS_CONNECT_TIMEOUT", "30.0"))
+        read_timeout = float(os.getenv("MARKET_ANALYSIS_READ_TIMEOUT", "120.0"))
+        write_timeout = float(os.getenv("MARKET_ANALYSIS_WRITE_TIMEOUT", "30.0"))
+        pool_timeout = float(os.getenv("MARKET_ANALYSIS_POOL_TIMEOUT", "30.0"))
+
+        if auth_token is None and self.market_analysis_client is not None:
+            return self.market_analysis_client
+
+        try:
+            add_event("creating_market_analysis_client", {"has_auth_token": auth_token is not None})
+            set_attribute("market_analysis.url", self.market_analysis_url)
+            set_attribute("market_analysis.auth_method", "aauth_auth_jwt" if auth_token else "aauth_agent_jwt")
 
             httpx_client = httpx.AsyncClient(
                 timeout=httpx.Timeout(
@@ -110,24 +224,25 @@ class SupplyChainOptimizerAgent:
                 streaming=False,
             )
 
-            aauth_interceptor = AAuthSigningInterceptor(agent_token_service=agent_token_service)
-            logger.info(
-                "🔐 AAuth: Using agent JWT (aa-agent+jwt) signing for market-analysis-agent calls"
+            interceptor = AAuthSigningInterceptor(
+                agent_token_service=agent_token_service,
+                auth_token=auth_token,
             )
+            if auth_token:
+                logger.info("🔐 AAuth: Using auth_token (aa-auth+jwt) for market-analysis-agent retry")
+            else:
+                logger.info("🔐 AAuth: Using agent JWT (aa-agent+jwt) for market-analysis-agent call")
             add_event("aauth_interceptor_added_to_market_analysis_client")
-            set_attribute("market_analysis.aauth_interceptor_added", True)
 
             factory = ClientFactory(config)
-
-            from a2a.client import minimal_agent_card
-
             market_analysis_card = minimal_agent_card(
                 url=self.market_analysis_url,
                 transports=["JSONRPC"],
             )
 
-            client = factory.create(market_analysis_card, interceptors=[aauth_interceptor])
-            self.market_analysis_client = client
+            client = factory.create(market_analysis_card, interceptors=[interceptor])
+            if auth_token is None:
+                self.market_analysis_client = client
             add_event("market_analysis_client_created")
             set_attribute("market_analysis.client_ready", True)
             return client
@@ -136,7 +251,8 @@ class SupplyChainOptimizerAgent:
             add_event("market_analysis_client_creation_failed", {"error": str(e)})
             set_attribute("market_analysis.client_error", str(e))
             logger.error(f"Warning: Could not create market analysis client: {e}")
-            self.market_analysis_client = None
+            if auth_token is None:
+                self.market_analysis_client = None
             raise
 
     def _ma_event_text(self, event: Any) -> str:
@@ -155,7 +271,12 @@ class SupplyChainOptimizerAgent:
         return ""
 
     async def _get_market_analysis(self, request_text: str, trace_context: Any) -> str:
-        """Get market analysis from the market analysis agent in one signed A2A call."""
+        """Get market analysis from the market analysis agent.
+
+        Follows the AAuth agent behavior: send aa-agent+jwt first; if the resource
+        returns a 401 with a resource_token challenge, exchange it at the PS for an
+        aa-auth+jwt and retry (spec §4.1.3).
+        """
         with span(
             "supply_chain_agent.get_market_analysis",
             {
@@ -188,14 +309,42 @@ class SupplyChainOptimizerAgent:
                         add_event("market_analysis_response_received", {"event_type": str(type(event))})
                         market_response = self._ma_event_text(event)
                         break
-                except httpx.HTTPStatusError as e:
-                    if e.response.status_code == 401:
+                except (A2AClientHTTPError, httpx.HTTPStatusError) as e:
+                    status_code = (
+                        e.status_code if isinstance(e, A2AClientHTTPError)
+                        else e.response.status_code
+                    )
+                    if status_code != 401:
+                        raise
+
+                    token_logger.info("401 from market-analysis-agent — checking for AAuth challenge")
+                    add_event("market_analysis_401", {"aauth_flow": "checking_resource_token"})
+
+                    # --- AAuth three-party PS token exchange (spec §4.1.3) ---
+                    resource_token = _extract_resource_token_from_401(e)
+                    if not resource_token:
                         token_logger.info(
-                            "401 from market-analysis-agent (configure policy on agentgateway): %s",
-                            e.response.url,
+                            "401 has no resource_token; market-analysis-agent may be Mode 1 only"
                         )
                         return "No market analysis provided (downstream returned HTTP 401)"
-                    raise
+
+                    token_logger.info("401 has resource_token — attempting PS exchange")
+                    auth_token = await _exchange_resource_token_for_auth_token(resource_token)
+                    if not auth_token:
+                        token_logger.error("PS exchange failed; cannot retry market analysis call")
+                        return "No market analysis provided (PS token exchange failed)"
+
+                    token_logger.info("PS exchange succeeded; retrying market analysis with auth_token")
+                    add_event("market_analysis_ps_exchange_succeeded")
+                    try:
+                        auth_client = await self._get_market_analysis_client(auth_token=auth_token)
+                        async for event in auth_client.send_message(message):
+                            add_event("market_analysis_response_received_after_exchange")
+                            market_response = self._ma_event_text(event)
+                            break
+                    except Exception as retry_exc:
+                        token_logger.error("Retry with auth_token failed: %s", retry_exc)
+                        return "No market analysis provided (retry after PS exchange failed)"
 
                 add_event("market_analysis_completed", {"response_length": len(market_response)})
                 set_attribute("market_analysis.response_length", len(market_response))
