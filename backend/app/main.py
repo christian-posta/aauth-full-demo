@@ -15,6 +15,7 @@ from app.api import auth, agents, optimization
 from app.tracing_config import initialize_tracing
 from app.services.agent_token_service import agent_token_service
 import os
+import asyncio
 
 # Initialize tracing before creating the FastAPI app
 jaeger_host = os.getenv("JAEGER_HOST", "localhost")  # Default to localhost for development
@@ -38,8 +39,15 @@ initialize_tracing(
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    await agent_token_service.startup()
+    # Run startup in a background task so that it doesn't block server startup
+    # and can be cancelled immediately if the user presses Ctrl+C.
+    startup_task = asyncio.create_task(agent_token_service.startup())
     yield
+    startup_task.cancel()
+    try:
+        await startup_task
+    except asyncio.CancelledError:
+        pass
 
 
 app = FastAPI(
