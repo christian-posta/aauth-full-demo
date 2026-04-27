@@ -4,17 +4,16 @@ from a2a.utils import new_agent_text_message
 import json
 import logging
 import os
-import re
-from typing import Dict, Any, List, Optional, Tuple
+from typing import Dict, Any, List, Optional
 from business_policies import business_policies
 import httpx
-import jwt as _pyjwt
 from a2a.client import ClientFactory, ClientConfig, minimal_agent_card
 from a2a.client.errors import A2AClientHTTPError
 from a2a.types import TransportProtocol, Message, Role
 from a2a.client.helpers import create_text_message_object
 from a2a.client.middleware import ClientCallInterceptor, ClientCallContext
-from aauth import sign_request as _aauth_sign_request
+from aauth import sign_request as _aauth_sign_request, exchange_resource_token, extract_resource_token
+from aauth.errors import TokenError, MetadataError
 from tracing_config import (
     span, add_event, set_attribute, extract_context_from_headers,
     inject_context_to_headers, initialize_tracing
@@ -29,109 +28,6 @@ token_logger = logging.getLogger("aauth.tokens")  # For token visibility - alway
 
 # Check DEBUG mode from environment
 DEBUG = os.getenv("DEBUG", "false").lower() == "true"
-
-# SPEC §6.5: 401 challenge resource-token extraction
-_AAUTH_RESOURCE_TOKEN_RE = re.compile(
-    r"resource-token\s*=\s*\"(?P<tok>[^\"]+)\"",
-    re.IGNORECASE,
-)
-
-
-def _httpx_response_for_error(
-    e: A2AClientHTTPError | httpx.HTTPStatusError,
-) -> Optional[httpx.Response]:
-    """Unwrap httpx.Response from either A2AClientHTTPError or HTTPStatusError."""
-    if isinstance(e, A2AClientHTTPError) and e.__cause__ and isinstance(e.__cause__, httpx.HTTPStatusError):
-        return e.__cause__.response
-    if isinstance(e, httpx.HTTPStatusError):
-        return e.response
-    return None
-
-
-def _extract_resource_token_from_401(
-    e: A2AClientHTTPError | httpx.HTTPStatusError,
-) -> Optional[str]:
-    """Return raw resource_token JWT from a 401 AAuth challenge, or None if absent."""
-    r = _httpx_response_for_error(e)
-    if r is None:
-        return None
-    for k, v in r.headers.items():
-        if "aauth" in k.lower():
-            m = _AAUTH_RESOURCE_TOKEN_RE.search(v)
-            if m:
-                return m.group("tok")
-    return None
-
-
-async def _exchange_resource_token_for_auth_token(resource_token: str) -> Optional[str]:
-    """Three-party PS token exchange (AAuth spec §4.1.3 / §7.1).
-
-    1. Decode resource_token to get the PS URL from the ``aud`` claim.
-    2. Discover PS ``token_endpoint`` via ``/.well-known/aauth-person.json``.
-    3. POST ``{"resource_token": ...}`` signed with aa-agent+jwt.
-    4. Return ``auth_token`` (aa-auth+jwt) from the PS response.
-    """
-    try:
-        claims = _pyjwt.decode(resource_token, options={"verify_signature": False})
-    except Exception as exc:
-        token_logger.error("Cannot decode resource_token JWT: %s", exc)
-        return None
-
-    aud = claims.get("aud")
-    if not aud:
-        token_logger.error("resource_token has no 'aud' claim — cannot locate PS")
-        return None
-
-    ps_base = aud.rstrip("/")
-    token_endpoint = f"{ps_base}/token"
-    try:
-        async with httpx.AsyncClient(timeout=httpx.Timeout(10.0)) as hc:
-            meta_resp = await hc.get(f"{ps_base}/.well-known/aauth-person.json")
-            if meta_resp.status_code == 200:
-                meta = meta_resp.json()
-                discovered = meta.get("token_endpoint")
-                if discovered:
-                    token_endpoint = discovered
-                    token_logger.info("PS token_endpoint (from metadata): %s", token_endpoint)
-    except Exception as exc:
-        token_logger.info("PS metadata fetch failed (%s); using default: %s", exc, token_endpoint)
-
-    await agent_token_service.ensure_valid_token()
-    signing_priv, agent_jwt = agent_token_service.get_http_signing_private_key_and_token()
-
-    body = json.dumps({"resource_token": resource_token}, separators=(",", ":")).encode()
-    headers: Dict[str, str] = {"Content-Type": "application/json"}
-    sig_hdrs = _aauth_sign_request(
-        method="POST",
-        target_uri=token_endpoint,
-        headers=headers,
-        body=None,
-        private_key=signing_priv,
-        sig_scheme="jwt",
-        jwt=agent_jwt,
-    )
-    headers.update(sig_hdrs)
-
-    token_logger.info("Posting resource_token to PS token_endpoint: %s", token_endpoint)
-    try:
-        async with httpx.AsyncClient(timeout=httpx.Timeout(30.0)) as hc:
-            resp = await hc.post(token_endpoint, headers=headers, content=body)
-    except Exception as exc:
-        token_logger.error("PS token_endpoint request failed: %s", exc)
-        return None
-
-    if resp.status_code != 200:
-        token_logger.error("PS token_endpoint returned HTTP %d: %s", resp.status_code, resp.text[:500])
-        return None
-
-    data = resp.json()
-    auth_token = data.get("auth_token")
-    if not auth_token:
-        token_logger.error("PS response missing 'auth_token': keys=%s", list(data.keys()))
-        return None
-
-    token_logger.info("auth_token received from PS (len=%d)", len(auth_token))
-    return auth_token
 
 
 class TracingInterceptor(ClientCallInterceptor):
@@ -321,7 +217,14 @@ class SupplyChainOptimizerAgent:
                     add_event("market_analysis_401", {"aauth_flow": "checking_resource_token"})
 
                     # --- AAuth three-party PS token exchange (spec §4.1.3) ---
-                    resource_token = _extract_resource_token_from_401(e)
+                    # Extract response headers from wrapped exception
+                    response_headers = None
+                    if isinstance(e, A2AClientHTTPError) and e.__cause__ and isinstance(e.__cause__, httpx.HTTPStatusError):
+                        response_headers = e.__cause__.response.headers
+                    elif isinstance(e, httpx.HTTPStatusError):
+                        response_headers = e.response.headers
+
+                    resource_token = extract_resource_token(response_headers) if response_headers else None
                     if not resource_token:
                         token_logger.info(
                             "401 has no resource_token; market-analysis-agent may be Mode 1 only"
@@ -329,9 +232,16 @@ class SupplyChainOptimizerAgent:
                         return "No market analysis provided (downstream returned HTTP 401)"
 
                     token_logger.info("401 has resource_token — attempting PS exchange")
-                    auth_token = await _exchange_resource_token_for_auth_token(resource_token)
-                    if not auth_token:
-                        token_logger.error("PS exchange failed; cannot retry market analysis call")
+                    try:
+                        await agent_token_service.ensure_valid_token()
+                        signing_priv, agent_jwt = agent_token_service.get_http_signing_private_key_and_token()
+                        auth_token = await exchange_resource_token(
+                            resource_token=resource_token,
+                            private_key=signing_priv,
+                            agent_jwt=agent_jwt,
+                        )
+                    except (TokenError, MetadataError) as exc:
+                        token_logger.error("PS exchange failed: %s", exc)
                         return "No market analysis provided (PS token exchange failed)"
 
                     token_logger.info("PS exchange succeeded; retrying market analysis with auth_token")

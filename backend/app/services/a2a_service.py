@@ -1,14 +1,13 @@
 import asyncio
+import base64
 import json
-import re
 import uuid
 import logging
 from typing import AsyncGenerator, Dict, Any, List, Optional, Tuple
 import httpx
 from datetime import datetime
-
-import jwt as _pyjwt
-from aauth import sign_request as _aauth_sign_request
+from aauth import sign_request as _aauth_sign_request, exchange_resource_token, extract_resource_token
+from aauth.errors import TokenError, MetadataError
 
 from a2a.client import ClientFactory, ClientConfig
 from a2a.client.errors import A2AClientHTTPError
@@ -25,12 +24,6 @@ from app.services.agent_token_service import agent_token_service
 # Configure logging
 logger = logging.getLogger(__name__)
 token_logger = logging.getLogger("aauth.tokens")  # For token/challenge visibility - not suppressed
-
-# SPEC / docs: 401 with `AAuth` (or `aauth`) e.g. require=auth-token; resource-token="…"
-_AAUTH_RESOURCE_TOKEN_RE = re.compile(
-    r"resource-token\s*=\s*\"(?P<tok>[^\"]+)\"",
-    re.IGNORECASE,
-)
 
 
 def _httpx_response_for_a2a_http_error(
@@ -50,6 +43,31 @@ def _aauth_headers_from_response(response: httpx.Response) -> List[Tuple[str, st
     return [
         (k, v) for k, v in response.headers.items() if "aauth" in k.lower()
     ]
+
+
+def _jwt_claims_unverified(token: str) -> Dict[str, Any]:
+    try:
+        payload = token.split(".", 2)[1]
+        padded = payload + "=" * (-len(payload) % 4)
+        decoded = base64.urlsafe_b64decode(padded.encode("ascii"))
+        claims = json.loads(decoded)
+        return claims if isinstance(claims, dict) else {}
+    except Exception:
+        return {}
+
+
+def _log_auth_token_summary(auth_token: str) -> None:
+    claims = _jwt_claims_unverified(auth_token)
+    token_logger.info(
+        "PS exchange returned auth_token: typ=%s iss=%s aud=%s agent=%s scope=%s exp=%s len=%d",
+        claims.get("typ"),
+        claims.get("iss"),
+        claims.get("aud"),
+        claims.get("agent"),
+        claims.get("scope"),
+        claims.get("exp"),
+        len(auth_token),
+    )
 
 
 def _log_and_collect_aauth_401(
@@ -83,114 +101,19 @@ def _log_and_collect_aauth_401(
         vis = v if len(v) <= max_len else v[: max_len - 3] + "…"
         token_logger.info("401 AAuth / aauth | %s: %s", k, vis)
         logger.info("401 AAuth challenge header | %s: %s", k, vis)
-    for _, v in aauth:
-        m = _AAUTH_RESOURCE_TOKEN_RE.search(v)
-        if m:
-            raw = m.group("tok")
-            out["resource_token_in_challenge"] = True
-            out["resource_token_len"] = len(raw)
-            if len(raw) > 48:
-                preview = f"{raw[:24]}…{raw[-16:]} (len={len(raw)})"
-            else:
-                preview = raw
-            token_logger.info("401 parsed resource_token from AAuth: %s", preview)
-            logger.info("401 resource_token (from challenge): %s", preview)
-            return out
+    raw = extract_resource_token(r.headers)
+    if raw:
+        out["resource_token_in_challenge"] = True
+        out["resource_token_len"] = len(raw)
+        if len(raw) > 48:
+            preview = f"{raw[:24]}…{raw[-16:]} (len={len(raw)})"
+        else:
+            preview = raw
+        token_logger.info("401 parsed resource_token from AAuth: %s", preview)
+        logger.info("401 resource_token (from challenge): %s", preview)
     return out
 
 
-def _extract_resource_token_from_401(
-    e: A2AClientHTTPError | httpx.HTTPStatusError,
-) -> Optional[str]:
-    """Extract raw resource_token JWT from a 401 AAuth challenge; return None if absent."""
-    r = _httpx_response_for_a2a_http_error(e)
-    if r is None:
-        return None
-    for _, v in _aauth_headers_from_response(r):
-        m = _AAUTH_RESOURCE_TOKEN_RE.search(v)
-        if m:
-            return m.group("tok")
-    return None
-
-
-async def _exchange_resource_token_for_auth_token(resource_token: str) -> Optional[str]:
-    """Three-party PS token exchange (AAuth spec §4.1.3 / §7.1).
-
-    1. Decode resource_token to obtain the PS URL from the ``aud`` claim.
-    2. Discover the PS ``token_endpoint`` via ``/.well-known/aauth-person.json``
-       (falls back to ``{aud}/token`` if metadata is unavailable).
-    3. POST ``{"resource_token": ...}`` to the PS, signed with the agent's
-       ephemeral key + aa-agent+jwt (Signature-Key: sig=jwt).
-    4. Return the ``auth_token`` (aa-auth+jwt) from the PS response, or None on error.
-    """
-    # 1. Decode resource_token to find PS URL
-    try:
-        claims = _pyjwt.decode(resource_token, options={"verify_signature": False})
-    except Exception as exc:
-        token_logger.error("Cannot decode resource_token JWT: %s", exc)
-        return None
-
-    aud = claims.get("aud")
-    if not aud:
-        token_logger.error("resource_token has no 'aud' claim — cannot locate PS")
-        return None
-
-    # 2. Discover token_endpoint from PS metadata
-    ps_base = aud.rstrip("/")
-    token_endpoint = f"{ps_base}/token"
-    try:
-        async with httpx.AsyncClient(timeout=httpx.Timeout(10.0)) as hc:
-            meta_resp = await hc.get(f"{ps_base}/.well-known/aauth-person.json")
-            if meta_resp.status_code == 200:
-                meta = meta_resp.json()
-                discovered = meta.get("token_endpoint")
-                if discovered:
-                    token_endpoint = discovered
-                    token_logger.info("PS token_endpoint (from metadata): %s", token_endpoint)
-                else:
-                    token_logger.info("PS metadata has no token_endpoint; using default: %s", token_endpoint)
-    except Exception as exc:
-        token_logger.info("PS metadata fetch failed (%s); using default: %s", exc, token_endpoint)
-
-    # 3. Sign POST to PS token endpoint with agent JWT (spec §7.1.3)
-    await agent_token_service.ensure_valid_token()
-    signing_priv, agent_jwt = agent_token_service.get_http_signing_private_key_and_token()
-
-    body = json.dumps({"resource_token": resource_token}, separators=(",", ":")).encode()
-    headers: Dict[str, str] = {"Content-Type": "application/json"}
-    sig_hdrs = _aauth_sign_request(
-        method="POST",
-        target_uri=token_endpoint,
-        headers=headers,
-        body=None,
-        private_key=signing_priv,
-        sig_scheme="jwt",
-        jwt=agent_jwt,
-    )
-    headers.update(sig_hdrs)
-
-    token_logger.info("Posting resource_token to PS token_endpoint: %s", token_endpoint)
-    try:
-        async with httpx.AsyncClient(timeout=httpx.Timeout(30.0)) as hc:
-            resp = await hc.post(token_endpoint, headers=headers, content=body)
-    except Exception as exc:
-        token_logger.error("PS token_endpoint request failed: %s", exc)
-        return None
-
-    if resp.status_code != 200:
-        token_logger.error(
-            "PS token_endpoint returned HTTP %d: %s", resp.status_code, resp.text[:500]
-        )
-        return None
-
-    data = resp.json()
-    auth_token = data.get("auth_token")
-    if not auth_token:
-        token_logger.error("PS response missing 'auth_token': keys=%s", list(data.keys()))
-        return None
-
-    token_logger.info("auth_token received from PS (len=%d)", len(auth_token))
-    return auth_token
 
 
 class A2AService:
@@ -404,15 +327,32 @@ class A2AService:
                         add_event("a2a_http_error", {"status_code": 401, **aauth_401})
 
                         # --- AAuth three-party (PS-managed) token exchange (spec §4.1.3) ---
-                        resource_token = _extract_resource_token_from_401(e)
+                        # Extract response headers from wrapped exception
+                        response_headers = None
+                        if isinstance(e, A2AClientHTTPError) and e.__cause__ and isinstance(e.__cause__, httpx.HTTPStatusError):
+                            response_headers = e.__cause__.response.headers
+                        elif isinstance(e, httpx.HTTPStatusError):
+                            response_headers = e.response.headers
+
+                        resource_token = extract_resource_token(response_headers) if response_headers else None
                         if resource_token:
                             logger.info(
                                 "401 has resource_token — attempting PS exchange (three-party mode)"
                             )
-                            auth_token = await _exchange_resource_token_for_auth_token(
-                                resource_token
-                            )
+                            try:
+                                await agent_token_service.ensure_valid_token()
+                                signing_priv, agent_jwt = agent_token_service.get_http_signing_private_key_and_token()
+                                auth_token = await exchange_resource_token(
+                                    resource_token=resource_token,
+                                    private_key=signing_priv,
+                                    agent_jwt=agent_jwt,
+                                )
+                            except (TokenError, MetadataError) as exc:
+                                token_logger.error("PS exchange failed: %s", exc)
+                                auth_token = None
+
                             if auth_token:
+                                _log_auth_token_summary(auth_token)
                                 logger.info(
                                     "PS exchange succeeded; retrying with auth_token"
                                 )

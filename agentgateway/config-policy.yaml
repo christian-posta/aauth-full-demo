@@ -1,5 +1,11 @@
 # yaml-language-server: $schema=../../schema/local.json
-# yaml-language-server: $schema=../../schema/local.json
+# AgentGateway policy config — MODE 1: Identity-Based Access (AAuth spec §4.1.1)
+#
+# Pair with aauth-config-mode1.yaml.  The supply-chain-agent resource has no
+# `access: require: auth-token`, so a valid aa-agent+jwt is sufficient.
+# Policy rules check agent identity only — no PS-issued claims available.
+#
+# Usage: run agentgateway with this file instead of config-policy.yaml
 config:
   tracing:
     otlpEndpoint: http://localhost:4317
@@ -26,7 +32,7 @@ config:
         aauth_scheme: 'aauth.scheme'
         aauth_agent_identity: 'aauth.agent'
         sig_key: 'request.headers["signature-key"]'
-     
+
 
 binds:
 - port: 3000
@@ -43,6 +49,9 @@ binds:
       policies:
         authorization:
           rules:
+          # Mode 1: identity-only rules — agent domain + delegation check.
+          # No PS-issued claims (scopes, user identity) are available here
+          # because no auth-token exchange occurs.
           - "extauthz.act.sub == extauthz.agent"
           - 'extauthz.agent.endsWith("agent-server.example")'
         extAuthz:
@@ -140,7 +149,4 @@ binds:
           - name: mcp-sequential-thinking
             stdio:
               cmd: npx
-              args: ["@modelcontextprotocol/server-sequential-thinking"]              
-    
-
-
+              args: ["@modelcontextprotocol/server-sequential-thinking"]

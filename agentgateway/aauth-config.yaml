@@ -1,3 +1,12 @@
+# AAuth config — MODE 1: Identity-Based Access (AAuth spec §4.1.1)
+#
+# The resource accepts aa-agent+jwt directly.  No 401 challenge is issued,
+# no resource token, no Person Server exchange.  Access is granted or denied
+# purely based on the agent's cryptographic identity + local policy rules.
+#
+# Backend behavior: agent sends aa-agent+jwt → gets 200 (no retry needed).
+#
+# Usage: run agentgateway with this file instead of aauth-config.yaml
 listen:
   grpc: ":7070"
   http: ":8081"
@@ -10,14 +19,8 @@ jwks_cache:
 resources:
   - id: supply-chain-agent
     issuer: http://localhost:8081
-    # Needed for host-based routing on the HTTP sidecar (/.well-known/*, /resource/token).
-    # The gRPC ext-authz path uses aauth_resource_id from agentgateway context (no hosts needed there),
-    # but the Person Server discovers JWKS via GET http://localhost:8081/.well-known/aauth-resource.json,
-    # which uses Host-header routing on the HTTP server — so localhost:8081 must be registered here.
     hosts:
       - localhost:8081
-    # we will need the following override: until we get this in: https://github.com/agentgateway/agentgateway/pull/1641
-    # once that PR is in, we can comment this out:
     authority_override: "supply-chain-agent.localhost:3000"
     signing_key:
       kid: spa-rsk-1
@@ -25,44 +28,17 @@ resources:
       private_key_file: spa-resource-key.pem
     signature_window: 60s
     allow_pseudonymous: false
-    # OAuth-style scopes this resource advertises (metadata + policy hints).
-    supported_scopes:
-      - supply-chain:check
-      - supply-chain:read
-      - supply-chain:optimize
-    scope_descriptions:
-      supply-chain:check: Check supply chain
-      supply-chain:read: Read supply chain
-      supply-chain:optimize: Optimize supply chain
-    # Default scopes to embed in 401 challenge resource tokens when the agent
-    # did not proactively call authorization_endpoint with a scope body.
-    default_resource_token_scopes:
-      - supply-chain:check
-      - supply-chain:read
-    access:
-      require: auth-token
-    person_server:
-      issuer: http://127.0.0.1:8765
-      jwks_uri: http://127.0.0.1:8765/.well-known/jwks.json      
-    # auth_servers:
-    #   - issuer: http://127.0.0.1:8765
-    #     jwks_uri: http://127.0.0.1:8765/.well-known/jwks.json      
     allowed_signature_key_schemes:
       - jwt
     allowed_jwt_types:
-      - aa-agent+jwt     
-      - aa-auth+jwt 
+      - aa-agent+jwt        # only agent identity token; aa-auth+jwt never needed
+    # No access: section  → resource never issues a 401 resource-token challenge
+    # No person_server:   → no PS exchange; identity-only policy applies
     policy:
       name: default
 
   - id: market-analysis-agent
     issuer: http://localhost:8081
-    # hosts: no longer needed — aauth_resource_id is set in agentgateway context
-    # hosts:
-    #   - "market-analysis-agent.localhost:3000"
-    #   - "market-analysis-agent.localhost"
-    # we will need the following override: until we get this in: https://github.com/agentgateway/agentgateway/pull/1641
-    # once that PR is in, we can comment this out:
     authority_override: "market-analysis-agent.localhost:3000"
     signing_key:
       kid: maa-rsk-1
@@ -71,8 +47,8 @@ resources:
     signature_window: 60s
     allow_pseudonymous: true
     allowed_signature_key_schemes:
-      - jwt    
+      - jwt
     allowed_jwt_types:
-      - aa-agent+jwt    
+      - aa-agent+jwt
     policy:
       name: default
