@@ -168,10 +168,19 @@ async def main() -> None:
 
     print("🔐 Added JWKS endpoints: /.well-known/aauth-agent.json and /jwks.json")
 
-    await agent_token_service.startup()
+    startup_task = asyncio.create_task(agent_token_service.startup())
 
     config = uvicorn.Config(app, host="0.0.0.0", port=port)
-    await uvicorn.Server(config).serve()
+    server_uv = uvicorn.Server(config)
+    
+    try:
+        await server_uv.serve()
+    finally:
+        startup_task.cancel()
+        try:
+            await startup_task
+        except asyncio.CancelledError:
+            pass
 
 
 if __name__ == "__main__":
