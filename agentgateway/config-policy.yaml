@@ -49,11 +49,8 @@ binds:
       policies:
         authorization:
           rules:
-          # Mode 1: identity-only rules — agent domain + delegation check.
-          # No PS-issued claims (scopes, user identity) are available here
-          # because no auth-token exchange occurs.
-          - "extauthz.act.sub == extauthz.agent"
-          - 'extauthz.agent.endsWith("agent-server.example")'
+          # We can use the agent's identity and the scopes/auth token claims to amke policy decisions
+          - 'extauthz.act.sub == extauthz.agent && extauthz.agent.endsWith("agent-server.example") && extauthz.scope.contains("supply-chain:read")'
         extAuthz:
           host: "localhost:7070"
           protocol:

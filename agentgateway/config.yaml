@@ -40,6 +40,10 @@ binds:
       - path:
           exact: /agent/authenticatedExtendedCard
       policies:
+        authorization:
+          rules:
+          # We can use the agent's identity and the scopes/auth token claims to amke policy decisions
+          - 'extauthz.sub.endsWith("agent-server.example")'      
         extAuthz:
           host: "localhost:7070"
           protocol:
@@ -80,6 +84,10 @@ binds:
       - path:
           exact: /agent/authenticatedExtendedCard
       policies:
+        authorization:
+          rules:
+          # We can use the agent's identity and the scopes/auth token claims to amke policy decisions
+          - 'extauthz.sub.endsWith("agent-server.example")'            
         extAuthz:
           host: "localhost:7070"
           protocol:
