@@ -18,9 +18,6 @@ jwks_cache:
 
 resources:
   - id: supply-chain-agent
-    issuer: http://localhost:8081
-    hosts:
-      - localhost:8081
     authority_override: "supply-chain-agent.localhost:3000"
     signing_key:
       kid: spa-rsk-1
@@ -38,7 +35,6 @@ resources:
       name: default
 
   - id: market-analysis-agent
-    issuer: http://localhost:8081
     authority_override: "market-analysis-agent.localhost:3000"
     signing_key:
       kid: maa-rsk-1

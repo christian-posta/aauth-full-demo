@@ -9,13 +9,10 @@ jwks_cache:
 
 resources:
   - id: supply-chain-agent
-    issuer: http://localhost:8081
-    # Needed for host-based routing on the HTTP sidecar (/.well-known/*, /resource/token).
-    # The gRPC ext-authz path uses aauth_resource_id from agentgateway context (no hosts needed there),
-    # but the Person Server discovers JWKS via GET http://localhost:8081/.well-known/aauth-resource.json,
-    # which uses Host-header routing on the HTTP server — so localhost:8081 must be registered here.
+    issuer: http://supply-chain-agent.localhost:3000
     hosts:
-      - localhost:8081
+      - supply-chain-agent.localhost
+      - supply-chain-agent.localhost:3000
     # we will need the following override: until we get this in: https://github.com/agentgateway/agentgateway/pull/1641
     # once that PR is in, we can comment this out:
     authority_override: "supply-chain-agent.localhost:3000"
@@ -57,7 +54,10 @@ resources:
       name: default
 
   - id: market-analysis-agent
-    issuer: http://localhost:8081
+    issuer: http://market-analysis-agent.localhost:3000
+    hosts:
+      - market-analysis-agent.localhost
+      - market-analysis-agent.localhost:3000
     # hosts: no longer needed — aauth_resource_id is set in agentgateway context
     # hosts:
     #   - "market-analysis-agent.localhost:3000"

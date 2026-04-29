@@ -67,6 +67,16 @@ binds:
             - "*"
       backends:
       - host: localhost:9999
+    - name: aauth-dwk
+      matches:
+      - path:
+          pathPrefix: /.well-known/
+      policies:
+        urlRewrite:
+          authority:
+            full: supply-chain-agent.localhost:3000
+      backends:
+      - host: localhost:8081      
 
     - name: a2a-default
       policies:
@@ -107,6 +117,16 @@ binds:
             - "*"
       backends:
       - host: localhost:9998
+    - name: aauth-dwk
+      matches:
+      - path:
+          pathPrefix: /.well-known/
+      policies:
+        urlRewrite:
+          authority:
+            full: market-analysis-agent.localhost:3000
+      backends:
+      - host: localhost:8081      
 
     - name: a2a-default
       policies:
