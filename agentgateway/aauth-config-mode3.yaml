@@ -36,6 +36,7 @@ resources:
       supply-chain:optimize: Optimize supply chain
     # Default scopes to embed in 401 challenge resource tokens when the agent
     # did not proactively call authorization_endpoint with a scope body.
+    # require:user is an example that would require user consent
     default_resource_token_scopes:
       - supply-chain:check
       - supply-chain:read
@@ -74,5 +75,17 @@ resources:
       - jwt    
     allowed_jwt_types:
       - aa-agent+jwt    
+      - aa-auth+jwt 
     policy:
       name: default
+    supported_scopes:
+      - market-analysis:analyze
+    scope_descriptions:
+      market-analysis:analyze: Analyze market analysis
+    default_resource_token_scopes:
+      - market-analysis:analyze
+    access:
+      require: auth-token
+    person_server:
+      issuer: http://127.0.0.1:8765
+      jwks_uri: http://127.0.0.1:8765/.well-known/jwks.json            
