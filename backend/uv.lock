@@ -25,7 +25,7 @@ wheels = [
 [[package]]
 name = "aauth"
 version = "0.3.3"
-source = { registry = "https://pypi.org/simple" }
+source = { editable = "../../../dev/code/aauth" }
 dependencies = [
     { name = "aauth-signing" },
     { name = "cryptography" },
@@ -34,22 +34,38 @@ dependencies = [
     { name = "httpx" },
     { name = "pyjwt" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/b1/01/f1f3acae18c3140d7028481f11f343ea3f0a7cc41efe362f1bb86325c85b/aauth-0.3.3.tar.gz", hash = "sha256:81398a23dd8e8b7bc0b40defe99984ae92d649021f4675576c0d7b6a0f305a29", size = 58662 }
-wheels = [
-    { url = "https://files.pythonhosted.org/packages/bb/18/2fa01043a14768bde91e414e5554e9412fd513a03d9f590eba21d00a2be7/aauth-0.3.3-py3-none-any.whl", hash = "sha256:5c02c15c22e695101598aea67f870d87eb01a00476331c2f78d85bdfd5f6452c", size = 52292 },
+
+[package.metadata]
+requires-dist = [
+    { name = "aauth-signing", editable = "../../../dev/code/aauth/aauth-signing" },
+    { name = "cryptography", specifier = ">=41.0.0" },
+    { name = "fastapi", marker = "extra == 'dev'", specifier = ">=0.104.0" },
+    { name = "http-message-signatures", specifier = ">=1.0.0" },
+    { name = "http-sfv", specifier = ">=0.9.8" },
+    { name = "httpx", specifier = ">=0.25.0" },
+    { name = "pydantic", marker = "extra == 'dev'", specifier = ">=2.0.0" },
+    { name = "pyjwt", specifier = ">=2.8.0" },
+    { name = "pytest", marker = "extra == 'dev'", specifier = ">=7.4.0" },
+    { name = "pytest-asyncio", marker = "extra == 'dev'", specifier = ">=0.21.0" },
+    { name = "python-dateutil", marker = "extra == 'dev'", specifier = ">=2.8.0" },
+    { name = "python-multipart", marker = "extra == 'dev'", specifier = ">=0.0.6" },
+    { name = "uvicorn", marker = "extra == 'dev'", specifier = ">=0.24.0" },
 ]
+provides-extras = ["dev"]
 
 [[package]]
 name = "aauth-signing"
 version = "0.1.2"
-source = { registry = "https://pypi.org/simple" }
+source = { editable = "../../../dev/code/aauth/aauth-signing" }
 dependencies = [
     { name = "cryptography" },
     { name = "pyjwt" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/1d/c7/d242f8c7e356de98dbdbdb9ccb5adf7851308f95ae7bf2b5cf14b066f5eb/aauth_signing-0.1.2.tar.gz", hash = "sha256:b463b87ee172a8d0bdab6afe034b0bebfb00c73584c1a204061d8432198c795e", size = 15494 }
-wheels = [
-    { url = "https://files.pythonhosted.org/packages/0a/51/123205b5e7343e8c73048532c87fb158b72ae3a619dc377023e0ccae007e/aauth_signing-0.1.2-py3-none-any.whl", hash = "sha256:d473fb6c36c2dae257bd61853a9283651fbb544877f4df0640a27262cf2c487a", size = 20225 },
+
+[package.metadata]
+requires-dist = [
+    { name = "cryptography", specifier = ">=41.0.0" },
+    { name = "pyjwt", specifier = ">=2.8.0" },
 ]
 
 [[package]]
@@ -903,7 +919,7 @@ dependencies = [
 [package.metadata]
 requires-dist = [
     { name = "a2a-sdk", specifier = ">=0.3.0" },
-    { name = "aauth", specifier = "==0.3.3" },
+    { name = "aauth", editable = "../../../dev/code/aauth" },
     { name = "fastapi", specifier = "==0.104.1" },
     { name = "httpx", specifier = ">=0.28.1" },
     { name = "opentelemetry-api", specifier = ">=1.20.0" },

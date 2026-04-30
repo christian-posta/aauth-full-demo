@@ -23,6 +23,8 @@ export const useOptimization = () => {
   const [error, setError] = useState(null);
   const [requestId, setRequestId] = useState(null);
   const [promptText, setPromptText] = useState('');
+  const [interactionData, setInteractionData] = useState(null); // { url, code } when PS requires consent
+  const popupRef = useRef(null);
   
   // Use a ref to track current activities value for closures
   const activitiesRef = useRef(activities);
@@ -89,21 +91,50 @@ export const useOptimization = () => {
             });
           }
 
+          if (progressData.status === 'interaction_required') {
+            // PS/AS requires human consent before the agent can proceed.
+            // Open a popup so the user stays in context; backend is still polling.
+            if (progressData.interaction_url && progressData.interaction_code) {
+              setInteractionData({
+                url: progressData.interaction_url,
+                code: progressData.interaction_code,
+              });
+              // Open the consent page in a small popup if not already open
+              if (!popupRef.current || popupRef.current.closed) {
+                popupRef.current = window.open(
+                  progressData.interaction_url,
+                  'aauth-consent',
+                  'width=520,height=620,left=200,top=100'
+                );
+              }
+            }
+            // Don't stop polling — backend is waiting for the PS to approve
+            return;
+          }
+
+          // Once we advance past interaction_required, clear the banner and close popup
+          if (interactionData) {
+            setInteractionData(null);
+            if (popupRef.current && !popupRef.current.closed) {
+              popupRef.current.close();
+            }
+          }
+
           if (progressData.status === 'completed') {
             clearInterval(progressInterval);
             setIsRunning(false);
             setProgress(100);
-            
+
             // Always use the request_id from the progress data
             const completedRequestId = progressData.request_id;
             console.log('Optimization completed, fetching results for:', completedRequestId);
             console.log('Original request ID was:', response.request_id);
-            
+
             if (!completedRequestId) {
               console.error('No request_id in progress data:', progressData);
               return;
             }
-            
+
             // Wait a moment for results to be generated, then get results
             setTimeout(async () => {
               try {
@@ -115,7 +146,7 @@ export const useOptimization = () => {
                 // Don't show error to user, just log it
               }
             }, 1000);
-            
+
           } else if (progressData.status === 'failed') {
             clearInterval(progressInterval);
             setIsRunning(false);
@@ -267,6 +298,20 @@ export const useOptimization = () => {
     console.log('🎯 selectedActivityId changed to:', selectedActivityId);
   }, [selectedActivityId]);
 
+  // Listen for postMessage from the auth-callback popup page
+  useEffect(() => {
+    const handler = (event) => {
+      if (event.data?.type === 'aauth-consent-complete') {
+        setInteractionData(null);
+        if (popupRef.current && !popupRef.current.closed) {
+          popupRef.current.close();
+        }
+      }
+    };
+    window.addEventListener('message', handler);
+    return () => window.removeEventListener('message', handler);
+  }, []);
+
   const clearError = useCallback(() => {
     setError(null);
   }, []);
@@ -315,6 +360,7 @@ export const useOptimization = () => {
     error,
     requestId,
     promptText,
+    interactionData,
     setPromptText,
     startOptimization,
     clearOptimization,

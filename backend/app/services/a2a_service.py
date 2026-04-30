@@ -8,6 +8,7 @@ import httpx
 from datetime import datetime
 from aauth import sign_request as _aauth_sign_request, exchange_resource_token, extract_resource_token
 from aauth.errors import TokenError, MetadataError
+from app.services.optimization_service import optimization_service
 
 from a2a.client import ClientFactory, ClientConfig
 from a2a.client.errors import A2AClientHTTPError
@@ -342,10 +343,54 @@ class A2AService:
                             try:
                                 await agent_token_service.ensure_valid_token()
                                 signing_priv, agent_jwt = agent_token_service.get_http_signing_private_key_and_token()
+
+                                # Build interaction callbacks so the PS can surface human approval
+                                # state back to the frontend via the optimization progress API.
+                                _req_id = request_id
+
+                                async def _on_interaction(interaction_url: str, code: str) -> None:
+                                    # Append callback so the PS redirects the user back to
+                                    # the app after consent, closing the popup automatically.
+                                    callback = (
+                                        f"{settings.frontend_url}/auth-callback"
+                                        f"?request_id={_req_id}"
+                                    ) if _req_id else None
+                                    if callback:
+                                        sep = "&" if "?" in interaction_url else "?"
+                                        full_url = f"{interaction_url}{sep}callback={callback}"
+                                    else:
+                                        full_url = interaction_url
+
+                                    logger.info(
+                                        "PS requires user interaction — url=%s code=%s",
+                                        full_url, code,
+                                    )
+                                    token_logger.info(
+                                        "USER INTERACTION REQUIRED: visit %s (code: %s)",
+                                        full_url, code,
+                                    )
+                                    if _req_id:
+                                        optimization_service.set_interaction_required(
+                                            _req_id, full_url, code
+                                        )
+
+                                async def _on_clarification(pending_url: str, question: str):
+                                    logger.info(
+                                        "PS clarification question: %s", question
+                                    )
+                                    token_logger.info(
+                                        "PS CLARIFICATION: %s (pending_url=%s)", question, pending_url
+                                    )
+                                    # Clarification responses require a UI round-trip; for now
+                                    # log and return None so the poller continues waiting.
+                                    return None
+
                                 auth_token = await exchange_resource_token(
                                     resource_token=resource_token,
                                     private_key=signing_priv,
                                     agent_jwt=agent_jwt,
+                                    on_interaction=_on_interaction,
+                                    on_clarification=_on_clarification,
                                 )
                             except (TokenError, MetadataError) as exc:
                                 token_logger.error("PS exchange failed: %s", exc)

@@ -22,7 +22,7 @@ dependencies = [
     "opentelemetry-instrumentation-httpx>=0.40b0",
     "opentelemetry-instrumentation-fastapi>=0.40b0",
     "opentelemetry-exporter-otlp-proto-grpc>=1.20.0",
-    "aauth==0.3.3",
+    "aauth>=0.3.3",
 ]
 requires-python = ">=3.12"
 
@@ -38,6 +38,9 @@ packages = ["app"]
 
 [tool.uv]
 dev-dependencies = []
+
+[tool.uv.sources]
+aauth = { path = "/Users/ceposta/dev/code/aauth", editable = true }
 
 [tool.hatch.metadata]
 allow-direct-references = true

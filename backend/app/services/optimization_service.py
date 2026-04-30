@@ -107,6 +107,15 @@ class OptimizationService:
             else:
                 add_event("progress_update_failed", {"request_id": request_id, "reason": "request_not_found"})
     
+    def set_interaction_required(self, request_id: str, interaction_url: str, code: str):
+        """Mark an optimization as waiting for human interaction at the PS/AS."""
+        if request_id in self.optimizations:
+            from app.models import OptimizationStatus
+            self.optimizations[request_id].status = OptimizationStatus.INTERACTION_REQUIRED
+            self.optimizations[request_id].current_step = f"Waiting for user interaction — code: {code}"
+            self.optimizations[request_id].interaction_url = interaction_url
+            self.optimizations[request_id].interaction_code = code
+
     def complete_optimization(self, request_id: str, activities: List):
         """Mark optimization as completed and generate results with tracing support"""
         with span("optimization_service.complete_optimization", {

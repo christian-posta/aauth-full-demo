@@ -92,6 +92,8 @@ class OptimizationProgress(BaseModel):
     current_step: str
     estimated_completion: Optional[datetime] = None
     activities: List[AgentActivity] = []
+    interaction_url: Optional[str] = None
+    interaction_code: Optional[str] = None
 
 class PurchaseRecommendation(BaseModel):
     item: str

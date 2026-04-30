@@ -1,5 +1,5 @@
 import logging
-from fastapi import APIRouter, Depends, HTTPException, Request
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Request
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from typing import List, Any
 from app.models import (
@@ -174,13 +174,63 @@ async def run_optimization_workflow(
                 print("📊 Progress updated: Exception occurred")
             add_event("progress_updated", {"step": "Exception occurred", "percentage": 0.0})
 
+
+async def _optimization_start_job(
+    request_id: str,
+    user_id: str,
+    request: OptimizationRequest,
+    trace_context: Any,
+) -> None:
+    """Run A2A + PS token exchange in the background.
+
+    ``POST /optimization/start`` returns immediately so the UI can poll
+    ``GET /optimization/progress`` and surface ``interaction_required`` (consent)
+    while this coroutine is blocked on ``exchange_resource_token``.
+    """
+    try:
+        result = await a2a_service.optimize_supply_chain(
+            request, user_id, trace_context, request_id=request_id
+        )
+        if result.get("type") == "success":
+            await run_optimization_workflow(
+                request_id,
+                user_id,
+                request,
+                trace_context,
+                precomputed_response=result,
+            )
+            return
+        if result.get("type") == "error":
+            optimization_service.update_progress(
+                request_id,
+                0.0,
+                f"Error: {result.get('message', 'Unknown error')}",
+            )
+            if request_id in optimization_service.optimizations:
+                optimization_service.optimizations[request_id].status = OptimizationStatus.FAILED
+            return
+        optimization_service.update_progress(
+            request_id,
+            0.0,
+            f"Unexpected A2A result: {result.get('type', 'unknown')}",
+        )
+        if request_id in optimization_service.optimizations:
+            optimization_service.optimizations[request_id].status = OptimizationStatus.FAILED
+    except Exception as e:
+        logger.exception("optimization start job failed: %s", e)
+        optimization_service.update_progress(request_id, 0.0, f"Error: {str(e)}")
+        if request_id in optimization_service.optimizations:
+            optimization_service.optimizations[request_id].status = OptimizationStatus.FAILED
+
+
 @router.post("/start", response_model=dict)
 async def start_optimization(
     request: OptimizationRequest,
+    background_tasks: BackgroundTasks,
     current_user: dict = Depends(get_current_user),
     http_request: Request = None,
 ):
-    """Start a new optimization: one synchronous signed A2A call, then background workflow for results."""
+    """Start optimization: return immediately; A2A + PS exchange runs in a background task."""
     
     try:
         # Debug: Log the raw request data
@@ -237,52 +287,26 @@ async def start_optimization(
 
             user_id = current_user['payload'].get("sub")
 
-            add_event("a2a_sync_call_start", {"request_id": request_id})
-            result = await a2a_service.optimize_supply_chain(
-                request, user_id, trace_context, request_id=request_id
-            )
-            
-            if result.get("type") == "success":
-                await run_optimization_workflow(
-                    request_id, user_id, request, trace_context,
-                    precomputed_response=result
-                )
-                return {
-                    "request_id": request_id,
-                    "status": "completed",
-                    "message": "Optimization completed",
-                }
-            
-            if result.get("type") == "error":
-                # A2A call failed
-                optimization_service.update_progress(
-                    request_id, 0.0, f"Error: {result.get('message', 'Unknown error')}"
-                )
-                if request_id in optimization_service.optimizations:
-                    optimization_service.optimizations[request_id].status = OptimizationStatus.FAILED
-                return JSONResponse(
-                    status_code=200,
-                    content={
-                        "request_id": request_id,
-                        "status": "failed",
-                        "message": result.get("message", "Optimization failed"),
-                    },
-                )
-            
-            # Unexpected result type
-            optimization_service.update_progress(
-                request_id, 0.0, f"Unexpected A2A result: {result.get('type', 'unknown')}"
-            )
+            add_event("optimization_scheduled", {"request_id": request_id})
             if request_id in optimization_service.optimizations:
-                optimization_service.optimizations[request_id].status = OptimizationStatus.FAILED
-            return JSONResponse(
-                status_code=200,
-                content={
-                    "request_id": request_id,
-                    "status": "failed",
-                    "message": "Unexpected response from optimization agent",
-                },
+                optimization_service.optimizations[request_id].status = OptimizationStatus.RUNNING
+            optimization_service.update_progress(
+                request_id,
+                0.0,
+                "Connecting to A2A supply-chain agent",
             )
+            background_tasks.add_task(
+                _optimization_start_job,
+                request_id,
+                user_id,
+                request,
+                trace_context,
+            )
+            return {
+                "request_id": request_id,
+                "status": "started",
+                "message": "Optimization started — poll /optimization/progress for status",
+            }
             
     except Exception as e:
         if settings.debug:

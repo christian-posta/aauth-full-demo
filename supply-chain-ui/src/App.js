@@ -1,11 +1,68 @@
 import React, { useEffect, useState } from 'react';
-import { Shield, Clock, CheckCircle, DollarSign, Package, TrendingUp, AlertCircle } from 'lucide-react';
+import { Shield, Clock, CheckCircle, DollarSign, Package, TrendingUp, AlertCircle, ExternalLink, Key } from 'lucide-react';
 import { useKeycloak } from './hooks/useKeycloak';
 import { useOptimization } from './hooks/useOptimization';
 import Login from './components/Login';
 import UserDropdown from './components/UserDropdown';
 import MarkdownRenderer from './components/MarkdownRenderer';
 import apiService from './api';
+
+// ---------------------------------------------------------------------------
+// AuthCallback — rendered when the PS redirects back after consent.
+// This page lives at /auth-callback in the popup window.
+// ---------------------------------------------------------------------------
+const AuthCallback = () => {
+  useEffect(() => {
+    // Notify the opener that consent is complete, then close the popup.
+    if (window.opener) {
+      window.opener.postMessage({ type: 'aauth-consent-complete' }, window.location.origin);
+      window.close();
+    }
+  }, []);
+
+  return (
+    <div className="min-h-screen bg-slate-50 flex items-center justify-center">
+      <div className="text-center p-8 bg-white rounded-lg shadow-sm border border-gray-200 max-w-sm">
+        <CheckCircle className="h-12 w-12 text-green-500 mx-auto mb-4" />
+        <h2 className="text-lg font-semibold text-gray-900 mb-2">Authorization Complete</h2>
+        <p className="text-gray-500 text-sm">You can close this window. The agent will continue automatically.</p>
+      </div>
+    </div>
+  );
+};
+
+// ---------------------------------------------------------------------------
+// InteractionBanner — shown when the PS/AS requires human consent
+// ---------------------------------------------------------------------------
+const InteractionBanner = ({ interactionData, onOpenPopup }) => {
+  if (!interactionData) return null;
+  return (
+    <div className="bg-amber-50 border border-amber-300 rounded-lg p-4 flex items-start gap-3">
+      <Key className="h-5 w-5 text-amber-600 mt-0.5 shrink-0" />
+      <div className="flex-1 min-w-0">
+        <p className="text-sm font-semibold text-amber-900">Authorization Required</p>
+        <p className="text-sm text-amber-800 mt-0.5">
+          The authorization server needs your approval before the agent can proceed.
+        </p>
+        <div className="mt-2 flex items-center gap-3 flex-wrap">
+          <span className="font-mono text-xs bg-amber-100 text-amber-900 border border-amber-300 px-2 py-1 rounded select-all">
+            Code: {interactionData.code}
+          </span>
+          <button
+            onClick={onOpenPopup}
+            className="inline-flex items-center gap-1 text-xs font-medium text-amber-900 underline underline-offset-2 hover:text-amber-700"
+          >
+            Open consent page <ExternalLink className="h-3 w-3" />
+          </button>
+        </div>
+      </div>
+      <div className="shrink-0 flex items-center gap-1 text-amber-600">
+        <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-amber-600" />
+        <span className="text-xs">Waiting...</span>
+      </div>
+    </div>
+  );
+};
 
 // Loading component
 const LoadingScreen = () => (
@@ -270,6 +327,7 @@ const Dashboard = () => {
     selectedActivityId,
     error,
     promptText,
+    interactionData,
     setPromptText,
     startOptimization,
     clearOptimization,
@@ -277,6 +335,12 @@ const Dashboard = () => {
     selectActivity,
     createResultsFromActivity
   } = useOptimization();
+
+  const openConsentPopup = () => {
+    if (interactionData?.url) {
+      window.open(interactionData.url, 'aauth-consent', 'width=520,height=620,left=200,top=100');
+    }
+  };
 
   // Set Keycloak instance in API service
   useEffect(() => {
@@ -355,9 +419,10 @@ const Dashboard = () => {
                 </button>
 
                 {isRunning && (
-                  <div className="mt-6">
+                  <div className="mt-6 space-y-3">
+                    <InteractionBanner interactionData={interactionData} onOpenPopup={openConsentPopup} />
                     <div className="w-full bg-gray-200 rounded-full h-2">
-                      <div 
+                      <div
                         className="bg-blue-600 h-2 rounded-full transition-all duration-300"
                         style={{ width: `${progress}%` }}
                       ></div>
@@ -426,6 +491,11 @@ const Dashboard = () => {
 
 // Main App Component
 const App = () => {
+  // Handle the PS/AS redirect callback in the popup window
+  if (window.location.pathname === '/auth-callback') {
+    return <AuthCallback />;
+  }
+
   const { user, isAuthenticated, isLoading, error, login } = useKeycloak();
 
   if (isLoading) {
