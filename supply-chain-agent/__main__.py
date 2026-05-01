@@ -25,8 +25,6 @@ from agent_executor import (
     SupplyChainOptimizerExecutor,  # type: ignore[import-untyped]
 )
 from agent_token_service import agent_token_service
-from aauth import generate_jwks, generate_agent_metadata
-from starlette.responses import JSONResponse
 
 # Initialize OpenTelemetry tracing
 from tracing_config import initialize_tracing
@@ -147,33 +145,6 @@ async def main() -> None:
     app = server.build()
     app.add_middleware(HTTPHeadersCaptureMiddleware)
     print(f"🔐 Added HTTPHeadersCaptureMiddleware for AAuth header capture")
-
-    @app.route("/.well-known/aauth-agent.json", methods=["GET"])
-    async def aauth_agent_metadata(request):
-        agent_id_url = os.getenv("SUPPLY_CHAIN_AGENT_ID_URL", agent_url.rstrip('/'))
-        jwks_uri = f"{agent_id_url.rstrip('/')}/jwks.json"
-        return JSONResponse(
-            generate_agent_metadata(
-                agent_id=agent_id_url,
-                jwks_uri=jwks_uri,
-                client_name="Supply Chain Optimizer Agent",
-                clarification_supported=True,
-            )
-        )
-
-    @app.route("/jwks.json", methods=["GET"])
-    async def jwks_endpoint(request):
-        """JWKS for current PoP key (matches agent_token cnf.jwk after Agent Server registration)."""
-        ephemeral_jwk = agent_token_service.get_ephemeral_pub_jwk()
-        if not ephemeral_jwk:
-            return JSONResponse({"keys": []}, status_code=503)
-        public_jwk = dict(ephemeral_jwk)
-        if "kid" not in public_jwk:
-            public_jwk["kid"] = "supply-chain-agent-ephemeral-1"
-        jwks = generate_jwks([public_jwk])
-        return JSONResponse(jwks)
-
-    print(f"🔐 Added JWKS endpoints: /.well-known/aauth-agent.json and /jwks.json")
 
     startup_task = asyncio.create_task(agent_token_service.startup())
 
