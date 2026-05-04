@@ -49,7 +49,7 @@ binds:
       policies:
         authorization:
           rules:
-          # We can use the agent's identity and the scopes/auth token claims to amke policy decisions
+          # We can use the agent's identity and the scopes/auth token claims to make policy decisions
           - 'extauthz.act.sub == extauthz.agent && extauthz.agent.endsWith("agent-server.example") && extauthz.scope.contains("supply-chain:read")'
         extAuthz:
           host: "localhost:7070"

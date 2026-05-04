@@ -18,13 +18,13 @@ ENV UV_COMPILE_BYTECODE=1 \
     PYTHONUNBUFFERED=1
 
 # Copy dependency files first for better caching
-COPY pyproject.toml uv.lock ./
+COPY backend/pyproject.toml backend/uv.lock ./
 
 # Install dependencies using uv
 RUN uv pip install --system --requirement pyproject.toml
 
-# Copy the rest of the application
-COPY . .
+# Copy the rest of the backend application
+COPY backend/ .
 
 # Create non-root user
 RUN useradd --create-home --shell /bin/bash app && \

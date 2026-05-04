@@ -27,7 +27,7 @@ wheels = [
 
 [[package]]
 name = "aauth"
-version = "0.3.3"
+version = "0.3.4"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "aauth-signing" },
@@ -37,9 +37,9 @@ dependencies = [
     { name = "httpx" },
     { name = "pyjwt" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/b1/01/f1f3acae18c3140d7028481f11f343ea3f0a7cc41efe362f1bb86325c85b/aauth-0.3.3.tar.gz", hash = "sha256:81398a23dd8e8b7bc0b40defe99984ae92d649021f4675576c0d7b6a0f305a29", size = 58662 }
+sdist = { url = "https://files.pythonhosted.org/packages/b1/f9/4c0fe7e75c58d680a768dc16aa326291350ed6d7907bfae5f1b001358e98/aauth-0.3.4.tar.gz", hash = "sha256:34c9df8aa51b5a6215087b1bb4b64a2946a519aea605339871eb4546416bfdce", size = 62521 }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/bb/18/2fa01043a14768bde91e414e5554e9412fd513a03d9f590eba21d00a2be7/aauth-0.3.3-py3-none-any.whl", hash = "sha256:5c02c15c22e695101598aea67f870d87eb01a00476331c2f78d85bdfd5f6452c", size = 52292 },
+    { url = "https://files.pythonhosted.org/packages/07/6a/4e97aab5582db210c374c775f74ade3b736486873c0307ce7504f7049d9a/aauth-0.3.4-py3-none-any.whl", hash = "sha256:8e52ac1fe777573e3968b64e48452bb5237c8b113a9201956c85e67237d011ee", size = 53909 },
 ]
 
 [[package]]
@@ -775,7 +775,7 @@ dev = [
 [package.metadata]
 requires-dist = [
     { name = "a2a-sdk", specifier = ">=0.3.0" },
-    { name = "aauth", specifier = "==0.3.3" },
+    { name = "aauth", specifier = ">=0.3.4" },
     { name = "black", marker = "extra == 'dev'", specifier = ">=23.0.0" },
     { name = "click", specifier = ">=8.1.8" },
     { name = "cryptography", specifier = ">=43.0.0" },

@@ -1,0 +1,210 @@
+[1;33m=== Running AAuth Integration Tests ===[0m
+Test Mode: all
+
+[1;33m--- Running tests for mode1 ---[0m
+[1;33m=== Starting AAuth Infrastructure (Mode: mode1) ===[0m
+[1;33mChecking Keycloak...[0m
+[0;32m✓ Keycloak is running[0m
+[1;33mChecking Person Server...[0m
+[0;32m✓ Person Server is already running[0m
+[1;33mStarting agentgateway and aauth-service (Mode: mode1)...[0m
+Started agentgateway (PID: 12658)
+[0;32m✓ agentgateway is healthy[0m
+Started aauth-service (PID: 12663)
+[0;32m✓ aauth-service is healthy[0m
+[0;32m=== Infrastructure started successfully ===[0m
+
+Running in Mode: mode1
+Keycloak:       http://localhost:8080
+AgentGateway:   http://localhost:3000
+aauth-service:  http://localhost:8081 (HTTP), localhost:7070 (gRPC)
+Person Server:  http://127.0.0.1:8765
+
+Logs are in: /Users/ceposta/python/aauth-full-demo/logs/
+
+PIDs written to: /Users/ceposta/python/aauth-full-demo/.infra-pids
+
+ Container aauth-supply-chain-agent  Starting
+ Container aauth-backend  Starting
+ Container aauth-market-analysis-agent  Starting
+ Container aauth-backend  Started
+ Container aauth-market-analysis-agent  Started
+ Container aauth-supply-chain-agent  Started
+ Container aauth-market-analysis-agent  Waiting
+ Container aauth-backend  Waiting
+ Container aauth-supply-chain-agent  Waiting
+ Container aauth-backend  Healthy
+ Container aauth-supply-chain-agent  Healthy
+ Container aauth-market-analysis-agent  Healthy
+============================= test session starts ==============================
+platform darwin -- Python 3.11.14, pytest-9.0.3, pluggy-1.6.0 -- /usr/local/opt/python@3.11/bin/python3.11
+cachedir: .pytest_cache
+rootdir: /Users/ceposta/python/aauth-full-demo/tests
+configfile: pytest.ini
+plugins: anyio-4.13.0
+collecting ... collected 38 items / 33 deselected / 5 selected
+
+tests/integration/test_mode1_flow.py::test_supply_chain_optimization_flow FAILED [ 20%]
+tests/integration/test_mode1_flow.py::test_market_analysis_request FAILED [ 40%]
+tests/integration/test_mode1_flow.py::test_empty_request_prompt PASSED   [ 60%]
+tests/integration/test_mode1_flow.py::test_multiple_concurrent_requests FAILED [ 80%]
+tests/integration/test_mode1_flow.py::test_mode1_no_user_interaction PASSED [100%]
+
+=================================== FAILURES ===================================
+_____________________ test_supply_chain_optimization_flow ______________________
+tests/integration/test_mode1_flow.py:58: in test_supply_chain_optimization_flow
+    assert status == "COMPLETED", f"Optimization did not complete within {timeout}s"
+E   AssertionError: Optimization did not complete within 30s
+E   assert 'failed' == 'COMPLETED'
+E     
+E     - COMPLETED
+E     + failed
+---------------------------- Captured stdout setup -----------------------------
+
+Waiting for Keycloak at http://localhost:8080/realms/aauth-test...
+  ✓ Keycloak is ready
+
+Waiting for Backend at http://localhost:8000/health...
+  ✓ Backend is ready
+
+Waiting for Person Server at http://127.0.0.1:8765/.well-known/aauth-agent.json...
+  ✓ Person Server is ready
+_________________________ test_market_analysis_request _________________________
+tests/integration/test_mode1_flow.py:109: in test_market_analysis_request
+    assert status == "COMPLETED"
+E   AssertionError: assert 'failed' == 'COMPLETED'
+E     
+E     - COMPLETED
+E     + failed
+______________________ test_multiple_concurrent_requests _______________________
+tests/integration/test_mode1_flow.py:171: in test_multiple_concurrent_requests
+    assert len(completed) == len(request_ids), f"Not all requests completed: {completed}"
+E   AssertionError: Not all requests completed: set()
+E   assert 0 == 3
+E    +  where 0 = len(set())
+E    +  and   3 = len(['de20740f-d065-4f05-876c-cb7df99cdd63', '4b81ad89-a404-46cd-b841-57f6e342f5ec', '33571c2c-c441-405f-8104-cb654c28d8ba'])
+=========================== short test summary info ============================
+FAILED tests/integration/test_mode1_flow.py::test_supply_chain_optimization_flow - AssertionError: Optimization did not complete within 30s
+assert 'failed' == 'COMPLETED'
+  
+  - COMPLETED
+  + failed
+FAILED tests/integration/test_mode1_flow.py::test_market_analysis_request - AssertionError: assert 'failed' == 'COMPLETED'
+  
+  - COMPLETED
+  + failed
+FAILED tests/integration/test_mode1_flow.py::test_multiple_concurrent_requests - AssertionError: Not all requests completed: set()
+assert 0 == 3
+ +  where 0 = len(set())
+ +  and   3 = len(['de20740f-d065-4f05-876c-cb7df99cdd63', '4b81ad89-a404-46cd-b841-57f6e342f5ec', '33571c2c-c441-405f-8104-cb654c28d8ba'])
+====== 3 failed, 2 passed, 33 deselected, 2 warnings in 122.24s (0:02:02) ======
+[0;31mTests failed for mode1. Capturing logs...[0m
+[1;33m=== Stopping AAuth Infrastructure ===[0m
+Killed PID 12658
+Killed PID 12663
+[0;32m✓ Killed all managed processes[0m
+[1;33mStopping Docker containers...[0m
+[0;32m✓ Docker containers stopped[0m
+[0;32m=== Infrastructure stopped ===[0m
+
+[1;33m--- Running tests for mode3 ---[0m
+[1;33m=== Starting AAuth Infrastructure (Mode: mode3) ===[0m
+[1;33mChecking Keycloak...[0m
+[0;32m✓ Keycloak is running[0m
+[1;33mChecking Person Server...[0m
+[0;32m✓ Person Server is already running[0m
+[1;33mStarting agentgateway and aauth-service (Mode: mode3)...[0m
+Started agentgateway (PID: 12826)
+[0;32m✓ agentgateway is healthy[0m
+Started aauth-service (PID: 12832)
+[0;32m✓ aauth-service is healthy[0m
+[0;32m=== Infrastructure started successfully ===[0m
+
+Running in Mode: mode3
+Keycloak:       http://localhost:8080
+AgentGateway:   http://localhost:3000
+aauth-service:  http://localhost:8081 (HTTP), localhost:7070 (gRPC)
+Person Server:  http://127.0.0.1:8765
+
+Logs are in: /Users/ceposta/python/aauth-full-demo/logs/
+
+PIDs written to: /Users/ceposta/python/aauth-full-demo/.infra-pids
+
+ Network aauth-network  Creating
+ Network aauth-network  Created
+ Container aauth-backend  Creating
+ Container aauth-supply-chain-agent  Creating
+ Container aauth-market-analysis-agent  Creating
+ Container aauth-market-analysis-agent  Created
+ Container aauth-backend  Created
+ Container aauth-supply-chain-agent  Created
+ Container aauth-market-analysis-agent  Starting
+ Container aauth-backend  Starting
+ Container aauth-supply-chain-agent  Starting
+ Container aauth-supply-chain-agent  Started
+ Container aauth-market-analysis-agent  Started
+ Container aauth-backend  Started
+ Container aauth-market-analysis-agent  Waiting
+ Container aauth-backend  Waiting
+ Container aauth-supply-chain-agent  Waiting
+container aauth-market-analysis-agent is unhealthy
+[0;31mFailed to start Docker containers for mode3[0m
+[1;33m=== Stopping AAuth Infrastructure ===[0m
+Killed PID 12826
+Killed PID 12832
+[0;32m✓ Killed all managed processes[0m
+[1;33mStopping Docker containers...[0m
+[0;32m✓ Docker containers stopped[0m
+[0;32m=== Infrastructure stopped ===[0m
+
+[1;33m--- Running tests for user-consent ---[0m
+[1;33m=== Starting AAuth Infrastructure (Mode: user-consent) ===[0m
+[1;33mChecking Keycloak...[0m
+[0;32m✓ Keycloak is running[0m
+[1;33mChecking Person Server...[0m
+[0;32m✓ Person Server is already running[0m
+[1;33mStarting agentgateway and aauth-service (Mode: user-consent)...[0m
+Started agentgateway (PID: 12919)
+[0;32m✓ agentgateway is healthy[0m
+Started aauth-service (PID: 12925)
+[0;32m✓ aauth-service is healthy[0m
+[0;32m=== Infrastructure started successfully ===[0m
+
+Running in Mode: user-consent
+Keycloak:       http://localhost:8080
+AgentGateway:   http://localhost:3000
+aauth-service:  http://localhost:8081 (HTTP), localhost:7070 (gRPC)
+Person Server:  http://127.0.0.1:8765
+
+Logs are in: /Users/ceposta/python/aauth-full-demo/logs/
+
+PIDs written to: /Users/ceposta/python/aauth-full-demo/.infra-pids
+
+ Network aauth-network  Creating
+ Network aauth-network  Created
+ Container aauth-market-analysis-agent  Creating
+ Container aauth-backend  Creating
+ Container aauth-supply-chain-agent  Creating
+ Container aauth-supply-chain-agent  Created
+ Container aauth-backend  Created
+ Container aauth-market-analysis-agent  Created
+ Container aauth-supply-chain-agent  Starting
+ Container aauth-market-analysis-agent  Starting
+ Container aauth-backend  Starting
+ Container aauth-supply-chain-agent  Started
+ Container aauth-market-analysis-agent  Started
+ Container aauth-backend  Started
+ Container aauth-market-analysis-agent  Waiting
+ Container aauth-backend  Waiting
+ Container aauth-supply-chain-agent  Waiting
+container aauth-backend is unhealthy
+[0;31mFailed to start Docker containers for user-consent[0m
+[1;33m=== Stopping AAuth Infrastructure ===[0m
+Killed PID 12919
+Killed PID 12925
+[0;32m✓ Killed all managed processes[0m
+[1;33mStopping Docker containers...[0m
+[0;32m✓ Docker containers stopped[0m
+[0;32m=== Infrastructure stopped ===[0m
+
+[0;31m=== Tests failed for: mode1 mode3 user-consent ===[0m

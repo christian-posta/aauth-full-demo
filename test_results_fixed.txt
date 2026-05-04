@@ -1,0 +1,115 @@
+============================= test session starts ==============================
+platform darwin -- Python 3.11.14, pytest-9.0.3, pluggy-1.6.0 -- /usr/local/opt/python@3.11/bin/python3.11
+cachedir: .pytest_cache
+rootdir: /Users/ceposta/python/aauth-full-demo/tests
+configfile: pytest.ini
+plugins: anyio-4.13.0
+collecting ... collected 38 items
+
+tests/integration/test_backend_api.py::test_root_endpoint PASSED         [  2%]
+tests/integration/test_backend_api.py::test_health_endpoint PASSED       [  5%]
+tests/integration/test_backend_api.py::test_auth_me_with_valid_token PASSED [  7%]
+tests/integration/test_backend_api.py::test_auth_me_without_token PASSED [ 10%]
+tests/integration/test_backend_api.py::test_auth_health_endpoint PASSED  [ 13%]
+tests/integration/test_backend_api.py::test_agents_status_list PASSED    [ 15%]
+tests/integration/test_backend_api.py::test_agents_status_by_id PASSED   [ 18%]
+tests/integration/test_backend_api.py::test_agents_activities PASSED     [ 21%]
+tests/integration/test_backend_api.py::test_agents_activities_with_limit PASSED [ 23%]
+tests/integration/test_backend_api.py::test_optimization_all PASSED      [ 26%]
+tests/integration/test_backend_api.py::test_optimization_start_requires_auth PASSED [ 28%]
+tests/integration/test_backend_api.py::test_optimization_start_with_auth FAILED [ 31%]
+tests/integration/test_backend_api.py::test_optimization_progress_not_found FAILED [ 34%]
+tests/integration/test_backend_api.py::test_optimization_results_not_found PASSED [ 36%]
+tests/integration/test_backend_api.py::test_cors_preflight PASSED        [ 39%]
+tests/integration/test_health.py::test_keycloak_health PASSED            [ 42%]
+tests/integration/test_health.py::test_backend_health PASSED             [ 44%]
+tests/integration/test_health.py::test_backend_root PASSED               [ 47%]
+tests/integration/test_health.py::test_person_server_health PASSED       [ 50%]
+tests/integration/test_health.py::test_keycloak_token_endpoint PASSED    [ 52%]
+tests/integration/test_health.py::test_backend_auth_me_endpoint PASSED   [ 55%]
+tests/integration/test_health.py::test_backend_auth_me_unauthorized PASSED [ 57%]
+tests/integration/test_health.py::test_agents_status_endpoint PASSED     [ 60%]
+tests/integration/test_mode1_flow.py::test_supply_chain_optimization_flow FAILED [ 63%]
+tests/integration/test_mode1_flow.py::test_market_analysis_request FAILED [ 65%]
+tests/integration/test_mode1_flow.py::test_empty_request_prompt PASSED   [ 68%]
+tests/integration/test_mode1_flow.py::test_multiple_concurrent_requests FAILED [ 71%]
+tests/integration/test_mode1_flow.py::test_mode1_no_user_interaction PASSED [ 73%]
+tests/integration/test_mode3_flow.py::test_mode3_optimization_flow FAILED [ 76%]
+tests/integration/test_mode3_flow.py::test_mode3_market_analysis PASSED  [ 78%]
+tests/integration/test_mode3_flow.py::test_mode3_invalid_token_rejected PASSED [ 81%]
+tests/integration/test_mode3_flow.py::test_mode3_no_auth_header_rejected PASSED [ 84%]
+tests/integration/test_mode3_flow.py::test_mode3_agent_health PASSED     [ 86%]
+tests/integration/test_mode3_flow.py::test_mode3_extended_flow PASSED    [ 89%]
+tests/integration/test_user_consent_flow.py::test_user_consent_full_flow SKIPPED [ 92%]
+tests/integration/test_user_consent_flow.py::test_user_consent_denial SKIPPED [ 94%]
+tests/integration/test_user_consent_flow.py::test_market_analysis_with_consent FAILED [ 97%]
+tests/integration/test_user_consent_flow.py::test_consent_timeout SKIPPED [100%]
+
+=================================== FAILURES ===================================
+______________________ test_optimization_start_with_auth _______________________
+tests/integration/test_backend_api.py:145: in test_optimization_start_with_auth
+    assert response.status_code == 200
+E   assert 401 == 200
+E    +  where 401 = <Response [401]>.status_code
+_____________________ test_optimization_progress_not_found _____________________
+tests/integration/test_backend_api.py:160: in test_optimization_progress_not_found
+    assert response.status_code in [200, 404]
+E   assert 401 in [200, 404]
+E    +  where 401 = <Response [401]>.status_code
+_____________________ test_supply_chain_optimization_flow ______________________
+tests/integration/test_mode1_flow.py:58: in test_supply_chain_optimization_flow
+    assert status == "COMPLETED", f"Optimization did not complete within {timeout}s"
+E   AssertionError: Optimization did not complete within 30s
+E   assert 'failed' == 'COMPLETED'
+E     
+E     - COMPLETED
+E     + failed
+_________________________ test_market_analysis_request _________________________
+tests/integration/test_mode1_flow.py:109: in test_market_analysis_request
+    assert status == "COMPLETED"
+E   AssertionError: assert 'failed' == 'COMPLETED'
+E     
+E     - COMPLETED
+E     + failed
+______________________ test_multiple_concurrent_requests _______________________
+tests/integration/test_mode1_flow.py:171: in test_multiple_concurrent_requests
+    assert len(completed) == len(request_ids), f"Not all requests completed: {completed}"
+E   AssertionError: Not all requests completed: set()
+E   assert 0 == 3
+E    +  where 0 = len(set())
+E    +  and   3 = len(['99100fc1-a938-4a4b-b2df-a4f3ce6550de', 'f7d93306-7f3f-4e7a-a552-46edc5cbb082', 'a7a74f32-fbf9-4872-a6ae-68d705a21503'])
+_________________________ test_mode3_optimization_flow _________________________
+tests/integration/test_mode3_flow.py:60: in test_mode3_optimization_flow
+    assert status in ["COMPLETED", "FAILED"], f"Unexpected status: {status}"
+E   AssertionError: Unexpected status: failed
+E   assert 'failed' in ['COMPLETED', 'FAILED']
+______________________ test_market_analysis_with_consent _______________________
+tests/integration/test_user_consent_flow.py:227: in test_market_analysis_with_consent
+    assert progress.get("status") in ["COMPLETED", None]
+E   AssertionError: assert 'failed' in ['COMPLETED', None]
+E    +  where 'failed' = <built-in method get of dict object at 0x1029f7080>('status')
+E    +    where <built-in method get of dict object at 0x1029f7080> = {'request_id': '0ff793a4-0805-4040-8b7b-edbed6226a98', 'status': 'failed', 'progress_percentage': 0.0, 'current_step': 'Error: A2A request failed: HTTP 401 (use agentgateway for policy; verify request signing).', 'estimated_completion': None, 'activities': [], 'interaction_url': None, 'interaction_code': None}.get
+=========================== short test summary info ============================
+FAILED tests/integration/test_backend_api.py::test_optimization_start_with_auth - assert 401 == 200
+ +  where 401 = <Response [401]>.status_code
+FAILED tests/integration/test_backend_api.py::test_optimization_progress_not_found - assert 401 in [200, 404]
+ +  where 401 = <Response [401]>.status_code
+FAILED tests/integration/test_mode1_flow.py::test_supply_chain_optimization_flow - AssertionError: Optimization did not complete within 30s
+assert 'failed' == 'COMPLETED'
+  
+  - COMPLETED
+  + failed
+FAILED tests/integration/test_mode1_flow.py::test_market_analysis_request - AssertionError: assert 'failed' == 'COMPLETED'
+  
+  - COMPLETED
+  + failed
+FAILED tests/integration/test_mode1_flow.py::test_multiple_concurrent_requests - AssertionError: Not all requests completed: set()
+assert 0 == 3
+ +  where 0 = len(set())
+ +  and   3 = len(['99100fc1-a938-4a4b-b2df-a4f3ce6550de', 'f7d93306-7f3f-4e7a-a552-46edc5cbb082', 'a7a74f32-fbf9-4872-a6ae-68d705a21503'])
+FAILED tests/integration/test_mode3_flow.py::test_mode3_optimization_flow - AssertionError: Unexpected status: failed
+assert 'failed' in ['COMPLETED', 'FAILED']
+FAILED tests/integration/test_user_consent_flow.py::test_market_analysis_with_consent - AssertionError: assert 'failed' in ['COMPLETED', None]
+ +  where 'failed' = <built-in method get of dict object at 0x1029f7080>('status')
+ +    where <built-in method get of dict object at 0x1029f7080> = {'request_id': '0ff793a4-0805-4040-8b7b-edbed6226a98', 'status': 'failed', 'progress_percentage': 0.0, 'current_step': 'Error: A2A request failed: HTTP 401 (use agentgateway for policy; verify request signing).', 'estimated_completion': None, 'activities': [], 'interaction_url': None, 'interaction_code': None}.get
+======= 7 failed, 28 passed, 3 skipped, 2 warnings in 426.85s (0:07:06) ========

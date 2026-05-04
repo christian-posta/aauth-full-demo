@@ -302,3 +302,10 @@ keycloak-config/
 *.gz
 *.rar
 *.7z
+
+# Test harness artifacts
+.infra-pids
+logs/
+test-results.xml
+.pytest_cache/
+__pycache__/
