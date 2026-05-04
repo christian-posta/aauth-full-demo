@@ -35,8 +35,10 @@ This set of resources walks you through set up and evaluation of a realistic AAu
 
 The source code for this section can be found in GitHub: [https://github.com/christian-posta/aauth-full-demo](https://github.com/christian-posta/aauth-full-demo)
 
+The demo ships with a **fully automated test harness** (`tests/integration/`) that exercises all three AAuth modes — identity-only (Mode 1), auth-token (Mode 3), and user consent — entirely via API calls, no browser required. Each section below links to the corresponding test suite. See `TEST.md` in the repo for the quick-start.
+
 1. [AAuth with Keycloak and Agentgateway](install-aauth-keycloak.md)
-2. [Agent Identity with JWKS](agent-identity-jwks.md)
+2. [Agent Identity with aa-agent+jwt (Bootstrap)](agent-identity-jwks.md)
 3. [Agent authorization (autonomous flow)](agent-authorization-autonomous.md)
 4. [Agent authorization (user consent)](agent-authorization-on-behalf-of.md)
 5. [Token Exchange for Auth propagation (OBO)](agent-token-exchange.md)

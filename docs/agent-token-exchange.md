@@ -28,7 +28,7 @@ sequenceDiagram
     participant KC as Keycloak
 
     BE->>SCA: Request with auth_token sub user agent backend
-    SCA->>MAA: Initial request jwks_uri scheme
+    SCA->>MAA: Initial request aa-agent+jwt scheme
     MAA-->>SCA: 401 AAuth challenge plus resource token
     
     Note over SCA: Exchange upstream token at auth server
@@ -42,10 +42,10 @@ sequenceDiagram
 
 ### Step 1: MAA issues challenge
 
-When SCA first calls MAA, it receives **401** with an **`AAuth: require=auth-token; resource-token="..."; auth-server="..."`** response (same challenge shape as in the [autonomous authorization](./agent-authorization-autonomous.md) and [resource authorization](./flow-03-authz.md) flows). The body indicates authorization is required until a suitable auth token is presented.
+When SCA first calls MAA, it receives **401** with an **`AAuth: require=auth-token; resource-token="..."; auth-server="..."`** response (same challenge shape as in the [autonomous authorization](./agent-authorization-autonomous.md) and [resource authorization](./flow-03-authz.md) flows). The body indicates that the `aa-agent+jwt` identity token is not sufficient — an `aa-auth+jwt` auth token is required.
 
 ```bash
-INFO:agent_executor:🔐 Authorization required: scheme=jwt needed but received jwks_uri
+INFO:aauth_interceptor:🔐 AAuth: Signing with agent token (aa-agent+jwt in Signature-Key)
 INFO:resource_token_service:✅ Resource token generated successfully
 INFO:agent_executor:🔐 Issuing resource_token for agent: http://supply-chain-agent.localhost:3000
 ```
@@ -95,11 +95,11 @@ Keycloak validates, in line with call-chaining token exchange:
 
 It then issues a **new** auth token for the downstream hop. That token’s claims describe the **immediate** caller and the resource audience—not a nested “actor” object. As in [flow-05-token-ex](./flow-05-token-ex.md), the exchanged JWT does **not** carry a legacy **`act`** claim; provenance of the chain is established when the auth server validates **`upstream_token`** and **`resource_token`** together.
 
-Keycloak issues a new auth_token shaped like this (illustrative):
+The Person Server issues a new `aa-auth+jwt` shaped like this (illustrative):
 
 ```json
 {
-  "iss": "http://localhost:8080/realms/aauth-test",
+  "iss": "http://127.0.0.1:8765",
   "aud": "http://market-analysis-agent.localhost:3000",
   "jti": "abdceb92-5458-4fbc-9403-7c0d8255526d",
   "sub": "00b519e8-f409-4201-8911-1cb408e8a082",

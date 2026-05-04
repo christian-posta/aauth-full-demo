@@ -245,6 +245,24 @@ binds:
 
 
 
+## Automated Testing with Policy Enforcement
+
+Mode 3 is the automated test mode that exercises Agentgateway policy enforcement. It uses `config-policy.yaml` (the configuration described above) so every test request is subject to the CEL authorization rules.
+
+```bash
+./scripts/start-infra.sh mode3
+./scripts/run-tests.sh mode3
+./scripts/stop-infra.sh
+```
+
+The mode3 tests specifically validate the security boundary:
+
+- `test_mode3_invalid_token_rejected` — sends `Authorization: Bearer invalid-token`, asserts 401/403 at the backend
+- `test_mode3_no_auth_header_rejected` — sends no `Authorization` header at all, asserts 401/403
+- `test_mode3_extended_flow` — exercises the SCA→MAA agent-to-agent path under the policy config, confirming the token exchange (SCA requesting a new auth-token for MAA) satisfies the CEL rules for both agents
+
+Because the agentgateway config specifies `requiredScheme: jwks` and the CEL rule checks `aauth.agent == 'http://backend.localhost:8000'`, any agent that does not sign with JWKS or presents the wrong identity URL is rejected with 403 before the request reaches the supply-chain-agent.
+
 ## Testing Policy Violations
 
 Try these to see policy enforcement in action:

@@ -82,31 +82,13 @@ Non-interactive usage:
   ./keycloak/set_aauth_consent_attributes.sh http://localhost:8080 aauth-test admin admin
 ```
 
-Now restart the `supply-chain-agent` with user-delegated authorization:
+Start the infrastructure with the user-consent config:
 
-<div class="run-tabs">
-  
-  <input type="radio" name="run-tabs" id="tab-supply-chain" checked>
-  <input type="radio" name="run-tabs" id="tab-market-analysis">
-  <div class="tab-labels">
-    <label for="tab-supply-chain">Supply-chain-agent</label>
-    <label for="tab-market-analysis">Market-analysis</label>
-  </div>
-  <div class="tab-content" id="content-supply-chain">
-    <p>From the <code>supply-chain-agent</code> directory:</p>
-    <pre><code>
-      > cd supply-chain-agent
-      > uv run . --signature-scheme jwks_uri --authorization-scheme user-delegated
-    </code></pre>
-  </div>
-  <div class="tab-content" id="content-market-analysis">
-    <p>From the <code>market-analysis-agent</code> directory:</p>
-    <pre><code>
-      > cd market-analysis-agent
-      > uv run . --signature-scheme jwks_uri --authorization-scheme autonomous
-    </code></pre>
-  </div>
-</div>
+```bash
+./scripts/start-infra.sh user-consent
+```
+
+This uses `aauth-config-user-consent.yaml` for the aauth-service, which configures Keycloak scopes so that `supply-chain:optimize` requires user consent before an auth token is issued. All agents bootstrap their `aa-agent+jwt` from the Person Server automatically on startup.
 
 
 Navigate to the UI and click "Optimize Laptop Supply Chain". The flow now includes the **deferred** consent path: the token endpoint may return **`202`** instead of issuing an `auth_token` immediately.
@@ -142,7 +124,8 @@ When the `backend` calls the `supply-chain-agent`, it receives a 401 with a reso
 
 
 ```bash
-INFO:aauth.tokens:🔐 401 from supply-chain-agent (url=http://supply-chain-agent.localhost:3000): headers={'date': 'Sat, 07 Feb 2026 16:56:35 GMT', 'server': 'uvicorn', 'aauth': 'require=auth-token; resource-token="eyJhbGciOiJFZERTQSIsImtpZCI6InN1cHBseS1jaGFpbi1hZ2VudC1lcGhlbWVyYWwtMSIsInR5cCI6InJlc291cmNlK2p3dCJ9.eyJpc3MiOiJodHRwOi8vc3VwcGx5LWNoYWluLWFnZW50LmxvY2FsaG9zdDozMDAwIiwiYXVkIjoiaHR0cDovL2xvY2FsaG9zdDo4MDgwL3JlYWxtcy9hYXV0aC10ZXN0IiwiYWdlbnQiOiJodHRwOi8vYmFja2VuZC5sb2NhbGhvc3Q6ODAwMCIsImFnZW50X2prdCI6IlVDaWE5dEpNV3lEMWZPMGlhV1YxV2NzQmRaQzIwb0E5MVZYLS1VY2NXM0UiLCJleHAiOjE3NzA0ODM2OTYsInNjb3BlIjoic3VwcGx5LWNoYWluOm9wdGltaXplIG1hcmtldC1hbmFseXNpczphbmFseXplIn0.jHesCOn3qIXke_aAe3VrIzS7RbLhW9_rMRfLNqVeMDC9YZl16a1RvOEELHiy0wXA-Cy7y3CUzW7t5N_FbxgiCA"; auth-server="http://localhost:8080/realms/aauth-test"', 'content-length': '22', 'content-type': 'text/plain; charset=utf-8'}
+INFO:aauth_interceptor:🔐 AAuth: Signing with agent token (aa-agent+jwt in Signature-Key)
+INFO:aauth.tokens:🔐 401 from supply-chain-agent (url=http://supply-chain-agent.localhost:3000): headers={'date': 'Sat, 07 Feb 2026 16:56:35 GMT', 'server': 'uvicorn', 'aauth': 'require=auth-token; resource-token="eyJhbGciOiJFZERTQSIsImtpZCI6InN1cHBseS1jaGFpbi1hZ2VudC1lcGhlbWVyYWwtMSIsInR5cCI6InJlc291cmNlK2p3dCJ9.eyJpc3MiOiJodHRwOi8vc3VwcGx5LWNoYWluLWFnZW50LmxvY2FsaG9zdDozMDAwIiwiYXVkIjoiaHR0cDovLzEyNy4wLjAuMTo4NzY1IiwiYWdlbnQiOiJodHRwOi8vYmFja2VuZC5sb2NhbGhvc3Q6ODAwMCIsImFnZW50X2prdCI6IlVDaWE5dEpNV3lEMWZPMGlhV1YxV2NzQmRaQzIwb0E5MVZYLS1VY2NXM0UiLCJleHAiOjE3NzA0ODM2OTYsInNjb3BlIjoic3VwcGx5LWNoYWluOm9wdGltaXplIG1hcmtldC1hbmFseXNpczphbmFseXplIn0.jHesCOn3qIXke_aAe3VrIzS7RbLhW9_rMRfLNqVeMDC9YZl16a1RvOEELHiy0wXA-Cy7y3CUzW7t5N_FbxgiCA"; auth-server="http://127.0.0.1:8765"', 'content-length': '22', 'content-type': 'text/plain; charset=utf-8'}
 ```
 {: .log-output}
 
@@ -208,13 +191,13 @@ INFO:agent_executor:✅ Authorization successful: auth_token verified for agent:
 ```
 {: .log-output}
 
-If we decode the token:
+If we decode the token (`aa-auth+jwt`, AAuth spec §9.4.1):
 
 ```json
 {
   "exp": 1770483765,
   "iat": 1770483465,
-  "iss": "http://localhost:8080/realms/aauth-test",
+  "iss": "http://127.0.0.1:8765",
   "aud": "http://supply-chain-agent.localhost:3000",
   "sub": "00b519e8-f409-4201-8911-1cb408e8a082",
   "agent": "http://backend.localhost:8000",
@@ -230,6 +213,8 @@ If we decode the token:
   "scope": "supply-chain:optimize market-analysis:analyze"
 }
 ```
+
+> **Note:** The `iss` is the **Person Server** (`http://127.0.0.1:8765`), not Keycloak. The Person Server is the entity that issued the agents' `aa-agent+jwt` tokens AND issues `aa-auth+jwt` auth tokens after consent is approved. Keycloak is still used for OIDC authentication of the human user (`mcp-user`), but the AAuth token chain flows through the Person Server.
 
 ## Compare to Autonomous Scheme
 
@@ -261,6 +246,95 @@ This enables fine-grained audit trails: "User Alice authorized Backend Agent to 
 Use autonomous mode when: Agents are acting on their own authority (background jobs, system tasks, agent-to-agent coordination).
 
 Use user-delegated mode when: Agents must act on behalf of a specific user (accessing user data, making decisions with user accountability, compliance requirements).
+
+---
+
+## Automated Testing (User Consent)
+
+The user consent flow is exercised by the **user-consent** test suite. Because consent traditionally requires a human to click a browser page, the test harness automates this step via the **Person Server REST API** — the same API the browser UI calls under the hood.
+
+```bash
+# Requires Keycloak and Person Server already running
+./scripts/start-infra.sh user-consent
+./scripts/run-tests.sh user-consent
+./scripts/stop-infra.sh
+```
+
+### How Consent Is Automated
+
+When the backend returns `status: interaction_required`, the test extracts the `interaction_code` and approves it directly through the Person Server:
+
+```python
+# 1. Start optimization
+request_id = requests.post(f"{backend_url}/optimization/start", ...).json()["request_id"]
+
+# 2. Poll until interaction_required
+while True:
+    progress = requests.get(f"{backend_url}/optimization/progress/{request_id}", ...).json()
+    if progress["status"] == "interaction_required":
+        consent_code = progress["interaction_code"]
+        break
+
+# 3. Look up the pending consent context
+pending_id = requests.get(f"{person_server_url}/consent?code={consent_code}").json()["pending_id"]
+
+# 4. Approve via REST API (replaces clicking "Approve" in the browser)
+requests.post(f"{person_server_url}/consent/{pending_id}/decision", json={"approved": True})
+
+# 5. Poll until completion
+while True:
+    progress = requests.get(f"{backend_url}/optimization/progress/{request_id}", ...).json()
+    if progress["status"] == "completed":
+        break
+```
+
+This is exactly what the browser UI does when the user clicks "Approve" on the Keycloak consent screen — the Person Server acts as the intermediary that bridges the browser's redirect back to the polling backend.
+
+### What the Tests Verify
+
+`tests/integration/test_user_consent_flow.py` contains four tests:
+
+| Test | What it checks |
+|------|---------------|
+| `test_user_consent_full_flow` | Full flow: detect `interaction_required` → approve → `completed` |
+| `test_user_consent_denial` | Deny consent → request enters `failed`/`pending` state |
+| `test_market_analysis_with_consent` | Market analysis that triggers SCA→MAA + consent; approves inline during poll loop |
+| `test_consent_timeout` | Verifies `interaction_code` and `interaction_url` are both present when consent is pending |
+
+### Inline Consent Approval During Polling
+
+`test_market_analysis_with_consent` demonstrates the full automated loop — whenever the poll returns `interaction_required`, the test approves immediately and continues polling:
+
+```python
+while time.time() - start_time < timeout:
+    progress = requests.get(f"{backend_url}/optimization/progress/{request_id}", ...).json()
+    
+    if progress["status"] == "interaction_required":
+        consent_code = progress["interaction_code"]
+        pending_id = requests.get(f"{person_server_url}/consent?code={consent_code}").json()["pending_id"]
+        requests.post(f"{person_server_url}/consent/{pending_id}/decision", json={"approved": True})
+        continue   # resume polling
+
+    if progress["status"] == "completed":
+        break
+```
+
+### The `sub` Claim — Proof That User Identity Propagates
+
+After consent is approved, the backend polls the Keycloak pending URL and receives an `auth_token` that now contains a `sub` claim. The tests confirm the full flow completes — but you can verify the user identity claim is present by decoding the token logged by the supply-chain-agent:
+
+```json
+{
+  "iss": "http://localhost:8080/realms/aauth-test",
+  "aud": "http://supply-chain-agent.localhost:3000",
+  "sub": "00b519e8-f409-4201-8911-1cb408e8a082",   ← user identity
+  "agent": "http://backend.localhost:8000",
+  "cnf": { "jwk": { ... } },
+  "scope": "supply-chain:optimize"
+}
+```
+
+The `sub` is the Keycloak user ID for `mcp-user`. This claim does **not** appear in Mode 3 autonomous tokens — its presence is what distinguishes user-delegated authorization from autonomous authorization, and is exactly what the [Compare to Autonomous Scheme](#compare-to-autonomous-scheme) table above illustrates.
 
 In the next post, we'll explore token exchange and delegation chains—how agents can delegate to other agents while preserving the user's identity and consent. [Read more: Agent Token Exchange →](./agent-token-exchange.md)
 

@@ -32,8 +32,10 @@ run_tests_for_mode() {
     echo ""
     echo -e "${YELLOW}--- Running tests for $mode ---${NC}"
 
-    # Start infrastructure for this mode
-    ./scripts/start-infra.sh "$mode"
+    # Start infrastructure for this mode.
+    # Redirect stdin from /dev/null so start-infra.sh's [ -t 0 ] check returns false
+    # and it exits after starting services instead of blocking on `wait`.
+    ./scripts/start-infra.sh "$mode" < /dev/null
     INFRA_RESULT=$?
 
     if [ $INFRA_RESULT -ne 0 ]; then

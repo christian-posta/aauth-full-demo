@@ -126,7 +126,7 @@ With the AAuth build, you can:
 - verify message signatures for AAuth requests
 - enforce minimum thresholds of authentication (pseudonymous, identified, authorized)
 - log and trace details of the aauth request
-- enforce allow/deny policy based on agent identity (jwks, jwt, etc)
+- enforce allow/deny policy based on agent identity (`aa-agent+jwt`, `aa-auth+jwt`)
 - enforce rate limit policy based on authentication levels
 
 To get started with Agentgateway for this AAuth demo, you can [download the release](https://github.com/christian-posta/agentgateway/releases/tag/v0.11.3) and configure it with the config.yaml in this source code repo.
@@ -162,5 +162,100 @@ The Agentgateway (and the agents in this demo) is configured to send tracing spa
 
 
 At this point we can [proceed with the demo](./agent-identity-jwks.md). 
+
+> **Important — Person Server as Agent Server:** The Person Server (`http://127.0.0.1:8765`) plays a dual role in this demo. It is the **Agent Server** that issues `aa-agent+jwt` tokens to each agent at startup, AND it is the **Person Server** that manages user consent and issues `aa-auth+jwt` auth tokens. Keycloak is used for OIDC authentication of the human user (`mcp-user`) in the UI, but the AAuth token chain runs entirely through the Person Server. Make sure it is running before starting any other service.
+{: .callout}
+
+---
+
+# Automated Test Harness
+
+The demo ships with a **fully automated test harness** that exercises all three AAuth modes without browser interaction. The harness replaces manual click-through testing with API-level assertions against a running infrastructure.
+
+## Prerequisites
+
+Two services must already be running **before** any test or infrastructure script:
+
+1. **Keycloak** (as shown above — must be running with the `aauth-test` realm configured)
+2. **Person Server** (AAuth agent registry):
+   ```bash
+   cd ~/python/aauth-person-server && ./run-server.sh
+   ```
+   Verify: `curl http://127.0.0.1:8765/.well-known/aauth-agent.json`
+
+## Infrastructure Scripts
+
+Three scripts manage the lifecycle of all managed services:
+
+| Script | Purpose |
+|--------|---------|
+| `scripts/start-infra.sh [mode1\|mode3\|user-consent]` | Start agentgateway, aauth-service, and all Python services |
+| `scripts/stop-infra.sh` | Kill all managed processes |
+| `scripts/run-tests.sh [mode1\|mode3\|user-consent\|all]` | Start infra, run pytest for the mode, stop infra |
+
+### What `start-infra.sh` Does
+
+The script selects the correct config files for the requested mode, then starts each service and waits for it to become healthy:
+
+```bash
+./scripts/start-infra.sh mode1
+
+=== Starting AAuth Infrastructure (Mode: mode1) ===
+Checking Keycloak...
+✓ Keycloak is running
+Checking Person Server...
+✓ Person Server is already running
+Starting agentgateway and aauth-service (Mode: mode1)...
+Started agentgateway (PID: 12658)
+✓ agentgateway is healthy
+Started aauth-service (PID: 12663)
+✓ aauth-service is healthy
+=== Infrastructure started successfully ===
+
+Running in Mode: mode1
+Keycloak:              http://localhost:8080
+AgentGateway:          http://localhost:3000
+aauth-service:         http://localhost:8081 (HTTP), localhost:7070 (gRPC)
+Person Server:         http://127.0.0.1:8765
+Backend:               http://localhost:8000
+Supply-Chain-Agent:    http://localhost:9999
+Market-Analysis-Agent: http://localhost:9998
+```
+
+### Port Layout
+
+| Service | Port(s) | Notes |
+|---------|---------|-------|
+| Keycloak | 8080 | Pre-running, manages `aauth-test` realm |
+| Backend | 8000 | FastAPI; receives OIDC-authenticated requests from tests |
+| Supply-Chain Agent | 9999 | A2A orchestrator; signs requests, handles AAuth challenges |
+| Market-Analysis Agent | 9998 | A2A analyzer; called by supply-chain-agent |
+| Agentgateway | 3000 | Proxy + AAuth policy enforcement |
+| aauth-service | 7070 / 8081 | ExtAuthz gRPC / HTTP |
+| Person Server | 8765 | Agent registry + consent management |
+
+### Mode Configurations
+
+| Mode | agentgateway config | aauth-service config | What it tests |
+|------|--------------------|--------------------|---------------|
+| `mode1` | `config.yaml` | `aauth-config.yaml` | Identity-only (JWKS signature sufficient) |
+| `mode3` | `config-policy.yaml` | `aauth-config-mode3.yaml` | Auth-token required; resource issues 401 challenge |
+| `user-consent` | `config-policy.yaml` | `aauth-config-user-consent.yaml` | Auth-token + user consent via Person Server |
+
+## Running the Tests
+
+```bash
+# Run all modes end-to-end
+./scripts/run-tests.sh all
+
+# Or run a specific mode
+./scripts/run-tests.sh mode1
+./scripts/run-tests.sh mode3
+./scripts/run-tests.sh user-consent
+```
+
+The test suite is at `tests/integration/` and uses pytest. Test user credentials are `mcp-user` / `user123` on the `aauth-test` realm — the same user created by `./keycloak/configure-keycloak.sh`. Each test obtains a fresh Keycloak Bearer token via the resource-owner password grant and passes it in the `Authorization` header when calling the backend.
+
+See `TEST.md` in the repo root for the full quick-start guide and troubleshooting tips.
 
 [← Back to index](index.md)
