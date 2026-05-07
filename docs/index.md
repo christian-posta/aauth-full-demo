@@ -5,37 +5,26 @@ title: Exploring AAuth for Agent Identity and Access Management (IAM)
 
 # Exploring AAuth for Agent IAM
 
-> **Note — AAuth spec as of March 31, 2026.** AAuth continues to update. The flows and demos in this repo are aligned with the latest AAuth spec as of the time of writing (March 31, 2026).
-{: .callout}
 
-[Agent Auth](https://github.com/dickhardt/AAuth) (AAuth -- pronounced "AY-awth") is an IETF draft paper for agent identity and access management from [Dick Hardt](https://github.com/dickhardt) who [authored OAuth 2.0](https://datatracker.ietf.org/doc/html/rfc6749) and co-author of [OAuth 2.1](https://github.com/oauth-wg/oauth-v2-1/blob/main/draft-ietf-oauth-v2-1.md). 
+[Agent Auth](https://github.com/dickhardt/AAuth) (AAuth -- pronounced "AY-awth") is an [IETF draft paper for agent identity and access management](https://datatracker.ietf.org/doc/draft-hardt-oauth-aauth-protocol/) from [Dick Hardt](https://github.com/dickhardt) who [authored OAuth 2.0](https://datatracker.ietf.org/doc/html/rfc6749) and co-author of [OAuth 2.1](https://github.com/oauth-wg/oauth-v2-1/blob/main/draft-ietf-oauth-v2-1.md). 
 
 ## Intro: Digging in to AAuth Flows
 
-This set of resources is intended to help you understand the AAuth protocol in concrete detail. It is not a specification (see [Agent Auth](https://github.com/dickhardt/AAuth)). This is specifically a more detailed review of the spec with examples (as a result of me implementing this). 
+We have recently published a full [AAuth Protocol Explorer](https://aauth.dev) that walks you through, in detail, all of the resource access flows. 
 
-This section walks through various flows with detailed Header/Payload examples so the sequence diagrams from the AAuth exploratory draft are illustrated concretely. 
+![](./images/explorer.png)
 
-The source code for this section can be found on GitHub: [https://github.com/christian-posta/aauth-implementation](https://github.com/christian-posta/aauth-implementation)
+## 🎉 Full Working Demo with Agent Bootstrap, Person Server, and Agentgateway
 
-1. [Header Web Key (HWK) for Pseudonymous Access](flow-01-hwk.md)
-2. [Json Web Keys (JWKS) for Identified Access / Agent Identity](flow-02-jwks.md)
-3. [Identified Agent Authorization](flow-03-authz.md)
-4. [User Consent with Identified Access with Authorization](flow-04-user.md)
-5. [Authorization Token Exchange](flow-05-token-ex.md)
-6. [Delegated Agent Identity](flow-06-delegated.md)
-7. [Clarification Chat During Authorization](flow-07-clarification.md)
-
-
-## 🎉 Full Working Demo with Keycloak and Agentgateway
-
-This set of resources walks you through set up and evaluation of a realistic AAuth implementation with Identity Provider (Keycloak), [Agentgateway](https://github.com/agentgateway/agentgateway), and libraries to support AAuth in multiple languages (Java, Python, Rust). 
+This set of resources walks you through set up and evaluation of a realistic AAuth implementation with Person Server, [Agentgateway](https://github.com/agentgateway/agentgateway), a component to turn [ANY resource into an AAuth resource](https://github.com/christian-posta/extauth-aauth-resource), and libraries to support AAuth in multiple languages (Java, Python, Rust, Go). 
 
 ![](./images/demo-flow.png)
 
-The source code for this section can be found in GitHub: [https://github.com/christian-posta/aauth-full-demo](https://github.com/christian-posta/aauth-full-demo)
+The source code for this section can be found in GitHub: [https://github.com/christian-posta/aauth-full-demo](https://github.com/christian-posta/aauth-full-demo). 
 
-The demo ships with a **fully automated test harness** (`tests/integration/`) that exercises all three AAuth modes — identity-only (Mode 1), auth-token (Mode 3), and user consent — entirely via API calls, no browser required. Each section below links to the corresponding test suite. See `TEST.md` in the repo for the quick-start.
+This demo shows two different modes of accessing a resource: Mode 1 which is identity only access: ie, the resource can decide what policies to enable/enforce based on client identity. In the spec, this is known as [Identity Based resource access](https://explorer.aauth.dev/access/identity-based).  The other option is Mode 3 which requires the agent to present a valid auth token (aa-auth+jwt) which follows the 401/resoruce-token. In the spec, this is referred to as ["3 Party resource access"](https://explorer.aauth.dev/access/ps-managed). 
+
+Agent identity comes from an Agent Provider and is issued through the [aa-agent+jwt token issuance](https://explorer.aauth.dev/signing/agent-tokens).
 
 1. [AAuth with Keycloak and Agentgateway](install-aauth-keycloak.md)
 2. [Agent Identity with aa-agent+jwt (Bootstrap)](agent-identity-jwks.md)

@@ -3,15 +3,15 @@ layout: default
 title: AAuth with Keycloak and Agentgateway
 ---
 
-# AAuth with Keycloak, Agentgateway, and Jaeger
+# AAuth with Person Server and Agentgateway
 
 [← Back to index](index.md)
 
 <!-- Add content here -->
 
-To prove out some of the AAuth patterns, I have implemented [AAuth in Keycloak](https://github.com/christian-posta/keycloak-aauth-extension) using a custom extension and in Agentgateway. Basically, you can download Keycloak, install the AAuth custom extension, and you have AAuth available for exploration and the rest of the demo in this guide. [Agentgateway](https://agentgateway.dev) is an LLM/MCP/A2A gateway that can be used to [introspect AAuth messages](https://github.com/christian-posta/agentgateway/releases/tag/v0.11.3), verify signatures, log them, send them to distributed tracing engines, and ultimately apply agent-based identity traffic and security policy. 
+To prove out some of the AAuth patterns, I have implemented [AAuth's Person Server](https://github.com/christian-posta/aauth-person-server) which is used to bind a Person's authority to an agent and manage delegation. The Person Server also plays the role of an Agent Provider which can issue agent tokens (agent identity). [Agentgateway](https://agentgateway.dev) is an LLM/MCP/A2A gateway that can be used to implement AAuth signature verification and resource-token/401 flows. Since it performs the role of agent gateway, it can log all requests them, send them to distributed tracing engines, and ultimately apply agent-based identity traffic and security policy. 
 
-This guide will walk you through setup of Keycloak and Agentgateway so we can dig in for the rest of the demo. 
+This guide will walk you through setup of Person Server and Agentgateway so we can dig in for the rest of the demo. 
 
 # AAuth on Keycloak
 
