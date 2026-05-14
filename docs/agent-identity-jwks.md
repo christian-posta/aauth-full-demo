@@ -10,12 +10,13 @@ In this demo, we establish Agent Identity using **`aa-agent+jwt`** tokens: a sho
 
 [← Back to index](index.md)
 
+<!-->
 ## Watch the demo
 
 <div style="position: relative; padding-bottom: 56.25%; height: 0; overflow: hidden; max-width: 100%; margin: 1em 0;">
   <iframe style="position: absolute; top: 0; left: 0; width: 100%; height: 100%;" src="https://www.youtube.com/embed/N5q8LVM0p9k" title="Agent Identity with aa-agent+jwt Demo" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" allowfullscreen></iframe>
 </div>
-
+-->
 ---
 
 ## Bootstrap: How Agents Acquire an Agent Token
