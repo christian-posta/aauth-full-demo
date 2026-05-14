@@ -36,7 +36,7 @@ sequenceDiagram
 
 ## Running with Policy Enforcement
 
-If you've [followed the pre-requisites](./install-aauth-keycloak.md) for this demo, you can change the `Agentgateway` command to the following:
+If you've [followed the pre-requisites](./install-aauth.md) for this demo, you can change the `Agentgateway` command to the following:
 
 ```bash
 cd agentgateway

@@ -117,7 +117,7 @@ When the agent token is near expiry the agent renews it silently: the stable key
 
 ## Run the Components
 
-To run this demo, [please set up the prerequisites](./install-aauth.) (Agentgateway, Person Server).
+To run this demo, [please set up the prerequisites](./install-aauth.md) (Agentgateway, Person Server).
 
 Start individual services manually if you want to explore each one:
 

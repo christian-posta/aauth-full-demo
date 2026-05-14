@@ -35,8 +35,7 @@ Agent identity in both modes comes from an `aa-agent+jwt` bootstrapped from the 
 2. [Agent Identity with aa-agent+jwt (Bootstrap)](agent-identity-jwks.md)
 3. [Agent authorization (autonomous flow)](agent-authorization-autonomous.md)
 4. [Agent authorization (user consent)](agent-authorization-on-behalf-of.md)
-5. [Token Exchange for Auth propagation (OBO)](agent-token-exchange.md)
-6. [Apply policy with AgentGateway](apply-policy-agentgateway.md)
+5. [Apply policy with AgentGateway](apply-policy-agentgateway.md)
 
 
 ## AAuth Implementation Resources
