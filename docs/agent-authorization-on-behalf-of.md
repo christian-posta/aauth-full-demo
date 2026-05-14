@@ -19,6 +19,10 @@ The backend surfaces the `(url, code)` pair to the UI so the user can complete c
 
 [← Back to index](index.md)
 
+---
+
+![](./images/ps-asserted-user.png){: style="width:auto; height:800px;" }
+
 <!--
 ## Watch the demo
 

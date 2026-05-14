@@ -10,7 +10,11 @@ In this demo, we establish Agent Identity using **`aa-agent+jwt`** tokens: a sho
 
 [← Back to index](index.md)
 
-<!-->
+---
+
+![](./images/identity-only.png){: style="width:auto; height:400px;" }
+
+<!--
 ## Watch the demo
 
 <div style="position: relative; padding-bottom: 56.25%; height: 0; overflow: hidden; max-width: 100%; margin: 1em 0;">
