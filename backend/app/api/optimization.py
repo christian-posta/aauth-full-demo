@@ -1,37 +1,20 @@
 import logging
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Request
-from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from typing import List, Any
 from app.models import (
     OptimizationRequest, OptimizationProgress, OptimizationResults, OptimizationStatus, AgentStatus
 )
 from app.services.optimization_service import optimization_service
 from app.services.a2a_service import a2a_service
-from app.services.keycloak_service import keycloak_service
 from app.services.agent_sts_service import agent_sts_service
+from app.api.auth import get_current_user
 from app.tracing_config import span, add_event, set_attribute, extract_context_from_headers
 from app.config import settings
 from fastapi.responses import JSONResponse
 
-# Configure logging
 logger = logging.getLogger(__name__)
 
 router = APIRouter()
-security = HTTPBearer()
-
-async def get_current_user(credentials: HTTPAuthorizationCredentials = Depends(security)):
-    """Dependency to get current authenticated user"""
-    token = credentials.credentials
-    payload = keycloak_service.verify_token(token)
-    
-    if not payload:
-        raise HTTPException(
-            status_code=401,
-            detail="Invalid or expired token"
-        )
-    
-    # Return both the payload and the raw token for use in downstream services
-    return {"payload": payload, "token": token}
 
 async def run_optimization_workflow(
     request_id: str,
@@ -254,7 +237,7 @@ async def start_optimization(
                     print(f"🔍 DEBUG: Could not read request body: {e}")
         
         with span("optimization_api.start_optimization", {
-            "user_id": current_user.get("payload", {}).get("sub") or "",
+            "user_id": current_user.get("id") or "",
             "request_type": request.effective_optimization_type,
             "has_constraints": bool(request.effective_constraints)
         }) as span_obj:
@@ -268,24 +251,22 @@ async def start_optimization(
                     add_event("trace_context_extracted_from_headers")
                     set_attribute("tracing.context_extracted", True)
             
+            user_id = current_user["id"]
             if settings.debug:
-                print(f"🚀 Starting optimization for user: {current_user['payload'].get('sub')}")
+                print(f"🚀 Starting optimization for user: {user_id}")
                 print(f"📝 Request: {request}")
                 print(f"📝 Request type: {type(request)}")
                 print(f"📝 Request fields: {request.model_dump()}")
-            
+
             add_event("optimization_start_requested", {
-                "user_id": current_user['payload'].get("sub"),
+                "user_id": user_id,
                 "request_type": request.effective_optimization_type
             })
-            
-            # Create optimization request
-            request_id = optimization_service.create_optimization_request(request, current_user['payload'].get("sub"))
+
+            request_id = optimization_service.create_optimization_request(request, user_id)
             if settings.debug:
                 print(f"✅ Created optimization request: {request_id}")
             add_event("optimization_request_created", {"request_id": request_id})
-
-            user_id = current_user['payload'].get("sub")
 
             add_event("optimization_scheduled", {"request_id": request_id})
             if request_id in optimization_service.optimizations:
@@ -336,7 +317,7 @@ async def get_optimization_progress(
     """Get progress of an optimization request with tracing support"""
     with span("optimization_api.get_progress", {
         "request_id": request_id,
-        "user_id": current_user["payload"].get("sub") or ""
+        "user_id": current_user.get("id") or ""
     }) as span_obj:
         
         try:
@@ -348,7 +329,7 @@ async def get_optimization_progress(
                     add_event("trace_context_extracted_from_headers")
                     set_attribute("tracing.context_extracted", True)
             
-            add_event("progress_requested", {"request_id": request_id, "user_id": current_user["payload"].get("sub")})
+            add_event("progress_requested", {"request_id": request_id, "user_id": current_user.get("id")})
             
             progress = optimization_service.get_optimization_progress(request_id)
             
@@ -380,7 +361,7 @@ async def get_optimization_results(
     """Get results of a completed optimization with tracing support"""
     with span("optimization_api.get_results", {
         "request_id": request_id,
-        "user_id": current_user["payload"].get("sub") or ""
+        "user_id": current_user.get("id") or ""
     }) as span_obj:
         
         try:
@@ -396,7 +377,7 @@ async def get_optimization_results(
                 print(f"🔍 Results endpoint called for request: {request_id}")
                 print(f"👤 Current user: {current_user}")
             
-            add_event("results_requested", {"request_id": request_id, "user_id": current_user["payload"].get("sub")})
+            add_event("results_requested", {"request_id": request_id, "user_id": current_user.get("id")})
             
             results = optimization_service.get_optimization_results(request_id)
             if settings.debug:
@@ -432,7 +413,7 @@ async def get_all_optimizations(
 ):
     """Get all optimization requests for the current user with tracing support"""
     with span("optimization_api.get_all_optimizations", {
-        "user_id": current_user["payload"].get("sub") or ""
+        "user_id": current_user.get("id") or ""
     }) as span_obj:
         
         try:
@@ -444,7 +425,7 @@ async def get_all_optimizations(
                     add_event("trace_context_extracted_from_headers")
                     set_attribute("tracing.context_extracted", True)
             
-            add_event("all_optimizations_requested", {"user_id": current_user["payload"].get("sub")})
+            add_event("all_optimizations_requested", {"user_id": current_user.get("id")})
             
             # In a real application, you'd filter by user_id
             optimizations = optimization_service.get_all_optimizations()
@@ -466,7 +447,7 @@ async def clear_optimizations(
 ):
     """Clear all optimizations for the current user with tracing support"""
     with span("optimization_api.clear_optimizations", {
-        "user_id": current_user["payload"].get("sub") or ""
+        "user_id": current_user.get("id") or ""
     }) as span_obj:
         
         try:
@@ -478,7 +459,7 @@ async def clear_optimizations(
                     add_event("trace_context_extracted_from_headers")
                     set_attribute("tracing.context_extracted", True)
             
-            add_event("clear_optimizations_requested", {"user_id": current_user["payload"].get("sub")})
+            add_event("clear_optimizations_requested", {"user_id": current_user.get("id")})
             
             # Clear optimizations (this would typically be filtered by user_id in production)
             optimization_service.clear_optimizations()
@@ -528,7 +509,7 @@ async def test_a2a_connection(
 ):
     """Test connection to the A2A supply-chain agent with tracing support"""
     with span("optimization_api.test_a2a_connection", {
-        "user_id": current_user["payload"].get("sub") or ""
+        "user_id": current_user.get("id") or ""
     }) as span_obj:
         
         try:
@@ -541,7 +522,7 @@ async def test_a2a_connection(
                     add_event("trace_context_extracted_from_headers")
                     set_attribute("tracing.context_extracted", True)
             
-            add_event("a2a_connection_test_requested", {"user_id": current_user["payload"].get("sub")})
+            add_event("a2a_connection_test_requested", {"user_id": current_user.get("id")})
             
             connection_status = await a2a_service.test_connection()
             

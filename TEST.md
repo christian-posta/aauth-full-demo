@@ -6,20 +6,15 @@ This project is set up for **fully automated testing** via a local process test 
 
 ### Prerequisites
 
-**Two services must already be running before any tests:**
+**One service must already be running before any tests:**
 
-1. **Keycloak** — OIDC auth server:
-   ```shell
-   cd ~/temp/keycloak-aauth/keycloak-26.2.5
-   ./bin/kc.sh start-dev --bootstrap-admin-username=admin --bootstrap-admin-password=admin
-   ```
-   Verify: `curl http://localhost:8080/realms/aauth-test`
-
-2. **Person Server** — AAuth agent registry (auto-started by `start-infra.sh` if not running, but you can start it manually):
+1. **Person Server** — AAuth agent registry (auto-started by `start-infra.sh` if not running, but you can start it manually):
    ```shell
    cd ~/python/aauth-person-server && ./run-server.sh
    ```
    Verify: `curl http://127.0.0.1:8765/.well-known/aauth-agent.json`
+
+> Keycloak is no longer used in this demo. The supply-chain UI is unprotected and the AAuth flows run through the Person Server / Agent Provider.
 
 ### Run All Tests
 
@@ -63,7 +58,6 @@ Everything runs as **native local processes** (no Docker). The test harness mana
 ┌────────────────────────────────────────────────────────┐
 │  Pre-running (must be started manually)                │
 ├────────────────────────────────────────────────────────┤
-│ • Keycloak (:8080)        — OIDC auth server           │
 │ • Person Server (:8765)   — AAuth agent registry       │
 └────────────────────────────────────────────────────────┘
 
@@ -136,12 +130,6 @@ All logs are written to `./logs/`:
 
 ## Troubleshooting
 
-### Keycloak realm not found
-Ensure the `aauth-test` realm exists:
-```shell
-./keycloak/configure-keycloak.sh
-```
-
 ### Services fail to start
 Check the relevant log file in `./logs/`. Common causes:
 - Port already in use (run `./scripts/stop-infra.sh` to kill managed processes)
@@ -157,9 +145,3 @@ This indicates a signing/hostname mismatch. Verify that agentgateway is routing 
 # or manually:
 pkill -f "agentgateway|aauth-service|backend|supply-chain-agent|market-analysis-agent"
 ```
-
-### Test user credentials
-- **Username**: `mcp-user`
-- **Password**: `user123`
-- **Keycloak realm**: `aauth-test`
-- **Client**: `supply-chain-ui`

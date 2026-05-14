@@ -33,12 +33,11 @@ Starts non-Docker infrastructure services. Must be run before `docker-compose up
   - `user-consent` — With interactive consent flow
 
 **What it does:**
-1. Verifies Keycloak is running
-2. Checks/starts Person Server
-3. Starts agentgateway with appropriate config
-4. Starts aauth-service with appropriate config
-5. Performs health checks
-6. Logs all output to `logs/` directory
+1. Checks/starts Person Server
+2. Starts agentgateway with appropriate config
+3. Starts aauth-service with appropriate config
+4. Performs health checks
+5. Logs all output to `logs/` directory
 
 **Output:**
 - Logs: `./logs/agentgateway.log`, `./logs/aauth-service.log`, `./logs/person-server.log`
@@ -93,14 +92,12 @@ These are automatically configured by the scripts, but can be overridden:
 
 ```bash
 # Infrastructure
-KEYCLOAK_URL=http://localhost:8080
 PERSON_SERVER_URL=http://127.0.0.1:8765
 AAUTH_CONFIG=aauth-config.yaml  # Set by start-infra.sh based on mode
 
 # Backend/Docker
 BACKEND_URL=http://localhost:8000
 AGENT_SERVER_BASE=http://host.docker.internal:8765
-KEYCLOAK_REALM=aauth-test
 ```
 
 ## Typical Workflow
@@ -159,7 +156,6 @@ tail -f logs/person-server.log
 ```
 
 Common issues:
-- Keycloak not running: Start it in a separate terminal
 - Port conflicts: Kill existing processes on 3000, 7070, 8081, 8765
 - Permission denied: Ensure agentgateway/aauth-service binaries are executable
 
@@ -184,7 +180,6 @@ chmod +x scripts/*.sh
 ### start-infra.sh Details
 
 **Health checks:**
-- Keycloak: `curl http://localhost:8080/realms/aauth-test`
 - agentgateway: `curl http://localhost:3000/general/mcp`
 - aauth-service: `curl http://localhost:8081/health`
 - Person Server: `curl http://127.0.0.1:8765/.well-known/aauth-agent.json`

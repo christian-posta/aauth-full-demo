@@ -14,7 +14,7 @@ import requests
 
 
 @pytest.mark.user_consent
-def test_user_consent_full_flow(backend_url, person_server_url, auth_headers):
+def test_user_consent_full_flow(backend_url, person_server_url):
     """
     Test the complete user consent flow:
     1. Start optimization
@@ -23,17 +23,14 @@ def test_user_consent_full_flow(backend_url, person_server_url, auth_headers):
     4. Approve consent via REST API
     5. Continue polling and verify completion
     """
-    # Step 1: Start optimization
     response = requests.post(
         f"{backend_url}/optimization/start",
-        headers=auth_headers,
         json={"prompt": "optimize supply chain"},
         timeout=10,
     )
     assert response.status_code == 200
     request_id = response.json()["request_id"]
 
-    # Step 2: Poll until interaction required or completion
     start_time = time.time()
     timeout = 45
     consent_code = None
@@ -41,7 +38,6 @@ def test_user_consent_full_flow(backend_url, person_server_url, auth_headers):
     while time.time() - start_time < timeout:
         response = requests.get(
             f"{backend_url}/optimization/progress/{request_id}",
-            headers=auth_headers,
             timeout=10,
         )
         assert response.status_code == 200
@@ -52,7 +48,6 @@ def test_user_consent_full_flow(backend_url, person_server_url, auth_headers):
             consent_code = progress.get("interaction_code")
             break
         elif status == "completed":
-            # User consent might not always be required
             return
         elif status == "failed":
             pytest.skip(f"Request failed: {progress.get('error')}")
@@ -62,7 +57,6 @@ def test_user_consent_full_flow(backend_url, person_server_url, auth_headers):
     if consent_code is None:
         pytest.skip("User consent was not required for this request")
 
-    # Step 3: Get consent context from Person Server
     response = requests.get(
         f"{person_server_url}/consent?code={consent_code}",
         timeout=10,
@@ -72,7 +66,6 @@ def test_user_consent_full_flow(backend_url, person_server_url, auth_headers):
     assert "pending_id" in consent_context
     pending_id = consent_context["pending_id"]
 
-    # Step 4: Approve consent via REST API
     response = requests.post(
         f"{person_server_url}/consent/{pending_id}/decision",
         json={"approved": True},
@@ -80,7 +73,6 @@ def test_user_consent_full_flow(backend_url, person_server_url, auth_headers):
     )
     assert response.status_code == 200
 
-    # Step 5: Continue polling until completion
     start_time = time.time()
     timeout = 30
     status = None
@@ -88,7 +80,6 @@ def test_user_consent_full_flow(backend_url, person_server_url, auth_headers):
     while time.time() - start_time < timeout:
         response = requests.get(
             f"{backend_url}/optimization/progress/{request_id}",
-            headers=auth_headers,
             timeout=10,
         )
         assert response.status_code == 200
@@ -104,29 +95,25 @@ def test_user_consent_full_flow(backend_url, person_server_url, auth_headers):
 
     assert status == "completed", "Request did not complete after consent approval"
 
-    # Verify results
     response = requests.get(
         f"{backend_url}/optimization/results/{request_id}",
-        headers=auth_headers,
         timeout=10,
     )
     assert response.status_code == 200
 
 
 @pytest.mark.user_consent
-def test_user_consent_denial(backend_url, person_server_url, auth_headers):
+def test_user_consent_denial(backend_url, person_server_url):
     """
     Test that denying consent properly cancels the request.
     """
     response = requests.post(
         f"{backend_url}/optimization/start",
-        headers=auth_headers,
         json={"prompt": "test consent denial"},
         timeout=10,
     )
     request_id = response.json()["request_id"]
 
-    # Poll until interaction required
     start_time = time.time()
     timeout = 45
     consent_code = None
@@ -134,7 +121,6 @@ def test_user_consent_denial(backend_url, person_server_url, auth_headers):
     while time.time() - start_time < timeout:
         response = requests.get(
             f"{backend_url}/optimization/progress/{request_id}",
-            headers=auth_headers,
             timeout=10,
         )
         progress = response.json()
@@ -151,14 +137,12 @@ def test_user_consent_denial(backend_url, person_server_url, auth_headers):
     if not consent_code:
         pytest.skip("User consent was not required")
 
-    # Get consent context
     response = requests.get(
         f"{person_server_url}/consent?code={consent_code}",
         timeout=10,
     )
     pending_id = response.json()["pending_id"]
 
-    # Deny consent via REST API
     response = requests.post(
         f"{person_server_url}/consent/{pending_id}/decision",
         json={"approved": False},
@@ -166,33 +150,28 @@ def test_user_consent_denial(backend_url, person_server_url, auth_headers):
     )
     assert response.status_code == 200
 
-    # Request should fail or be cancelled
     time.sleep(2)
     response = requests.get(
         f"{backend_url}/optimization/progress/{request_id}",
-        headers=auth_headers,
         timeout=10,
     )
     progress = response.json()
-    # Should either be cancelled/failed or still waiting
     assert progress.get("status") in ["failed", "pending", "running"]
 
 
 @pytest.mark.user_consent
-def test_market_analysis_with_consent(backend_url, person_server_url, auth_headers):
+def test_market_analysis_with_consent(backend_url, person_server_url):
     """
     Test market analysis request that requires user consent — approved via REST API.
     """
     response = requests.post(
         f"{backend_url}/optimization/start",
-        headers=auth_headers,
         json={"prompt": "perform market analysis"},
         timeout=10,
     )
     assert response.status_code == 200
     request_id = response.json()["request_id"]
 
-    # Poll, handling consent automatically
     start_time = time.time()
     timeout = 90
     final_status = None
@@ -200,7 +179,6 @@ def test_market_analysis_with_consent(backend_url, person_server_url, auth_heade
     while time.time() - start_time < timeout:
         response = requests.get(
             f"{backend_url}/optimization/progress/{request_id}",
-            headers=auth_headers,
             timeout=10,
         )
         progress = response.json()
@@ -232,14 +210,13 @@ def test_market_analysis_with_consent(backend_url, person_server_url, auth_heade
 
 
 @pytest.mark.user_consent
-def test_consent_timeout(backend_url, person_server_url, auth_headers):
+def test_consent_timeout(backend_url, person_server_url):
     """
     Test that a pending consent request correctly surfaces interaction_required
     without blocking indefinitely (don't approve — just verify the state).
     """
     response = requests.post(
         f"{backend_url}/optimization/start",
-        headers=auth_headers,
         json={"prompt": "test"},
         timeout=10,
     )
@@ -251,16 +228,14 @@ def test_consent_timeout(backend_url, person_server_url, auth_headers):
     while time.time() - start_time < timeout:
         response = requests.get(
             f"{backend_url}/optimization/progress/{request_id}",
-            headers=auth_headers,
             timeout=10,
         )
         progress = response.json()
 
         if progress.get("status") == "interaction_required":
-            # Verify the code is present and we're waiting for consent
             assert progress.get("interaction_code") is not None, "interaction_code must be present"
             assert progress.get("interaction_url") is not None, "interaction_url must be present"
-            return  # Pass — consent was properly surfaced
+            return
 
         if progress.get("status") == "completed":
             pytest.skip("No consent required for this request")

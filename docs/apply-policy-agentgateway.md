@@ -1,6 +1,7 @@
 ---
 layout: default
 title: Apply policy with Agentgateway
+nav_order: 6
 ---
 
 # Apply Policy with Agentgateway
@@ -17,15 +18,7 @@ In this final post, we'll explore how to use [**Agentgateway** as a policy enfor
   <iframe style="position: absolute; top: 0; left: 0; width: 100%; height: 100%;" src="https://www.youtube.com/embed/wCOzJh73TWU" title="Apply policy with Agentgateway Demo" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" allowfullscreen></iframe>
 </div>
 
-## Why Agentgateway for AAuth?
-
-Agentgateway sits between agent calls and provides several critical capabilities:
-
-1. **AAuth Protocol Enforcement** - Verify message signatures and agent identity before reaching your services
-2. **Authorization Policy** - Apply fine-grained access control using CEL expressions on AAuth claims (could call out to an external policy engine like OPA or OpenFGA)
-3. **Observability** - Add structured logging and distributed tracing with AAuth metadata
-4. **Rate Limiting** - Protect resources from abuse while maintaining agent identity context, and honoring/requiring progressive auth
-5. **Centralized Configuration** - Manage policies across all agent communication in one place
+This guide covers how Agentgateway verifies AAuth signatures, applies CEL authorization rules on `aauth.*` claims, and emits structured logs/traces with agent identity metadata. The configs in this demo (`agentgateway/config-policy.yaml` + `agentgateway/aauth-config-mode3.yaml`) provide a complete working example.
 
 ```mermaid
 sequenceDiagram
@@ -46,8 +39,8 @@ sequenceDiagram
 If you've [followed the pre-requisites](./install-aauth-keycloak.md) for this demo, you can change the `Agentgateway` command to the following:
 
 ```bash
-> cd Agentgateway
-> ./agw -f config-policy.yaml
+cd agentgateway
+./agw -f config-policy.yaml
 ```
 
 Watch the Agentgateway logs to see policy enforcement:
@@ -101,14 +94,20 @@ config:
 - `jwt.aud` / `token_audience` - Intended audience of the auth token
 - `aauth.jwt_claims` - Full JWT claims for advanced policy decisions
 
-When you run the demo with this configuration, you'll see rich logs like:
+When you run the demo with this configuration, you'll see structured logs like:
 
 ```bash
-info request aauth.scheme=Jwks aauth.agent=http://backend.localhost:8000 
+info request aauth.scheme=Jwt aauth.agent=http://backend.localhost:8000 
      http.method=POST http.status=200 trace.id=3aef7d77d62861bad0066c70fc24a1db 
      duration=117ms authenticated=false
 ```
 {: .log-output}
+
+Sample field values:
+- `aauth.scheme` — `Jwt` for `aa-agent+jwt` identity token; `JwtAuth` for `aa-auth+jwt` auth token
+- `aauth.agent` — the verified agent identity URL (e.g., `http://backend.localhost:8000`)
+- `jwt.sub` — user identity (only present in user-delegated `aa-auth+jwt`)
+- `jwt.aud` — the intended resource audience (e.g., `http://supply-chain-agent.localhost:3000`)
 
 
 ### 2. AAuth Protocol Enforcement
@@ -127,13 +126,13 @@ listeners:
 ```
 
 **Configuration Options:**
-- `mode: optional` - Allow requests without AAuth (for testing), use `strict` in production
-- `requiredScheme: jwks` - Enforce that agents use JWKS for identity (not HWK pseudonymous)
+- `mode: optional` - Allow requests without AAuth (for testing); use `strict` in production
+- `requiredScheme: jwks` - Require that agents present an `aa-agent+jwt` or `aa-auth+jwt` (identified/authorized schemes), rejecting pseudonymous HWK-only requests
 - `timestampTolerance: 60` - Allow 60 seconds clock skew for signature verification
 
 This ensures that:
-1. Messages are signed with the correct HTTP signatures
-2. Agent identity can be verified via JWKS discovery
+1. Messages are signed with valid HTTP Message Signatures
+2. Agent identity is bound to a verifiable `aa-agent+jwt` (the `cnf.jwk` proof-of-possession is checked)
 3. Signatures are recent (replay attack protection)
 
 ### 3. Authorization Policies with CEL
@@ -305,12 +304,12 @@ Agentgateway provides a centralized policy enforcement point for AAuth-enabled a
 - After exchange: require expected `aauth.agent`, `aud`, and scopes for the downstream resource
 - Require user consent: `has(aauth.jwt_claims.sub)`
 
-This completes our deep dive into AAuth! You now understand:
-1. Agent identity establishment with JWKS
+This completes the AAuth demo series. You now have a working implementation of:
+1. Agent identity establishment with `aa-agent+jwt`
 2. Autonomous and user-delegated authorization flows
 3. Token exchange for delegation chains
-4. Policy enforcement with Agentgateway
+4. Centralized policy enforcement with Agentgateway
 
-For more advanced scenarios, explore [Agent Auth](https://github.com/dickhardt/AAuth) and consider integrating with OPA or FGA for complex authorization logic.
+For the protocol specification and advanced scenarios, see the [AAuth IETF draft](https://datatracker.ietf.org/doc/draft-hardt-oauth-aauth-protocol/) and the [AAuth Protocol Explorer](https://explorer.aauth.dev).
 
 [← Back to index](index.md)

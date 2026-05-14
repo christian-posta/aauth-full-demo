@@ -50,18 +50,7 @@ cleanup() {
 
 trap cleanup INT
 
-# 1. Check Keycloak
-echo -e "${YELLOW}Checking Keycloak...${NC}"
-if ! curl -sf http://localhost:8080/realms/aauth-test > /dev/null 2>&1; then
-    echo -e "${RED}ERROR: Keycloak is not running at http://localhost:8080${NC}"
-    echo "Please start Keycloak first:"
-    echo "  cd ~/temp/keycloak-aauth/keycloak-26.2.5"
-    echo "  ./bin/kc.sh start-dev --bootstrap-admin-username=admin --bootstrap-admin-password=admin"
-    exit 1
-fi
-echo -e "${GREEN}✓ Keycloak is running${NC}"
-
-# 2. Check/start Person Server
+# 1. Check/start Person Server
 echo -e "${YELLOW}Checking Person Server...${NC}"
 if ! curl -sf http://127.0.0.1:8765/.well-known/aauth-agent.json > /dev/null 2>&1; then
     echo -e "${YELLOW}Starting Person Server...${NC}"
@@ -87,7 +76,7 @@ else
     echo -e "${GREEN}✓ Person Server is already running${NC}"
 fi
 
-# 3. Select config and start agentgateway + aauth-service
+# 2. Select config and start agentgateway + aauth-service
 echo -e "${YELLOW}Starting agentgateway and aauth-service (Mode: $MODE)...${NC}"
 
 cd "$PROJECT_DIR/agentgateway"
@@ -151,7 +140,7 @@ for i in {1..30}; do
     sleep 1
 done
 
-# 4. Start Python services (backend, supply-chain-agent, market-analysis-agent)
+# 3. Start Python services (backend, supply-chain-agent, market-analysis-agent)
 echo -e "${YELLOW}Starting Python services (backend, agents)...${NC}"
 
 # Start backend service
@@ -219,7 +208,6 @@ done
 echo -e "${GREEN}=== Infrastructure started successfully ===${NC}"
 echo ""
 echo "Running in Mode: $MODE"
-echo "Keycloak:              http://localhost:8080"
 echo "AgentGateway:          http://localhost:3000"
 echo "aauth-service:         http://localhost:8081 (HTTP), localhost:7070 (gRPC)"
 echo "Person Server:         http://127.0.0.1:8765"

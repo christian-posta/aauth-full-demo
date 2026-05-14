@@ -99,7 +99,7 @@ class MarketAnalysisAgent:
         
         self.policies = market_analysis_policies
         self.analysis_history = []
-        # Inbound: gateway; outbound MCP: Agent Server aa-agent+jwt (see agent_token_service + mcp_client).
+        # Inbound: gateway; outbound MCP: AAuth Agent Provider aa-agent+jwt (see agent_token_service + mcp_client).
 
     async def invoke(self, request_text: str = "") -> str:
         """Main entry point for market analysis requests."""

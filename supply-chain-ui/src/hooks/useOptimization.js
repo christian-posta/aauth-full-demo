@@ -1,8 +1,9 @@
 import { useState, useCallback, useEffect, useRef } from 'react';
 import apiService from '../api';
 
-// Module-level state to survive component unmounts during Keycloak state transitions
-// This is necessary because Dashboard unmounts/remounts during Keycloak auth flow
+// Module-level state to survive component unmounts.
+// (Originally used to bridge Keycloak auth-flow remounts; kept for resilience
+// even though the UI no longer authenticates.)
 let modulePollingState = {
   isPolling: false,
   intervalId: null,
@@ -25,14 +26,19 @@ export const useOptimization = () => {
   const [promptText, setPromptText] = useState('');
   const [interactionData, setInteractionData] = useState(null); // { url, code } when PS requires consent
   const popupRef = useRef(null);
-  
+  const interactionDataRef = useRef(null);
+
   // Use a ref to track current activities value for closures
   const activitiesRef = useRef(activities);
-  
-  // Keep ref in sync with state
+
+  // Keep refs in sync with state (polling callbacks use refs to avoid stale closures)
   useEffect(() => {
     activitiesRef.current = activities;
   }, [activities]);
+
+  useEffect(() => {
+    interactionDataRef.current = interactionData;
+  }, [interactionData]);
 
   const startOptimization = useCallback(async (customPrompt = '') => {
     try {
@@ -113,7 +119,7 @@ export const useOptimization = () => {
           }
 
           // Once we advance past interaction_required, clear the banner and close popup
-          if (interactionData) {
+          if (interactionDataRef.current) {
             setInteractionData(null);
             if (popupRef.current && !popupRef.current.closed) {
               popupRef.current.close();

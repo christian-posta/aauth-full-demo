@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Market Analysis Agent — A2A HTTP server (MCP calls use Agent Server aa-agent+jwt; see env.example)."""
+"""Market Analysis Agent — A2A HTTP server (MCP calls use AAuth Agent Provider aa-agent+jwt; see env.example)."""
 import asyncio
 import os
 

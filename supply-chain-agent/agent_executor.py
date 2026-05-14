@@ -78,7 +78,7 @@ class SupplyChainOptimizerAgent:
         if DEBUG:
             logger.debug(f"🔗 Market Analysis Agent URL: {self.market_analysis_url}")
         self.market_analysis_client = None
-        # Note: Outbound calls use Agent Server aa-agent+jwt (see agent_token_service + aauth_interceptor).
+        # Note: Outbound calls use AAuth Agent Provider aa-agent+jwt (see agent_token_service + aauth_interceptor).
 
     async def _get_market_analysis_client(self, auth_token: Optional[str] = None):
         """Get market analysis agent client with AAuth signing.

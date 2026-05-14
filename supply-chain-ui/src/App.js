@@ -1,11 +1,7 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect } from 'react';
 import { Shield, Clock, CheckCircle, DollarSign, Package, TrendingUp, AlertCircle, ExternalLink, Key } from 'lucide-react';
-import { useKeycloak } from './hooks/useKeycloak';
 import { useOptimization } from './hooks/useOptimization';
-import Login from './components/Login';
-import UserDropdown from './components/UserDropdown';
 import MarkdownRenderer from './components/MarkdownRenderer';
-import apiService from './api';
 
 // ---------------------------------------------------------------------------
 // AuthCallback — rendered when the PS redirects back after consent.
@@ -64,83 +60,17 @@ const InteractionBanner = ({ interactionData, onOpenPopup }) => {
   );
 };
 
-// Loading component
-const LoadingScreen = () => (
-  <div className="min-h-screen bg-slate-50 flex items-center justify-center">
-    <div className="text-center">
-      <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mx-auto mb-4"></div>
-      <p className="text-gray-600">Loading...</p>
+// Header Component
+const Header = () => (
+  <div className="bg-white shadow-sm border-b border-gray-200 px-6 py-4">
+    <div className="flex items-center justify-between">
+      <div className="flex items-center space-x-2">
+        <Shield className="h-8 w-8 text-blue-600" />
+        <h1 className="text-xl font-bold text-gray-900">AcmeCorp Supply Chain</h1>
+      </div>
     </div>
   </div>
 );
-
-// Header Component
-const Header = ({ user, onLogout, keycloak }) => {
-  // Safety check for user object
-  if (!user) {
-    return (
-      <div className="bg-white shadow-sm border-b border-gray-200 px-6 py-4">
-        <div className="flex items-center justify-center">
-          <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-blue-600 mr-2"></div>
-          <span className="text-gray-600">Loading user data...</span>
-        </div>
-      </div>
-    );
-  }
-
-  return (
-    <div className="bg-white shadow-sm border-b border-gray-200 px-6 py-4">
-      <div className="flex items-center justify-between">
-        <div className="flex items-center space-x-4">
-          <div className="flex items-center space-x-2">
-            <Shield className="h-8 w-8 text-blue-600" />
-            <h1 className="text-xl font-bold text-gray-900">AcmeCorp Supply Chain</h1>
-          </div>
-        </div>
-        <div className="flex items-center space-x-4">
-          <UserDropdown 
-            user={user} 
-            onLogout={onLogout} 
-            keycloak={keycloak}
-          />
-        </div>
-      </div>
-    </div>
-  );
-};
-
-// Delegation Chain Visualization
-const DelegationChain = ({ delegation }) => {
-  const renderChain = (del, depth = 0) => {
-    if (!del.act) {
-      return (
-        <div className="text-xs bg-blue-50 text-blue-800 px-2 py-1 rounded">
-          {del.sub}
-        </div>
-      );
-    }
-
-    return (
-      <div className="flex items-center space-x-2">
-        <div className="text-xs bg-blue-50 text-blue-800 px-2 py-1 rounded">
-          {del.sub}
-        </div>
-        <span className="text-gray-400">→</span>
-        {renderChain(del.act, depth + 1)}
-      </div>
-    );
-  };
-
-  return (
-    <div className="mt-2">
-      <div className="text-xs text-gray-500 mb-1">Delegation Chain:</div>
-      {renderChain(delegation)}
-      <div className="text-xs text-gray-500 mt-1">
-        Scope: <span className="font-mono bg-gray-100 px-1 py-0.5 rounded">{delegation.scope}</span>
-      </div>
-    </div>
-  );
-};
 
 // Activity Feed Component
 const ActivityFeed = ({ activities, isRunning, error, selectedActivityId, onActivitySelect, onClear }) => {
@@ -317,7 +247,6 @@ const ResultsPanel = ({ results, isVisible }) => {
 
 // Main Dashboard Component
 const Dashboard = () => {
-  const { user, logout, keycloak } = useKeycloak();
   const {
     activities,
     isRunning,
@@ -330,10 +259,8 @@ const Dashboard = () => {
     interactionData,
     setPromptText,
     startOptimization,
-    clearOptimization,
     clearAllActivities,
     selectActivity,
-    createResultsFromActivity
   } = useOptimization();
 
   const openConsentPopup = () => {
@@ -342,16 +269,9 @@ const Dashboard = () => {
     }
   };
 
-  // Set Keycloak instance in API service
-  useEffect(() => {
-    if (keycloak) {
-      apiService.setKeycloak(keycloak);
-    }
-  }, [keycloak]);
-
   return (
     <div className="min-h-screen bg-slate-50">
-      <Header user={user} onLogout={logout} keycloak={keycloak} />
+      <Header />
       
       <div className="max-w-7xl mx-auto p-6">
         <div className="grid grid-cols-12 gap-6 h-[calc(100vh-120px)]">
@@ -494,16 +414,6 @@ const App = () => {
   // Handle the PS/AS redirect callback in the popup window
   if (window.location.pathname === '/auth-callback') {
     return <AuthCallback />;
-  }
-
-  const { user, isAuthenticated, isLoading, error, login } = useKeycloak();
-
-  if (isLoading) {
-    return <LoadingScreen />;
-  }
-
-  if (!isAuthenticated || !user) {
-    return <Login onLogin={login} error={error} isLoading={isLoading} />;
   }
 
   return <Dashboard />;

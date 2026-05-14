@@ -1,11 +1,12 @@
 ---
 layout: default
 title: Agent Authorization (Autonomous)
+nav_order: 3
 ---
 
 # Agent Authorization (Autonomous)
 
-In this demo, we'll use Agent Identity Authorization provided by Keycloak [as described in details in this flow](./flow-03-authz.md). For the draft, see [Agent Auth](https://github.com/dickhardt/AAuth). 
+Mode 3 requires the resource to issue a 401 challenge when an agent presents only its `aa-agent+jwt`. The agent extracts the `aa-resource+jwt` from the `AAuth` response header, exchanges it at the Person Server for an `aa-auth+jwt` auth token, then retries the request. This is the [PS-Managed (3-Party) flow](https://explorer.aauth.dev/access/ps-managed) in the AAuth spec.
 
 [← Back to index](index.md)
 
@@ -17,7 +18,7 @@ In this demo, we'll use Agent Identity Authorization provided by Keycloak [as de
 
 ## Run the components
 
-To run this demo, [please set up the prerequisites](./install-aauth-keycloak.md) (Keycloak, Agentgateway, Jaeger). 
+To run this demo, [please set up the prerequisites](./install-aauth-keycloak.md) (Keycloak, Person Server, Agentgateway).
 
 
 ### Start the Infrastructure (Mode 3)
@@ -52,7 +53,7 @@ sequenceDiagram
   BE-->>UI: 6. Return progress/result to user
 ```
 
-When backend makes a call to supply-chain-agent, it will see a 401 and an `AAuth` header. This header will have the resource token which binds the needed scopes (as determined by the resource) to the agent who's calling (backend in this case). Let's take a look at what the `backend` logs look like:
+When `backend` calls `supply-chain-agent`, it receives a 401 and an `AAuth` response header carrying the resource token. The resource token binds the requested scopes to the calling agent (`backend`). Backend logs:
 
 ```bash
 INFO:aauth_interceptor:🔐 AAuth: Signing with agent token (aa-agent+jwt in Signature-Key)
@@ -61,7 +62,7 @@ INFO:aauth.tokens:🔐 401 from supply-chain-agent (url=http://supply-chain-agen
 ```
 {: .log-output}
 
-Here we can see that we got a `401` when `backend` tried to call `supply-chain-agent` and it also returned an `AAuth` header with `require=auth-token` and a resource token. This resource token binds a request for scopes to call this `supply-chain-agent` to the `backend` caller. The `auth-server` in the response is the **Person Server** (`http://127.0.0.1:8765`), which is also the Agent Server that issued the agents' `aa-agent+jwt` tokens. If we decode the JWT resource token it looks like this:
+Here we can see that we got a `401` when `backend` tried to call `supply-chain-agent` and it also returned an `AAuth` header with `require=auth-token` and a resource token. This resource token binds a request for scopes to call this `supply-chain-agent` to the `backend` caller. The `auth-server` in the response is the **Person Server** (`http://127.0.0.1:8765`), which is also the AAuth Agent Provider that issued the agents' `aa-agent+jwt` tokens. If we decode the JWT resource token it looks like this:
 
 ```json
 {
@@ -74,11 +75,11 @@ Here we can see that we got a `401` when `backend` tried to call `supply-chain-a
 }
 ```
 
-Please see the [Authorization flow](./flow-03-authz.md) to understand these claims in more detail. To keep it short, this token proves that `backend` was trying to call `supply-chain-agent` and the scopes necessary to make this call. The `aud` for this is the **Person Server** (`http://127.0.0.1:8765`) — the same entity that issued the agents' `aa-agent+jwt` tokens and that will exchange the resource token for an auth token. 
+This token proves that `backend` was trying to call `supply-chain-agent` with the listed scopes. The `aud` is the **Person Server** (`http://127.0.0.1:8765`) — the same entity that issued the agents' `aa-agent+jwt` tokens and that will exchange this resource token for an `aa-auth+jwt`.
 
 The aauth-service at the gateway side (on behalf of supply-chain-agent) verified the incoming request by:
 1. Decoding the `aa-agent+jwt` from the `Signature-Key` header
-2. Fetching the Agent Server JWKS at `{iss}/.well-known/aauth-agent.json` to verify the JWT signature
+2. Fetching the AAuth Agent Provider JWKS at `{iss}/.well-known/aauth-agent.json` to verify the JWT signature
 3. Verifying `cnf.jwk` matches the key that signed the HTTP request (proof-of-possession)
 4. Finding that `access: require: auth-token` is configured — issuing a 401 resource-token challenge
 
@@ -132,7 +133,7 @@ The key parts of this token (`aa-auth+jwt`, AAuth spec §9.4.1):
 * **`agent`** — the verified identity of the caller (matched the `agent` claim from the resource token)
 * **`cnf.jwk`** — pinned to the backend's **current ephemeral public key**; only the backend can use this token because only the backend holds the matching private key
 
-Now, when the `backend` calls the `supply-chain-agent`, it presents this `aa-auth+jwt` in the `Signature-Key` header and signs the request with its ephemeral key. The aauth-service verifies the token, confirms proof-of-possession, and forwards the request. Please see the [Authorization flow](./flow-03-authz.md) for more. 
+The `backend` now presents this `aa-auth+jwt` in the `Signature-Key` header, signs the request with its ephemeral key, and retries. The aauth-service verifies the token and proof-of-possession, then forwards the request.
 
 Now when `supply-chain-agent` gets this request, with the right scheme and authorization token, it will allow the call to proceed successfully and return a result:
 
@@ -151,8 +152,9 @@ INFO:     127.0.0.1:55606 - "POST / HTTP/1.1" 200 OK
 ```
 {: .log-output}
 
+> **Note on "JWKS_URI signing":** This internal log label is the implementation's name for the `aa-agent+jwt` JWT scheme. The agent presents its `aa-agent+jwt` in the `Signature-Key` header (not a JWKS URL); the gateway verifies the embedded `cnf.jwk` proof-of-possession signature. No external JWKS endpoint is fetched for the agent itself.
 
-## Tracing from Jaeger:
+## Tracing from Jaeger (Optional):
 
 The components in this demo all participate in distributed tracing with Jaeger. We can see these same characteristics of the AAuth flow in Jaeger. With Jaeger running, navigate to `http://localhost:16686`. If you click on `supply-chain-backend` and then "Find Traces" you'll see some of the recent traces:
 
@@ -182,12 +184,12 @@ If you scroll farther down, you'll see the call eventually succeeds with a valid
 flowchart LR
     BE[Backend] -->|1. Signed request| AGW[Agentgateway] --> SCA[Supply-Chain Agent]
     SCA -->|2. 401 + resource_token| BE
-    BE -->|3. Exchange for auth_token| KC[Keycloak]
-    KC -->|4. auth_token| BE
+    BE -->|3. Exchange for auth_token| PS[Person Server :8765]
+    PS -->|4. aa-auth+jwt| BE
     BE -->|5. Retry with auth_token| AGW --> SCA
 ```
 
-**Key:** Supply-Chain Agent challenges with resource_token → Backend exchanges it at Keycloak for auth_token → Retry succeeds with JWT authorization.
+**Key:** Supply-Chain Agent challenges with resource_token → Backend exchanges it at the Person Server for `aa-auth+jwt` → Retry succeeds with JWT authorization.
 
 ---
 
@@ -271,6 +273,6 @@ info request aauth.scheme=Jwks aauth.agent=http://unknown-agent.localhost
      http.status=403 authorization_denied=true
 ```
 
-[In the next post](./agent-authorization-on-behalf-of.md), we'll look at how [AAuth authorization works when it requires User consent](./flow-04-authz.md) in this demo! Specifically, how do we tie the OIDC login to a user-consent needed by the AAuth protocol? [Head to the next section](./agent-authorization-on-behalf-of.md)
+[Next: Agent Authorization with User Consent →](./agent-authorization-on-behalf-of.md)
 
 [← Back to index](index.md)

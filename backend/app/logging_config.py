@@ -2,7 +2,7 @@
 
 When ``DEBUG`` is true, the ``app`` tree and root use ``DEBUG``. When false, ``LOG_LEVEL``
 (default **INFO**) applies to both root and ``app`` so startup logs (e.g. stable / ephemeral
-JWK from the Agent Server client) are visible without ``DEBUG=true``.
+JWK from the AAuth Agent Provider client) are visible without ``DEBUG=true``.
 
 AAuth-related **Python logging** (library + ``aauth.tokens`` in app code) is controlled by:
 
@@ -63,7 +63,7 @@ def configure_logging() -> None:
     if settings.debug:
         app_level = logging.DEBUG
     else:
-        # Default INFO so Agent Server startup (stable / ephemeral keys) is visible; quiet with LOG_LEVEL=WARNING.
+        # Default INFO so AAuth Agent Provider startup (stable / ephemeral keys) is visible; quiet with LOG_LEVEL=WARNING.
         app_level = _parse_log_level("LOG_LEVEL", logging.INFO)
     logging.getLogger("app").setLevel(app_level)
     # Root defaults to WARNING; align so ``app.*`` records can reach process handlers after propagation.

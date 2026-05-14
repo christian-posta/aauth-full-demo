@@ -1,0 +1,61 @@
+<script>
+(function () {
+  var STORAGE_KEY = 'aauth-docs-theme';
+
+  function isDarkThemeName(t) {
+    return t === 'aauthdark';
+  }
+
+  function applyDarkClass(on) {
+    var root = document.documentElement;
+    if (on) {
+      root.classList.add('theme-aauth-dark');
+    } else {
+      root.classList.remove('theme-aauth-dark');
+    }
+  }
+
+  function setLight() {
+    jtd.setTheme('aauth');
+    applyDarkClass(false);
+    localStorage.setItem(STORAGE_KEY, 'light');
+  }
+
+  function setDark() {
+    jtd.setTheme('aauthdark');
+    applyDarkClass(true);
+    localStorage.setItem(STORAGE_KEY, 'dark');
+  }
+
+  jtd.onReady(function () {
+    var saved = localStorage.getItem(STORAGE_KEY);
+    if (saved === 'dark') {
+      setDark();
+    }
+
+    var btn = document.getElementById('theme-toggle');
+    if (!btn) {
+      return;
+    }
+
+    function syncLabel() {
+      var t = jtd.getTheme();
+      var dark = isDarkThemeName(t);
+      btn.setAttribute('aria-pressed', dark ? 'true' : 'false');
+      btn.textContent = dark ? 'Light mode' : 'Dark mode';
+    }
+
+    syncLabel();
+
+    jtd.addEvent(btn, 'click', function (e) {
+      e.preventDefault();
+      if (isDarkThemeName(jtd.getTheme())) {
+        setLight();
+      } else {
+        setDark();
+      }
+      syncLabel();
+    });
+  });
+})();
+</script>

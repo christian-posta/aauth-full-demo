@@ -1,13 +1,14 @@
 ---
 layout: default
 title: Agent authorization (on behalf of)
+nav_order: 4
 ---
 
 # Agent authorization (with User Consent)
 
 In this demo, we'll explore how Agent Identity Authorization works when user consent is required. This builds on the [autonomous authorization flow](./agent-authorization-autonomous.md) but adds a critical dimension: user delegation. When an agent needs to act on behalf of a user, the authorization server (Keycloak) ensures the user explicitly grants permission.
 
-When user consent is needed, the auth server does not return an `auth_token` on the first signed `POST` to the token endpoint. Instead it responds with **`202 Accepted`**, a **`Location`** header pointing at a **pending URL**, and an **`AAuth: require=interaction; code="..."`** header so the user can complete consent out-of-band. The agent (here, the backend) **polls** that pending URL with signed `GET` requests (often with `Prefer: wait`) until the server responds with **`200`** and an `auth_token`. There is no separate opaque “request token” the browser exchanges for the auth token, the pending URL and polling carry that role. The same pattern is walked through in [Agent authorization with user consent](./flow-04-user.md).
+When user consent is needed, the auth server does not return an `auth_token` on the first signed `POST` to the token endpoint. Instead it responds with **`202 Accepted`**, a **`Location`** header pointing at a **pending URL**, and an **`AAuth: require=interaction; code="..."`** header so the user can complete consent out-of-band. The agent (here, the backend) **polls** that pending URL with signed `GET` requests (often with `Prefer: wait`) until the server responds with **`200`** and an `auth_token`. There is no separate opaque “request token” the browser exchanges for the auth token — the pending URL and polling carry that role.
 
 [← Back to index](index.md)
 
@@ -131,7 +132,7 @@ INFO:aauth.tokens:🔐 401 from supply-chain-agent (url=http://supply-chain-agen
 
 ### 2. Keycloak returns 202 (interaction required)
 
-The backend exchanges the resource token at Keycloak’s AAuth **token endpoint** (signed `POST` with `resource_token`, typically with `Prefer: wait=…`). When policy requires user consent, the auth server does **not** return `auth_token` in the first response. It returns a **deferred** response (see also [flow-04-user](./flow-04-user.md)):
+The backend exchanges the resource token at the Person Server’s AAuth **token endpoint** (signed `POST` with `resource_token`, typically with `Prefer: wait=…`). When policy requires user consent, the auth server does **not** return `auth_token` in the first response. It returns a **deferred** response:
 
 - **`202 Accepted`**
 - **`Location`**: pending URL to poll with `GET`
@@ -139,7 +140,7 @@ The backend exchanges the resource token at Keycloak’s AAuth **token endpoint*
 
 The backend maps that to an API payload for the UI (`interaction_required` with `interaction_endpoint`, `interaction_code`, `request_id`, `callback_url`) and begins **polling** the pending URL with signed `GET` requests until Keycloak responds with **`200`** and an `auth_token`.
 
-Illustrative HTTP shape (same idea as the auth-server response in [flow-04-user](./flow-04-user.md); the exact `Location` path depends on your auth server):
+Illustrative HTTP shape (exact `Location` path depends on your auth server configuration):
 
 ```http
 HTTP/1.1 202 Accepted
@@ -325,16 +326,16 @@ After consent is approved, the backend polls the Keycloak pending URL and receiv
 
 ```json
 {
-  "iss": "http://localhost:8080/realms/aauth-test",
+  "iss": "http://127.0.0.1:8765",
   "aud": "http://supply-chain-agent.localhost:3000",
-  "sub": "00b519e8-f409-4201-8911-1cb408e8a082",   ← user identity
+  "sub": "00b519e8-f409-4201-8911-1cb408e8a082",
   "agent": "http://backend.localhost:8000",
   "cnf": { "jwk": { ... } },
   "scope": "supply-chain:optimize"
 }
 ```
 
-The `sub` is the Keycloak user ID for `mcp-user`. This claim does **not** appear in Mode 3 autonomous tokens — its presence is what distinguishes user-delegated authorization from autonomous authorization, and is exactly what the [Compare to Autonomous Scheme](#compare-to-autonomous-scheme) table above illustrates.
+The `sub` is the user ID for `mcp-user` (resolved through Keycloak's OIDC flow). This claim does **not** appear in Mode 3 autonomous tokens — its presence is what distinguishes user-delegated authorization from autonomous authorization, as the [Compare to Autonomous Scheme](#compare-to-autonomous-scheme) table illustrates.
 
 In the next post, we'll explore token exchange and delegation chains—how agents can delegate to other agents while preserving the user's identity and consent. [Read more: Agent Token Exchange →](./agent-token-exchange.md)
 

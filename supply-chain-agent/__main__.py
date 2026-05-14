@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Supply Chain Agent - A2A HTTP server (outbound A2A uses Agent Server aa-agent+jwt; see env.example)."""
+"""Supply Chain Agent - A2A HTTP server (outbound A2A uses AAuth Agent Provider aa-agent+jwt; see env.example)."""
 import asyncio
 import os
 

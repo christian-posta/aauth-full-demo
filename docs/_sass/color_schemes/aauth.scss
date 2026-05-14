@@ -1,0 +1,28 @@
+// AAuth light scheme (default). Based on just-the-docs light + aauth.dev tokens.
+
+$color-scheme: light !default;
+
+$body-background-color: #ffffff;
+$sidebar-color: #f4f6fa;
+$body-text-color: #0f172a;
+$body-heading-color: #0f172a;
+$nav-child-link-color: #475569;
+$link-color: #0d9b4d;
+$btn-primary-color: #0d9b4d;
+$base-button-color: #eef1f6;
+$code-background-color: #eef1f6;
+$border-color: #d8dee8;
+$table-background-color: #ffffff;
+$search-background-color: #ffffff;
+$search-result-preview-color: #475569;
+$feedback-color: darken(#f4f6fa, 3%);
+
+// Wider reading column (theme default is 50rem ~800px — leaves large side gutters on desktop).
+$content-width: 80rem;
+$search-results-width: $content-width - $nav-width;
+
+$body-font-family: "Inter", system-ui, -apple-system, blinkmacsystemfont, "Segoe UI", roboto,
+  "Helvetica Neue", arial, sans-serif;
+$mono-font-family: "JetBrains Mono", ui-monospace, "SFMono-Regular", menlo, consolas, monospace;
+
+@import "./vendor/accessible-pygments/github-light";

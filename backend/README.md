@@ -4,7 +4,7 @@ This is the Python FastAPI backend for the Supply Chain Agent system. This backe
 
 ## Features
 
-- **Authentication**: SSO (keycloak) authentication system
+- **Unprotected API surface**: the UI is open and the backend does not require user login. AAuth is enforced on the agent-to-agent calls (HTTP message signatures + Person Server consent), not on the human-facing API.
 - **Agent Management**: Simulated supply chain agent workflows
 - **Optimization**: Supply chain optimization requests and progress tracking
 - **Real-time Updates**: Progress tracking for optimization workflows
@@ -16,24 +16,24 @@ This is the Python FastAPI backend for the Supply Chain Agent system. This backe
 - `GET /health` - Health check endpoint
 
 ### Authentication (`/auth`)
-- `GET /auth/me` - Get current authenticated user information (requires Bearer token)
-- `GET /auth/health` - Check authentication service health
+- `GET /auth/me` - Returns a static "guest" user (no auth required)
+- `GET /auth/health` - Reports `auth: disabled`
 
 ### Agents (`/agents`)
-- `GET /agents/status` - Get status of all agents (requires Bearer token)
-- `GET /agents/status/{agent_id}` - Get status of a specific agent (requires Bearer token)
-- `GET /agents/activities` - Get recent agent activities (requires Bearer token)
-- `POST /agents/start` - Start agent workflow (requires Bearer token)
-- `DELETE /agents/activities` - Clear all agent activities (requires Bearer token)
+- `GET /agents/status` - Get status of all agents
+- `GET /agents/status/{agent_id}` - Get status of a specific agent
+- `GET /agents/activities` - Get recent agent activities
+- `POST /agents/start` - Start agent workflow
+- `DELETE /agents/activities` - Clear all agent activities
 
 ### Optimization (`/optimization`)
-- `POST /optimization/start` - Start a new optimization request (requires Bearer token)
-- `GET /optimization/progress/{request_id}` - Get progress of an optimization request (requires Bearer token)
-- `GET /optimization/results/{request_id}` - Get results of a completed optimization (requires Bearer token)
-- `GET /optimization/all` - Get all optimization requests for the current user (requires Bearer token)
-- `DELETE /optimization/clear` - Clear all optimizations (requires Bearer token)
+- `POST /optimization/start` - Start a new optimization request
+- `GET /optimization/progress/{request_id}` - Get progress of an optimization request
+- `GET /optimization/results/{request_id}` - Get results of a completed optimization
+- `GET /optimization/all` - Get all optimization requests
+- `DELETE /optimization/clear` - Clear all optimizations
 - `GET /optimization/test-agent-sts-connection` - Test connection to Agent STS service
-- `GET /optimization/test-a2a-connection` - Test connection to A2A supply-chain agent (requires Bearer token)
+- `GET /optimization/test-a2a-connection` - Test connection to A2A supply-chain agent
 
 ## Setup
 
@@ -48,7 +48,7 @@ This is the Python FastAPI backend for the Supply Chain Agent system. This backe
    cd backend
    cp env.example .env
    ```
-   Edit `.env` to set Keycloak URLs, AAuth settings, etc. The app loads `.env` automatically at startup via `python-dotenv`.
+   Edit `.env` for AAuth, tracing, and CORS settings. The app loads `.env` automatically at startup via `python-dotenv`.
 
    Optional presets with Agent Server defaults: `env.hwk`, `env.jwks` (same layout; copy either to `.env`).
 
@@ -78,16 +78,12 @@ This is the Python FastAPI backend for the Supply Chain Agent system. This backe
 
 ### Authentication
 
-Authentication is handled by Keycloak. Users authenticate through the frontend (supply-chain-ui) which obtains JWT tokens from Keycloak. The backend validates these tokens.
+The backend's HTTP API is **unprotected** — there is no human-user login. Keycloak/OIDC was removed; the demo focuses on the AAuth flows between agents (HTTP message signatures + Person Server consent).
 
 ### Start Optimization
 
 ```bash
-# Get a token from Keycloak (via frontend or direct Keycloak API)
-TOKEN="your-jwt-token-from-keycloak"
-
 curl -X POST "http://localhost:8000/optimization/start" \
-     -H "Authorization: Bearer $TOKEN" \
      -H "Content-Type: application/json" \
      -d '{
        "optimization_type": "laptop_supply_chain",
@@ -116,7 +112,6 @@ For **user-delegated AAuth** (consent, callbacks), see [docs/USER_DELEGATED_AAUT
 The backend uses:
 - **FastAPI**: Modern, fast web framework
 - **Pydantic**: Data validation and serialization
-- **JWT**: Authentication tokens (Keycloak)
 - **AAuth**: Agent-to-agent authentication with HTTP Message Signatures
 - **Async/Await**: For handling concurrent requests
 
@@ -132,18 +127,16 @@ backend/
 │   ├── models.py            # Pydantic data models
 │   ├── api/                 # API routes
 │   │   ├── __init__.py
-│   │   ├── auth.py          # Authentication routes
+│   │   ├── auth.py          # Stub /auth/me endpoint (no auth enforced)
 │   │   ├── agents.py        # Agent management routes
 │   │   └── optimization.py  # Optimization routes
 │   └── services/            # Business logic
 │       ├── __init__.py
-│       ├── auth_service.py  # Authentication service
 │       ├── agent_service.py # Agent workflow service
 │       ├── optimization_service.py # Optimization service
 │       ├── aauth_interceptor.py  # AAuth agent-token signing (OUTGOING)
 │       ├── agent_token_service.py # Agent Server register / refresh
-│       ├── a2a_service.py  # A2A client service
-│       └── keycloak_service.py # Keycloak integration
+│       └── a2a_service.py  # A2A client service
 ├── env.example              # Example env file (copy to .env)
 ├── env.hwk                  # Preset env (Agent Server defaults)
 ├── env.jwks                 # Preset env (same; optional copy to .env)
@@ -161,6 +154,6 @@ backend/
 
 ## Path B: agent-to-agent policy
 
-This backend does **not** implement 401 + `resource_token` → Keycloak AAuth `auth_token` retries. For **which agents may call which**, configure **agentgateway** ([/agentgateway/config-policy.yaml](../agentgateway/config-policy.yaml)).
+This backend does **not** implement 401 + `resource_token` → AAuth `auth_token` retries directly. For **which agents may call which**, configure **agentgateway** ([/agentgateway/config-policy.yaml](../agentgateway/config-policy.yaml)).
 
-Keycloak’s **OIDC** endpoints serve **human** login for the UI. The realm may still expose AAuth **metadata** (for example `/.well-known/aauth-issuer`); that is separate from the Python services’ signing-only Path B behavior.
+The user-facing UI is unprotected (Keycloak/OIDC was removed). All AAuth tokens (`aa-agent+jwt`, `aa-auth+jwt`, resource tokens) are issued by the Person Server / Agent Provider, not by Keycloak.

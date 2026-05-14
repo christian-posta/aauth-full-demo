@@ -1,4 +1,4 @@
-"""Obtain and refresh aa-agent+jwt from an Agent Server (stable + ephemeral keys)."""
+"""Obtain and refresh aa-agent+jwt from an AAuth Agent Provider (stable + ephemeral keys)."""
 
 from __future__ import annotations
 
@@ -104,7 +104,7 @@ def _parse_retry_after(headers: httpx.Headers) -> float:
 
 
 class AgentTokenService:
-    """Registers with Agent Server, polls if needed, refreshes token, exposes signing material."""
+    """Registers with AAuth Agent Provider, polls if needed, refreshes token, exposes signing material."""
 
     def __init__(self) -> None:
         self._lock = asyncio.Lock()
@@ -149,7 +149,7 @@ class AgentTokenService:
         logger.info("Agent Server registration complete; agent token acquired")
 
     async def _startup_with_retry(self, base: str) -> None:
-        """Connect to agent server with exponential backoff retries."""
+        """Connect to AAuth Agent Provider with exponential backoff retries."""
         max_attempts = 10
         attempt = 0
         backoff_seconds = 1

@@ -1,6 +1,7 @@
 ---
 layout: default
 title: Overview of AAuth protocol
+nav_exclude: true
 ---
 
 # Overview of AAuth protocol
@@ -152,10 +153,10 @@ This enables:
 
 **The OAuth Problem:** A single `client_id` with a shared secret doesn't work when you have thousands of distributed agent instances (containers, mobile apps, CLI tools).
 
-**AAuth's Solution:** **Agent tokens** delegate authority from an agent server to individual agent delegates:
+**AAuth's Solution:** **Agent tokens** delegate authority from an AAuth Agent Provider to individual agent delegates:
 
 ```
-Agent Server (https://my-agent.example)
+AAuth Agent Provider (https://my-agent.example)
     │
     ├── issues agent token to → Instance A (ephemeral key, sub="instance-a")
     ├── issues agent token to → Instance B (ephemeral key, sub="instance-b")

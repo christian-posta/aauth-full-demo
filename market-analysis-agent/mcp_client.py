@@ -167,7 +167,7 @@ class MCPClient:
     async def discover_tools(self) -> List[Dict[str, Any]]:
         """
         Discover available tools from the MCP server.
-        All Streamable HTTP requests are signed with the Agent Server token (httpx hook).
+        All Streamable HTTP requests are signed with the AAuth Agent Provider token (httpx hook).
         """
         try:
             factory = create_httpx_client_factory_with_aauth(self._token_svc)

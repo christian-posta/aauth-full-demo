@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""AAuth signing interceptor for A2A client calls using Agent Server tokens."""
+"""AAuth signing interceptor for A2A client calls using AAuth Agent Provider tokens."""
 
 import logging
 import os

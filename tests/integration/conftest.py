@@ -1,27 +1,23 @@
 """
 Pytest configuration and shared fixtures for AAuth integration tests.
+
+The user-facing API is unprotected (Keycloak/OIDC was removed). The AAuth
+flows under test live between agents (HTTP message signatures + Person Server
+consent), not between the human user and the backend.
 """
 
 import os
 import time
 import requests
 import pytest
-from typing import Generator
 
 
 # ============================================================================
 # Configuration
 # ============================================================================
 
-KEYCLOAK_URL = os.getenv("KEYCLOAK_URL", "http://localhost:8080")
-KEYCLOAK_REALM = os.getenv("KEYCLOAK_REALM", "aauth-test")
-KEYCLOAK_CLIENT_ID = os.getenv("KEYCLOAK_CLIENT_ID", "supply-chain-ui")
 BACKEND_URL = os.getenv("BACKEND_URL", "http://localhost:8000")
 PERSON_SERVER_URL = os.getenv("PERSON_SERVER_URL", "http://127.0.0.1:8765")
-
-# Test user credentials (created by keycloak/configure-keycloak.sh)
-TEST_USER = "mcp-user"
-TEST_PASSWORD = "user123"
 
 # Request timeout
 REQUEST_TIMEOUT = 10
@@ -35,7 +31,6 @@ REQUEST_TIMEOUT = 10
 def wait_for_services():
     """Wait for all services to be healthy before running tests."""
     services = {
-        "Keycloak": f"{KEYCLOAK_URL}/realms/{KEYCLOAK_REALM}",
         "Backend": f"{BACKEND_URL}/health",
         "Person Server": f"{PERSON_SERVER_URL}/.well-known/aauth-agent.json",
     }
@@ -58,55 +53,20 @@ def wait_for_services():
             time.sleep(1)
 
 
-@pytest.fixture
-def keycloak_token(wait_for_services) -> str:
-    """
-    Get a Keycloak access token for the test user.
-    Depends on wait_for_services to ensure Keycloak is ready.
-    Each test gets a fresh token to avoid expiration during long test runs.
-    """
-    token_url = f"{KEYCLOAK_URL}/realms/{KEYCLOAK_REALM}/protocol/openid-connect/token"
-
-    payload = {
-        "grant_type": "password",
-        "client_id": KEYCLOAK_CLIENT_ID,
-        "username": TEST_USER,
-        "password": TEST_PASSWORD,
-    }
-
-    response = requests.post(token_url, data=payload, timeout=REQUEST_TIMEOUT)
-    response.raise_for_status()
-
-    token_data = response.json()
-    return token_data["access_token"]
-
-
 # ============================================================================
 # Function-scoped fixtures
 # ============================================================================
 
 @pytest.fixture
-def backend_url() -> str:
+def backend_url(wait_for_services) -> str:
     """Return the backend URL."""
     return BACKEND_URL
 
 
 @pytest.fixture
-def person_server_url() -> str:
+def person_server_url(wait_for_services) -> str:
     """Return the person server URL."""
     return PERSON_SERVER_URL
-
-
-@pytest.fixture
-def keycloak_url() -> str:
-    """Return the Keycloak URL."""
-    return KEYCLOAK_URL
-
-
-@pytest.fixture
-def auth_headers(keycloak_token) -> dict:
-    """Return authorization headers with Bearer token."""
-    return {"Authorization": f"Bearer {keycloak_token}"}
 
 
 @pytest.fixture

@@ -1,0 +1,28 @@
+// AAuth dark scheme (toggle via jtd.setTheme('aauthdark')) — aauth.dev-aligned tokens.
+
+$color-scheme: dark;
+
+$body-background-color: #0a0a0f;
+$sidebar-color: #12121a;
+$body-text-color: #e4e4ed;
+$body-heading-color: #e4e4ed;
+$nav-child-link-color: #8888a0;
+$link-color: #40d97b;
+$btn-primary-color: #40d97b;
+$base-button-color: #1a1a25;
+$code-background-color: #1a1a25;
+$code-linenumber-color: #e4e4ed;
+$border-color: #1e1e2e;
+$table-background-color: #12121a;
+$search-background-color: #12121a;
+$search-result-preview-color: #8888a0;
+$feedback-color: #0a0a0f;
+
+$content-width: 80rem;
+$search-results-width: $content-width - $nav-width;
+
+$body-font-family: "Inter", system-ui, -apple-system, blinkmacsystemfont, "Segoe UI", roboto,
+  "Helvetica Neue", arial, sans-serif;
+$mono-font-family: "JetBrains Mono", ui-monospace, "SFMono-Regular", menlo, consolas, monospace;
+
+@import "./vendor/accessible-pygments/github-dark";

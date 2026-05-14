@@ -1,17 +1,33 @@
 title: AAuth Demo Documentation
 description: User-delegated AAuth flow, configuration, and multi-hop token exchange
 # For project pages: baseurl = "/repo-name"
-# Use custom domain for canonical URLs in sitemap (blog.christianposta.com)
 baseurl: "/aauth-full-demo"
 url: "https://blog.christianposta.com"
 
-theme: jekyll-theme-cayman
-show_downloads: false
+remote_theme: just-the-docs/just-the-docs@v0.12.0
+color_scheme: aauth
 
-# Theme / GitHub integration
+# Sidebar / nav
+nav_enabled: true
+search_enabled: true
+heading_anchors: true
+
+# Mermaid (just-the-docs v0.4+)
+mermaid:
+  version: "10.6.1"
+
+# Theme / GitHub integration (optional metadata)
 github: [metadata]
 github_username: christian-posta
 github_repository: aauth-full-demo
+
+# Auxiliary links (top bar)
+aux_links:
+  "GitHub":
+    - "https://github.com/christian-posta/aauth-full-demo"
+  "AAuth.dev":
+    - "https://aauth.dev"
+aux_links_new_tab: true
 
 markdown: kramdown
 kramdown:
@@ -23,9 +39,23 @@ plugins:
   - jekyll-relative-links
   - jekyll-sitemap
   - jekyll-seo-tag
+  - jekyll-remote-theme
+
 relative_links:
   enabled: true
   collections: true
+
+callouts_level: quiet
+callouts:
+  note:
+    title: Note
+    color: blue
+  tip:
+    title: Tip
+    color: green
+  warning:
+    title: Warning
+    color: yellow
 
 exclude:
   - README.md

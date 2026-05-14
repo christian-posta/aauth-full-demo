@@ -9,14 +9,14 @@ This repository provides a **complete, working example** of:
 - **A2A Protocol 0.3.0**: Agent-to-agent communication using the A2A protocol
 - **AAuth Signing**: Cryptographic signing of all agent-to-agent requests using HTTP Message Signatures (RFC 9421)
 - **AAuth Verification**: Signature verification on incoming requests
-- **Multiple Signature Schemes**: 
+- **Multiple Signature Schemes**:
   - **HWK (Header Web Key)**: Pseudonymous authentication with public key in header
   - **JWKS (JSON Web Key Set)**: Identified agent authentication with key discovery
-  - **JWT (Auth Token)**: User-delegated authorization with Keycloak-issued auth tokens
-- **User-Delegated AAuth**: Consent flow (Backend → Keycloak → user consent → auth token), resource tokens, and multi-hop token exchange (Supply Chain Agent → Market Analysis Agent)
+  - **JWT (Auth Token)**: User-delegated authorization using AAuth `aa-auth+jwt` tokens issued by the Person Server
+- **User-Delegated AAuth**: Consent flow (Backend → Person Server → user consent → auth token), resource tokens, and multi-hop token exchange (Supply Chain Agent → Market Analysis Agent)
 - **Multi-Agent Architecture**: Three agents communicating with signed requests
 - **Key Discovery**: JWKS endpoints and metadata discovery per AAuth specification
-- **User Authentication**: Keycloak OIDC integration for user-facing frontend
+- **Unprotected UI**: the supply-chain UI does not require human login — the demo focuses entirely on the agent-to-agent AAuth flows
 
 ## 🏗️ Architecture
 
@@ -25,7 +25,7 @@ This repository provides a **complete, working example** of:
 │  User Browser   │
 │  (React UI)     │
 └────────┬────────┘
-         │ Keycloak OIDC
+         │ (no auth — UI is unprotected)
          ▼
 ┌─────────────────┐      AAuth Signed      ┌──────────────────────┐
 │   Backend API   │ ────────────────────► │ Supply Chain Agent   │
@@ -43,7 +43,7 @@ This repository provides a **complete, working example** of:
 ### Components
 
 1. **Backend** (`backend/`): FastAPI service that:
-   - Authenticates users via Keycloak OIDC
+   - Exposes an unprotected HTTP API (no human-user login)
    - Signs requests to supply-chain-agent using AAuth (HWK or JWKS)
    - Exposes JWKS endpoints (`/.well-known/aauth-agent`, `/jwks.json`)
 
@@ -60,8 +60,7 @@ This repository provides a **complete, working example** of:
 
 4. **Frontend** (`supply-chain-ui/`): React application that:
    - Provides user interface for supply chain optimization
-   - Authenticates users via Keycloak
-   - Calls backend API with user credentials
+   - Calls the backend API directly (no login required)
 
 5. **Agent Gateway** (`agentgateway/`): Gateway configuration for routing agent traffic
 
@@ -71,7 +70,6 @@ This repository provides a **complete, working example** of:
 
 - Python 3.12+
 - Node.js 16+
-- Keycloak 26.2.5+ (for user authentication)
 - `uv` package manager (recommended) or `pip`
 
 ### 1. Setup Python Agents
@@ -101,19 +99,10 @@ cd ..
 cd supply-chain-ui
 npm install
 cp env.example .env
-# Edit .env with your Keycloak configuration
 cd ..
 ```
 
-### 3. Configure Keycloak
-
-1. Start Keycloak: `docker run -p 8080:8080 -e KEYCLOAK_ADMIN=admin -e KEYCLOAK_ADMIN_PASSWORD=admin quay.io/keycloak/keycloak:26.2.5 start-dev`
-2. Access Admin Console: http://localhost:8080
-3. Create realm: `aauth-test`
-4. Create client: `supply-chain-ui` (public client, standard flow enabled)
-5. Create user: `mcp-user` with password `user123`
-
-### 4. Configure Environment Variables
+### 3. Configure Environment Variables
 
 Each component needs environment configuration. Copy `env.example` to `.env` in each directory and set values. For user-delegated AAuth (consent + token exchange), see [docs/AAUTH_CONFIGURATION.md](docs/AAUTH_CONFIGURATION.md).
 
@@ -121,7 +110,7 @@ Each component needs environment configuration. Copy `env.example` to `.env` in 
 # Backend
 cd backend
 cp env.example .env
-# Edit .env - set BACKEND_AGENT_URL, AAUTH_SIGNATURE_SCHEME, KEYCLOAK_* (for UI login), etc.
+# Edit .env - set BACKEND_AGENT_URL, AAUTH_SIGNATURE_SCHEME, etc.
 
 # Supply Chain Agent
 cd ../supply-chain-agent
@@ -134,7 +123,7 @@ cp env.example .env
 # Edit .env - set MARKET_ANALYSIS_AGENT_ID_URL, AAUTH_SIGNATURE_SCHEME, etc.
 ```
 
-### 5. Start Services
+### 4. Start Services
 
 **Terminal 1 - Backend:**
 ```bash
@@ -196,7 +185,7 @@ Agents expose JWKS endpoints for key discovery:
 - Backend → Supply Chain Agent: `backend/app/services/aauth_interceptor.py`
 - Supply Chain Agent → Market Analysis Agent: `supply-chain-agent/aauth_interceptor.py`
 
-**Policy / verification at the edge:** use **agentgateway** ([agentgateway/config-policy.yaml](agentgateway/config-policy.yaml)) for required signature schemes and identity. Python agents use HTTP message signing for outbound A2A calls; they do not run the Keycloak AAuth token-exchange loop in-process.
+**Policy / verification at the edge:** use **agentgateway** ([agentgateway/config-policy.yaml](agentgateway/config-policy.yaml)) for required signature schemes and identity. Python agents use HTTP message signing for outbound A2A calls; the AAuth token-exchange loop runs against the Person Server / Agent Provider, not Keycloak.
 
 **JWKS Endpoints:**
 - Backend: `backend/app/main.py` (lines 89-110)
@@ -227,8 +216,8 @@ Each component's README includes detailed AAuth documentation:
 - ✅ **HTTP Message Signatures** (RFC 9421) for request signing
 - ✅ **HWK Scheme** - Pseudonymous authentication
 - ✅ **JWKS Scheme** - Identified agent authentication with key discovery
-- ✅ **JWT Scheme** - User-delegated auth tokens (Keycloak-issued; JWK→PEM for verification)
-- ✅ **User consent flow** - Backend redirects to Keycloak consent; callback exchanges code for auth token and retries with `scheme=jwt`
+- ✅ **JWT Scheme** - User-delegated auth tokens (`aa-auth+jwt` issued by the Person Server; JWK→PEM for verification)
+- ✅ **User consent flow** - Backend polls the Person Server pending URL; on approval the response carries an `aa-auth+jwt` and the request is retried with `scheme=jwt`
 - ✅ **Resource tokens** - Supply Chain Agent and Market Analysis Agent issue resource tokens on 401 (Agent-Auth header)
 - ✅ **Token exchange** - Supply Chain Agent exchanges upstream auth token for new token when calling Market Analysis Agent (SPEC §9.10; `act` claim)
 - ✅ **Canonical Authority** - Proper authority handling per SPEC 10.3.1
@@ -255,7 +244,7 @@ Each component's README includes detailed AAuth documentation:
 
 - **[AAuth Specification](SPEC.md)** - Complete AAuth specification
 - **[User-Delegated AAuth Flow](docs/USER_DELEGATED_AAUTH.md)** - Consent flow, resource tokens, token exchange (Backend → SCA → MAA)
-- **[AAuth Configuration](docs/AAUTH_CONFIGURATION.md)** - Environment variables and Keycloak setup for all components
+- **[AAuth Configuration](docs/AAUTH_CONFIGURATION.md)** - Environment variables for all components
 - **[Backend README](backend/README.md)** - Backend API and AAuth signing documentation
 - **[Supply Chain Agent README](supply-chain-agent/README.md)** - Agent documentation with AAuth details
 - **[Market Analysis Agent README](market-analysis-agent/README.md)** - Agent documentation with AAuth details
@@ -310,4 +299,3 @@ This project is for educational and demonstration purposes.
 - **AAuth Specification**: By Dick Hardt
 - **A2A Protocol**: Agent-to-Agent communication protocol
 - **HTTP Message Signatures**: RFC 9421
-- **Keycloak**: Identity and access management

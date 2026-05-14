@@ -1,6 +1,7 @@
 ---
 layout: default
 title: Agent Token Exchange for On Behalf Of
+nav_order: 5
 ---
 
 # Agent Token Exchange
@@ -25,15 +26,15 @@ sequenceDiagram
     participant BE as Backend
     participant SCA as "Supply-Chain Agent"
     participant MAA as "Market-Analysis Agent"
-    participant KC as Keycloak
+    participant PS as "Person Server :8765"
 
     BE->>SCA: Request with auth_token sub user agent backend
     SCA->>MAA: Initial request aa-agent+jwt scheme
     MAA-->>SCA: 401 AAuth challenge plus resource token
     
     Note over SCA: Exchange upstream token at auth server
-    SCA->>KC: Token exchange upstream auth_token plus resource_token
-    KC-->>SCA: New auth_token aud MAA agent SCA
+    SCA->>PS: Token exchange upstream auth_token plus resource_token
+    PS-->>SCA: New aa-auth+jwt aud MAA agent SCA
     
     SCA->>MAA: Retry with exchanged token
     MAA-->>SCA: 200 OK plus market data
@@ -42,7 +43,7 @@ sequenceDiagram
 
 ### Step 1: MAA issues challenge
 
-When SCA first calls MAA, it receives **401** with an **`AAuth: require=auth-token; resource-token="..."; auth-server="..."`** response (same challenge shape as in the [autonomous authorization](./agent-authorization-autonomous.md) and [resource authorization](./flow-03-authz.md) flows). The body indicates that the `aa-agent+jwt` identity token is not sufficient — an `aa-auth+jwt` auth token is required.
+When SCA first calls MAA, it receives **401** with an **`AAuth: require=auth-token; resource-token="..."; auth-server="..."`** response (same challenge shape as in the [autonomous authorization](./agent-authorization-autonomous.md) flow). The `aa-agent+jwt` identity token alone is not sufficient — an `aa-auth+jwt` auth token is required.
 
 ```bash
 INFO:aauth_interceptor:🔐 AAuth: Signing with agent token (aa-agent+jwt in Signature-Key)
@@ -54,7 +55,7 @@ The resource token identifies SCA as the requesting agent:
 ```json
 {
   "iss": "http://market-analysis-agent.localhost:3000",
-  "aud": "http://localhost:8080/realms/aauth-test",
+  "aud": "http://127.0.0.1:8765",
   "agent": "http://supply-chain-agent.localhost:3000",
   "agent_jkt": "9aOuAvaRr0YVHxiZqIpJvDf9hjg2uvKw1FVVMzDiOwg",
   "exp": 1770659003,
@@ -64,7 +65,7 @@ The resource token identifies SCA as the requesting agent:
 
 ### Step 2: Token exchange request
 
-SCA now performs a token exchange. On the signed `POST` to the token endpoint it sends (see [Token exchange](./flow-05-token-ex.md)):
+SCA now performs a token exchange. On the signed `POST` to the token endpoint it sends:
 
 1. **`upstream_token`**: The auth token SCA received from `backend` (proves upstream authorization and user context the auth server already issued)
 2. **`resource_token`**: The token from MAA (proves Resource 2 challenged SCA for access)
@@ -76,7 +77,7 @@ INFO:agent_executor:🔐 Exchanging upstream auth_token for MAA token
 INFO:aauth.tokens:🔐 Token exchange: upstream_auth_token=eyJhbGci..., resource_token=eyJhbGci...
 ```
 
-The token exchange request uses the JWT scheme in `Signature-Key`, and SCA signs the HTTP request with its own key. The Auth server reviews the JWT from the `Signature-Key` header and sees that the token was issued with an `aud` of `supply-chain-agent`. The Auth server, knowing this is a token exchange request, will use the `aud` claim to retrieve the JWKS of the `supply-chain-agent`. 
+The token exchange request uses the JWT scheme in `Signature-Key`: SCA presents its `aa-agent+jwt` and signs the HTTP request with its ephemeral key. The auth server validates the signature by checking `cnf.jwk` in the agent token (proof-of-possession) — no external JWKS endpoint is fetched for the agent. The auth server then verifies the `upstream_token` audience chain and the `resource_token` binding before issuing a new `aa-auth+jwt`.
 
 
 ```bash
@@ -84,16 +85,16 @@ INFO:aauth_token_service:🔐 Signing with JWT scheme for token exchange
 INFO:aauth.signing:🔐   Line 3: '"signature-key": sig1=(scheme=jwt jwt="eyJhbGci...")'
 ```
 
-### Step 3: Keycloak issues exchanged token
+### Step 3: Person Server issues exchanged token
 
-Keycloak validates, in line with call-chaining token exchange:
+The auth server (Person Server) validates the token exchange request:
 
 1. The HTTP message signature on the exchange request
 2. The **`upstream_token`** (auth token for the upstream audience, issued by this auth server)
 3. The **`resource_token`** from MAA (including `agent` / `agent_jkt` binding to SCA)
 4. Policy: whether SCA is allowed to receive an auth token for MAA with the requested scopes
 
-It then issues a **new** auth token for the downstream hop. That token’s claims describe the **immediate** caller and the resource audience—not a nested “actor” object. As in [flow-05-token-ex](./flow-05-token-ex.md), the exchanged JWT does **not** carry a legacy **`act`** claim; provenance of the chain is established when the auth server validates **`upstream_token`** and **`resource_token`** together.
+It then issues a **new** `aa-auth+jwt` for the downstream hop. That token describes the **immediate** caller and the resource audience — not a nested “actor” object. The exchanged JWT does **not** carry an **`act`** claim; provenance of the chain is established when the auth server validates **`upstream_token`** and **`resource_token`** together.
 
 The Person Server issues a new `aa-auth+jwt` shaped like this (illustrative):
 

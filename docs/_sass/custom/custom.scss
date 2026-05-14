@@ -1,20 +1,18 @@
----
----
-
-@import "{{ site.theme }}";
-
-// Custom styling (inspired by entra-agent-id-agw/docs)
+// Typography aligned with aauth.dev (uppercase section titles)
+// Width comes from theme $content-width (see color schemes); avoid a second narrow cap here.
 .main-content {
-  max-width: 64rem;
+  max-width: none;
 
-  h1 {
-    border-bottom: 1px solid #eaecef;
+  h1,
+  h2 {
+    text-transform: uppercase;
+    font-weight: 700;
+    letter-spacing: -0.02em;
+    border-bottom: 1px solid $border-color;
     padding-bottom: 0.3em;
   }
 
   h2 {
-    border-bottom: 1px solid #eaecef;
-    padding-bottom: 0.3em;
     margin-top: 2em;
   }
 
@@ -22,7 +20,8 @@
     margin-top: 1.5em;
   }
 
-  ul, ol {
+  ul,
+  ol {
     padding-left: 2em;
   }
 
@@ -30,47 +29,10 @@
     margin: 0.5em 0;
   }
 
-  a {
-    color: #0366d6;
-    text-decoration: none;
-
-    &:hover {
-      text-decoration: underline;
-    }
-  }
-
-  code {
-    background-color: rgba(27, 31, 35, 0.05);
-    border-radius: 3px;
-    font-size: 85%;
-    margin: 0;
-    padding: 0.2em 0.4em;
-  }
-
-  pre {
-    background-color: #f6f8fa;
-    border-radius: 3px;
-    font-size: 85%;
-    line-height: 1.45;
-    overflow: auto;
-    padding: 16px;
-
-    code {
-      background-color: transparent;
-      border: 0;
-      display: inline;
-      line-height: inherit;
-      margin: 0;
-      overflow: visible;
-      padding: 0;
-      word-wrap: normal;
-    }
-  }
-
-  // Callout: important notes, commands, snippets (block or blockquote + {: .callout})
+  // Callout: blockquote + {: .callout} or div.callout
   .callout {
-    border-left: 4px solid #0366d6;
-    background-color: #f0f7ff;
+    border-left: 4px solid #0d9b4d;
+    background-color: rgba(13, 155, 77, 0.08);
     padding: 1rem 1.25rem;
     margin: 1.25em 0;
     border-radius: 0 4px 4px 0;
@@ -92,9 +54,10 @@
     font-style: normal;
   }
 
-  // Log output: same as callout + wrap long lines instead of horizontal scroll
+  // Log output: {: .log-output}
   .log-output {
-    pre, pre code {
+    pre,
+    pre code {
       white-space: pre-wrap;
       word-wrap: break-word;
       overflow-wrap: break-word;
@@ -102,13 +65,14 @@
     }
 
     pre {
-      background-color: #f0f7ff;
-      border-left: 4px solid #0366d6;
+      background-color: rgba(13, 155, 77, 0.08);
+      border-left: 4px solid #0d9b4d;
     }
   }
 
   table {
-    th, td {
+    th,
+    td {
       padding: 0.75rem 1rem;
     }
   }
@@ -117,10 +81,10 @@
     margin: 2rem 0;
   }
 
-  // Run tabs: component run commands in tabbed interface
+  // Run tabs (raw HTML in pseudonymous-agent.md)
   .run-tabs {
     margin: 1.5em 0;
-    border: 1px solid #eaecef;
+    border: 1px solid $border-color;
     border-radius: 6px;
     overflow: hidden;
     box-shadow: 0 1px 3px rgba(0, 0, 0, 0.06);
@@ -133,8 +97,8 @@
       display: flex;
       flex-wrap: wrap;
       gap: 0;
-      background: #eaecef;
-      border-bottom: 1px solid #eaecef;
+      background: $sidebar-color;
+      border-bottom: 1px solid $border-color;
       padding: 4px 4px 0 4px;
     }
 
@@ -143,18 +107,18 @@
       cursor: pointer;
       font-size: 0.9em;
       margin: 0;
-      background: #f6f8fa;
-      border: 1px solid #eaecef;
+      background: $code-background-color;
+      border: 1px solid $border-color;
       border-bottom: none;
       border-radius: 6px 6px 0 0;
       position: relative;
       top: 1px;
-      color: #586069;
+      color: $nav-child-link-color;
       transition: background 0.15s ease, color 0.15s ease;
 
       &:hover {
-        background: #eaecef;
-        color: #24292e;
+        background: $sidebar-color;
+        color: $body-text-color;
       }
     }
 
@@ -162,18 +126,18 @@
     input:nth-of-type(2):checked ~ .tab-labels label:nth-of-type(2),
     input:nth-of-type(3):checked ~ .tab-labels label:nth-of-type(3),
     input:nth-of-type(4):checked ~ .tab-labels label:nth-of-type(4) {
-      background: #fff;
-      border-bottom: 1px solid #fff;
+      background: $body-background-color;
+      border-bottom: 1px solid $body-background-color;
       margin-bottom: -1px;
       font-weight: 600;
-      color: #24292e;
+      color: $body-text-color;
       z-index: 1;
     }
 
     .tab-content {
       display: none;
       padding: 1em;
-      background: #fff;
+      background: $body-background-color;
       border-top: none;
     }
 
@@ -187,5 +151,26 @@
   .run-tabs #tab-supply-chain:checked ~ #content-supply-chain,
   .run-tabs #tab-market-analysis:checked ~ #content-market-analysis {
     display: block;
+  }
+}
+
+// When dark toggle is active (see footer_custom.html), tune callouts/tabs for contrast
+.theme-aauth-dark .main-content {
+  .callout {
+    border-left-color: #40d97b;
+    background-color: rgba(64, 217, 123, 0.12);
+
+    pre {
+      background-color: rgba(26, 26, 37, 0.85);
+    }
+  }
+
+  .log-output pre {
+    background-color: rgba(64, 217, 123, 0.12);
+    border-left-color: #40d97b;
+  }
+
+  .run-tabs {
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.35);
   }
 }

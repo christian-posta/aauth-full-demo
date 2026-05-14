@@ -1,4 +1,4 @@
-"""Load or create long-term Ed25519 stable identity for Agent Server registration."""
+"""Load or create long-term Ed25519 stable identity for AAuth Agent Provider registration."""
 
 from __future__ import annotations
 
