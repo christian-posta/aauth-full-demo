@@ -40,9 +40,11 @@ Agent identity in both modes comes from an `aa-agent+jwt` bootstrapped from the 
 
 ## AAuth Implementation Resources
 
-1. [Java Library](https://github.com/christian-posta/keycloak/tree/ceposta-aauth/services/src/main/java/org/keycloak/protocol/aauth/signing)
-2. [Python Library](https://github.com/christian-posta/aauth-implementation/tree/main/aauth)
-3. [Rust Library](https://github.com/christian-posta/agentgateway/tree/ceposta-aauth-rust/crates/aauth)
-4. [Keycloak AAuth SPI](https://github.com/christian-posta/keycloak-aauth-extension)
-5. [Agentgateway AAuth Impl](https://github.com/christian-posta/agentgateway/tree/ceposta-aauth-rust)
-6. [Agentgateway AAuth Release](https://github.com/christian-posta/agentgateway/releases/tag/v0.11.4)
+The following open-source components are used in this demo:
+
+1. [Python AAuth Library (`aauth`)](https://github.com/christian-posta/aauth-python-library) — request signing, key generation, and token helpers used by the Python agents and the backend (pinned as `aauth>=0.3.4`).
+2. [Go AAuth Library](https://github.com/christian-posta/aauth-go-library) — Go implementation of AAuth signing and verification; consumed by `aauth-service` (the `extauth-aauth-resource` below) to validate agent tokens and proof-of-possession.
+3. [AAuth Person Server](https://github.com/christian-posta/aauth-person-server) — reference Person Server that also acts as the Agent Provider: issues `aa-agent+jwt`, manages user consent, and issues `aa-auth+jwt`.
+4. [ExtAuthz AAuth Resource (`aauth-service`)](https://github.com/christian-posta/extauth-aauth-resource) — Envoy ExtAuthz service that turns any HTTP / MCP / A2A resource into an AAuth resource (demo-tested release: [v0.0.1](https://github.com/christian-posta/extauth-aauth-resource/releases/tag/v0.0.1)).
+5. [Agentgateway](https://github.com/agentgateway/agentgateway) — LLM / MCP / A2A gateway used as the AAuth policy enforcement point (demo-tested release: [v0.11.4](https://github.com/christian-posta/agentgateway/releases/tag/v0.11.4)).
+6. [Demo source code](https://github.com/christian-posta/aauth-full-demo) — this repository, including the supply-chain and market-analysis agents, backend, scripts, and Agentgateway configs.
