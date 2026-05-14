@@ -117,7 +117,7 @@ When the agent token is near expiry the agent renews it silently: the stable key
 
 ## Run the Components
 
-To run this demo, [please set up the prerequisites](./install-aauth.md) (Agentgateway, Person Server).
+To run this demo, [please set up the prerequisites](./install-aauth.) (Agentgateway, Person Server).
 
 Start individual services manually if you want to explore each one:
 
@@ -173,15 +173,33 @@ sequenceDiagram
   BE-->>UI: 8. Return progress/result
 ```
 
-In Mode 1 (identity-based access, AAuth spec §4.1.1) the aauth-service accepts the `aa-agent+jwt` directly — no 401 resource-token challenge, no Person Server exchange. The agentgateway config (`aauth-config.yaml`) makes this explicit:
+In Mode 1 (identity-based access, AAuth spec §4.1.1) the `aauth-service` extauthz service accepts the `aa-agent+jwt` directly — no 401 resource-token challenge, no Person Server exchange. The extauth config (`aauth-config.yaml`) makes this explicit:
 
 ```yaml
-allowed_signature_key_schemes:
-  - jwt
-allowed_jwt_types:
-  - aa-agent+jwt   # only agent identity token; aa-auth+jwt never needed
-# No access: section → resource never issues a 401 resource-token challenge
+resources:
+  - id: supply-chain-agent
+    authority_override: "supply-chain-agent.localhost:3000"
+    signing_key:
+      kid: spa-rsk-1
+      alg: EdDSA
+      private_key_file: spa-resource-key.pem
+    signature_window: 60s
+    allow_pseudonymous: false
+    allowed_signature_key_schemes:
+      - jwt
+    allowed_jwt_types:
+      - aa-agent+jwt        # only agent identity token; aa-auth+jwt never needed
+    # No access: section  → resource never issues a 401 resource-token challenge
+    # No person_server:   → no PS exchange; identity-only policy applies
+    policy:
+      name: default
 ```
+
+Key config:
+- **`signing_key`** — The private key used to sign any resource tokens; we don't sign in this demo, but here's how you configure
+- **`allowed_signature_key_schemes`** — specifies the allowed signing types; `hwk`, `jwks_uri` are other options, but not specified therefore not allowed in this configuration; only agent tokens are allowed
+- **`allowed_jwt_types`** — make it explicit: agent tokens are required/allowed; we don't need auth tokens in this demo
+
 
 ### Backend Logs
 
@@ -227,8 +245,12 @@ info request gateway=default/default listener=listener0 route=default/route0
 
 The `aauth.scheme=jwt` field (type `aa-agent+jwt`) and `aauth.agent` (the verified agent identity URL) are available for use in authorization CEL rules.
 
+On a successful call, you should see: 
+![](./images/ui-success-SCA.png)
+
 The `market-analysis-agent` can be invoked by typing `"perform market analysis"` into the UI's text box. This flow triggers the supply-chain-agent → market-analysis-agent call. Both hops use `aa-agent+jwt` signing. Check `logs/supply-chain-agent.log` and `logs/market-analysis-agent.log` to see the same bootstrap and verification pattern on the downstream hop.
 
+---
 
 **Key:** Each agent bootstraps an `aa-agent+jwt` from the Person Server → presents it in `Signature-Key` → Agentgateway verifies the JWT and proof-of-possession → forwards to the resource.
 
