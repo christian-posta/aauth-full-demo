@@ -42,9 +42,5 @@ class Settings:
     # Required on POST /register per CLIENTS.md (display name, 1–256 chars after trim).
     agent_name: str = (os.getenv("BACKEND_AGENT_NAME") or "Backend App").strip() or "Backend App"
     stable_identity_dir: Path = _BACKEND_ROOT
-    
-    # Agent STS Configuration
-    agent_sts_url: str = os.getenv("AGENT_STS_URL", "http://localhost:8081")
-    backend_spiffe_id: str = os.getenv("BACKEND_SPIFFE_ID", "spiffe://cluster.local/ns/default/sa/backend")
 
 settings = Settings()

@@ -1,10 +1,9 @@
 # Supply Chain Agent Makefile
-# This Makefile provides targets for building, creating manifests, and deploying the agent
+# Docker image build, push, and local run.
 
 # Variables
 IMAGE_NAME ?= supply-chain-agent
 IMAGE_TAG ?= latest
-KIND_CLUSTER ?= kagent
 FULL_IMAGE_NAME = $(IMAGE_NAME):$(IMAGE_TAG)
 PLATFORMS ?= linux/amd64,linux/arm64
 
@@ -68,98 +67,7 @@ push-to-docker-multiarch: ## Build and push multi-architecture image to Docker H
 	docker buildx build --platform $(PLATFORMS) -t ceposta/$(IMAGE_NAME):$(IMAGE_TAG) --push .
 	@echo "Multi-architecture push complete! Image available at: ceposta/$(IMAGE_NAME):$(IMAGE_TAG)"
 
-.PHONY: kind-load
-kind-load: ## Load the Docker image into kind cluster
-	@echo "Loading image into kind cluster '$(KIND_CLUSTER)': $(FULL_IMAGE_NAME)"
-	kind load docker-image $(FULL_IMAGE_NAME) --name $(KIND_CLUSTER)
-	@echo "Image loaded into kind cluster!"
-
-.PHONY: manifest
-manifest: ## Create Kubernetes manifests
-	@echo "Creating Kubernetes manifests..."
-	@mkdir -p manifests
-	@echo 'apiVersion: v1' > manifests/deployment.yaml
-	@echo 'kind: ServiceAccount' >> manifests/deployment.yaml
-	@echo 'metadata:' >> manifests/deployment.yaml
-	@echo '  name: $(IMAGE_NAME)' >> manifests/deployment.yaml
-	@echo '  labels:' >> manifests/deployment.yaml
-	@echo '    app: $(IMAGE_NAME)' >> manifests/deployment.yaml
-	@echo '---' >> manifests/deployment.yaml
-	@echo 'apiVersion: apps/v1' >> manifests/deployment.yaml
-	@echo 'kind: Deployment' >> manifests/deployment.yaml
-	@echo 'metadata:' >> manifests/deployment.yaml
-	@echo '  name: $(IMAGE_NAME)' >> manifests/deployment.yaml
-	@echo '  labels:' >> manifests/deployment.yaml
-	@echo '    app: $(IMAGE_NAME)' >> manifests/deployment.yaml
-	@echo 'spec:' >> manifests/deployment.yaml
-	@echo '  replicas: 1' >> manifests/deployment.yaml
-	@echo '  selector:' >> manifests/deployment.yaml
-	@echo '    matchLabels:' >> manifests/deployment.yaml
-	@echo '      app: $(IMAGE_NAME)' >> manifests/deployment.yaml
-	@echo '  template:' >> manifests/deployment.yaml
-	@echo '    metadata:' >> manifests/deployment.yaml
-	@echo '      labels:' >> manifests/deployment.yaml
-	@echo '        app: $(IMAGE_NAME)' >> manifests/deployment.yaml
-	@echo '    spec:' >> manifests/deployment.yaml
-	@echo '      serviceAccountName: $(IMAGE_NAME)' >> manifests/deployment.yaml
-	@echo '      containers:' >> manifests/deployment.yaml
-	@echo '      - name: $(IMAGE_NAME)' >> manifests/deployment.yaml
-	@echo '        image: $(FULL_IMAGE_NAME)' >> manifests/deployment.yaml
-	@echo '        imagePullPolicy: Never' >> manifests/deployment.yaml
-	@echo '        ports:' >> manifests/deployment.yaml
-	@echo '        - containerPort: 9999' >> manifests/deployment.yaml
-	@echo '        env:' >> manifests/deployment.yaml
-	@bash -c 'while IFS="=" read -r key value; do if [[ "$$key" != "" && ! "$$key" =~ ^[[:space:]]*# ]]; then echo "        - name: $$key" >> manifests/deployment.yaml; echo "          value: \"$$value\"" >> manifests/deployment.yaml; fi; done < env.kube'
-	@echo '---' >> manifests/deployment.yaml
-	@echo 'apiVersion: v1' >> manifests/deployment.yaml
-	@echo 'kind: Service' >> manifests/deployment.yaml
-	@echo 'metadata:' >> manifests/deployment.yaml
-	@echo '  name: $(IMAGE_NAME)' >> manifests/deployment.yaml
-	@echo '  labels:' >> manifests/deployment.yaml
-	@echo '        app: $(IMAGE_NAME)' >> manifests/deployment.yaml
-	@echo 'spec:' >> manifests/deployment.yaml
-	@echo '  selector:' >> manifests/deployment.yaml
-	@echo '        app: $(IMAGE_NAME)' >> manifests/deployment.yaml
-	@echo '  ports:' >> manifests/deployment.yaml
-	@echo '  - protocol: TCP' >> manifests/deployment.yaml
-	@echo '    port: 80' >> manifests/deployment.yaml
-	@echo '    targetPort: 9999' >> manifests/deployment.yaml
-	@echo '    appProtocol: kgateway.dev/a2a' >> manifests/deployment.yaml
-	@echo '  type: ClusterIP' >> manifests/deployment.yaml
-	@echo "Manifests created in manifests/ directory"
-
-.PHONY: deploy
-deploy: build kind-load manifest ## Deploy to Kubernetes (automatically builds multi-arch image, loads image and creates manifests)
-	@echo "Deploying $(IMAGE_NAME) to Kubernetes..."
-	@if ! command -v kubectl >/dev/null 2>&1; then \
-		echo "Error: kubectl is not installed or not in PATH"; \
-		exit 1; \
-	fi
-	@if ! kubectl cluster-info >/dev/null 2>&1; then \
-		echo "Error: Cannot connect to Kubernetes cluster"; \
-		exit 1; \
-	fi
-	kubectl apply -f manifests/
-	@echo "Deployment complete! Check status with: kubectl get pods -l app=$(IMAGE_NAME)"
-
-.PHONY: clean
-clean: ## Clean up generated files
-	@echo "Cleaning up..."
-	@rm -rf manifests/
-	@echo "Cleanup complete!"
-
 .PHONY: run-local
 run-local: ## Run the agent locally using Docker
 	@echo "Running $(IMAGE_NAME) locally on port 9999..."
 	docker run -p 9999:9999 --env-file .env $(FULL_IMAGE_NAME)
-
-.PHONY: logs
-logs: ## Show logs from the deployed agent
-	@echo "Showing logs for $(IMAGE_NAME)..."
-	kubectl logs -l app=$(IMAGE_NAME) --tail=100 -f
-
-.PHONY: status
-status: ## Show status of the deployed agent
-	@echo "Status of $(IMAGE_NAME) deployment:"
-	kubectl get pods -l app=$(IMAGE_NAME)
-	kubectl get svc -l app=$(IMAGE_NAME)

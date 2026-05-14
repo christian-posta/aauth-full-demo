@@ -6,7 +6,6 @@ from app.models import (
 )
 from app.services.optimization_service import optimization_service
 from app.services.a2a_service import a2a_service
-from app.services.agent_sts_service import agent_sts_service
 from app.api.auth import get_current_user
 from app.tracing_config import span, add_event, set_attribute, extract_context_from_headers
 from app.config import settings
@@ -473,34 +472,6 @@ async def clear_optimizations(
                 status_code=500,
                 detail=f"Failed to clear optimizations: {str(e)}"
             )
-
-@router.get("/test-agent-sts-connection")
-async def test_agent_sts_connection():
-    """Test connection to the Agent STS service"""
-    with span("optimization_api.test_agent_sts_connection") as span_obj:
-        
-        try:
-            add_event("agent_sts_connection_test_requested")
-            
-            connection_status = await agent_sts_service.test_connection()
-            
-            add_event("agent_sts_connection_test_completed", {"status": connection_status.get("status")})
-            
-            return connection_status
-            
-        except Exception as e:
-            if settings.debug:
-                print(f"💥 Exception testing Agent STS connection: {e}")
-            add_event("agent_sts_connection_test_exception", {"error": str(e)})
-            
-            return JSONResponse(
-                status_code=500,
-                content={
-                    "status": "error",
-                    "error": f"Failed to test Agent STS connection: {str(e)}"
-                }
-            )
-
 
 @router.get("/test-a2a-connection")
 async def test_a2a_connection(

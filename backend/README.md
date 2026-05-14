@@ -32,7 +32,6 @@ This is the Python FastAPI backend for the Supply Chain Agent system. This backe
 - `GET /optimization/results/{request_id}` - Get results of a completed optimization
 - `GET /optimization/all` - Get all optimization requests
 - `DELETE /optimization/clear` - Clear all optimizations
-- `GET /optimization/test-agent-sts-connection` - Test connection to Agent STS service
 - `GET /optimization/test-a2a-connection` - Test connection to A2A supply-chain agent
 
 ## Setup
