@@ -4,7 +4,7 @@ title: Exploring AAuth for Agent Identity and Access Management (IAM)
 nav_order: 0
 ---
 
-# Exploring AAuth for Agent IAM
+# Exploring AAuth for Agent Identity and Access Management
 
 
 [Agent Auth](https://github.com/dickhardt/AAuth) (AAuth -- pronounced "AY-awth") is an [IETF draft paper, part of the OAuth working group, that specifies a protocol for agent identity and access management](https://datatracker.ietf.org/doc/draft-hardt-oauth-aauth-protocol/) from [Dick Hardt](https://github.com/dickhardt) who [authored OAuth 2.0](https://datatracker.ietf.org/doc/html/rfc6749) and co-author of [OAuth 2.1](https://github.com/oauth-wg/oauth-v2-1/blob/main/draft-ietf-oauth-v2-1.md). 
@@ -42,9 +42,9 @@ Following these steps is the best way to see AAuth working end to end:
 
 The following open-source components are used in this demo:
 
-*1.* [Agentgateway](https://github.com/agentgateway/agentgateway) — LLM / MCP / A2A gateway used as the AAuth identity verification and policy enforcement point (PEP) (any version should work, [tested on v1.1.0](https://github.com/agentgateway/agentgateway/releases/tag/v1.1.0)).
-*2.* [ExtAuthz AAuth Resource (`aauth-service`)](https://github.com/christian-posta/extauth-aauth-resource) — Envoy ExtAuthz service that turns any HTTP / MCP / A2A resource into an AAuth resource (demo-tested release: [v0.0.1](https://github.com/christian-posta/extauth-aauth-resource/releases/tag/v0.0.1)).
-*3.* [Python AAuth Library (`aauth`)](https://github.com/christian-posta/aauth-python-library) — request signing, key generation, and token helpers used by the Python agents and the backend (pinned as `aauth>=0.3.4`).
-*4.* [Go AAuth Library](https://github.com/christian-posta/aauth-go-library) — Go implementation of AAuth signing and verification; consumed by `aauth-service` (the `extauth-aauth-resource` below) to validate agent tokens and proof-of-possession.
-*5.* [AAuth Person Server](https://github.com/christian-posta/aauth-person-server) — demo Person Server that also acts as the Agent Provider: issues `aa-agent+jwt`, manages user consent, and issues `aa-auth+jwt`.
-*6.* [Demo source code](https://github.com/christian-posta/aauth-full-demo) — this repository, including the supply-chain and market-analysis agents, backend, scripts, and Agentgateway configs.
+1. [Agentgateway](https://github.com/agentgateway/agentgateway) — LLM / MCP / A2A gateway used as the AAuth identity verification and policy enforcement point (PEP) (any version should work, [tested on v1.1.0](https://github.com/agentgateway/agentgateway/releases/tag/v1.1.0)).
+2. [ExtAuthz AAuth Resource (`aauth-service`)](https://github.com/christian-posta/extauth-aauth-resource) — Envoy ExtAuthz service that turns any HTTP / MCP / A2A resource into an AAuth resource (demo-tested release: [v0.0.1](https://github.com/christian-posta/extauth-aauth-resource/releases/tag/v0.0.1)).
+3. [Python AAuth Library (`aauth`)](https://github.com/christian-posta/aauth-python-library) — request signing, key generation, and token helpers used by the Python agents and the backend (pinned as `aauth>=0.3.4`).
+4. [Go AAuth Library](https://github.com/christian-posta/aauth-go-library) — Go implementation of AAuth signing and verification; consumed by `aauth-service` (the `extauth-aauth-resource` below) to validate agent tokens and proof-of-possession.
+5. [AAuth Person Server](https://github.com/christian-posta/aauth-person-server) — demo Person Server that also acts as the Agent Provider: issues `aa-agent+jwt`, manages user consent, and issues `aa-auth+jwt`.
+6. [Demo source code](https://github.com/christian-posta/aauth-full-demo) — this repository, including the supply-chain and market-analysis agents, backend, scripts, and Agentgateway configs.
